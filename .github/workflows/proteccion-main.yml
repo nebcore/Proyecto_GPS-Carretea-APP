@@ -1,0 +1,19 @@
+# Rechaza cualquier Pull Request hacia 'main' que no venga de la rama 'develop'.
+name: Proteccion de main
+
+on:
+  pull_request:
+    branches:
+      - main
+
+jobs:
+  validar-origen:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Solo permitir merge desde develop
+        run: |
+          if [ "${{ github.head_ref }}" != "develop" ]; then
+            echo "::error::Los Pull Requests hacia 'main' solo se permiten desde la rama 'develop'. Rama de origen detectada: '${{ github.head_ref }}'."
+            exit 1
+          fi
+          echo "Origen valido: develop -> main"
