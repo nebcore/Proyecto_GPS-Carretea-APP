@@ -1,0 +1,280 @@
+-- extension para UUIDs
+--CREATE EXTENSION IF NOT EXISTS "pgcrypto";
+
+-- tipos enum
+CREATE TYPE tipo_division AS ENUM ('equitativo', 'porcentual', 'montos_exactos', 'por_cuotas');
+create type estado_evento as enum ('abierto', 'finalizado');
+create type estado_pago as enum ('pendiente', 'reportado', 'saldado');
+
+-- tablas
+create table usuarios (
+    id uuid primary key references auth.users(id) on delete cascade,
+    email text not null unique,
+    nombre text not null,
+    foto_url text,
+    creado_en timestamptz default now()
+);
+
+create table datos_bancarios (
+    id uuid primary key default gen_random_uuid(),
+    usuario_id uuid not null references usuarios(id) on delete cascade,
+    banco text not null,
+    tipo_cuenta text not null,
+    numero_cuenta text not null,
+    rut text not null,
+    creado_en timestamptz default now()
+);
+
+create table contactos (
+    id uuid primary key default gen_random_uuid(),
+    usuario_id uuid not null references usuarios(id) on delete cascade,
+    referencia_usuario_id uuid references usuarios(id) on delete set null,
+    nombre text not null,
+    telefono text,
+    es_temporal boolean default false,
+    creado_en timestamptz default now()
+);
+
+create table grupos_contacto (
+    id uuid primary key default gen_random_uuid(),
+    usuario_id uuid not null references usuarios(id) on delete cascade,
+    nombre text not null
+);
+
+create table contactos_grupos (
+    contacto_id uuid references contactos(id) on delete cascade,
+    grupo_id uuid references grupos_contacto(id) on delete cascade,
+    primary key (contacto_id, grupo_id)
+);
+
+create table eventos (
+    id uuid primary key default gen_random_uuid(),
+    creador_id uuid not null references usuarios(id) on delete cascade,
+    titulo text not null,
+    descripcion text,
+    ubicacion text,
+    fecha_evento timestamptz not null,
+    estado estado_evento default 'abierto',
+    creado_en timestamptz default now()
+);
+
+create table participantes_evento (
+    evento_id uuid references eventos(id) on delete cascade,
+    contacto_id uuid references contactos(id) on delete cascade,
+    rol text default 'participante',
+    primary key (evento_id, contacto_id)
+);
+
+create table gastos (
+    id uuid primary key default gen_random_uuid(),
+    evento_id uuid not null references eventos(id) on delete cascade,
+    descripcion text not null,
+    categoria text,
+    monto_total numeric(12, 2) not null check (monto_total > 0),
+    fecha timestamptz default now(),
+    tipo_division tipo_division not null
+);
+
+create table gastos_pagadores (
+    gasto_id uuid references gastos(id) on delete cascade,
+    contacto_id uuid references contactos(id) on delete cascade,
+    monto_aportado numeric(12, 2) not null check (monto_aportado > 0),
+    primary key (gasto_id, contacto_id)
+);
+
+create table gastos_consumidores (
+    gasto_id uuid references gastos(id) on delete cascade,
+    contacto_id uuid references contactos(id) on delete cascade,
+    parte numeric(12, 4) not null check (parte > 0),
+    primary key (gasto_id, contacto_id)
+);
+
+create table pagos (
+    id uuid primary key default gen_random_uuid(),
+    evento_id uuid not null references eventos(id) on delete cascade,
+    deudor_id uuid not null references contactos(id) on delete cascade,
+    acreedor_id uuid not null references contactos(id) on delete cascade,
+    monto numeric(12, 2) not null check (monto > 0),
+    estado estado_pago default 'pendiente',
+    confirmado_en timestamptz,
+    creado_en timestamptz default now()
+);
+
+create table comprobantes (
+    id uuid primary key default gen_random_uuid(),
+    gasto_id uuid not null references gastos(id) on delete cascade,
+    storage_path text not null,
+    mime_type text not null,
+    creado_en timestamptz default now()
+);
+
+create table log_auditoria (
+    id uuid primary key default gen_random_uuid(),
+    evento_id uuid references eventos(id) on delete cascade,
+    usuario_id uuid references usuarios(id) on delete set null,
+    accion text not null,
+    payload jsonb,
+    timestamp timestamptz default now()
+);
+
+create table notificaciones (
+    id uuid primary key default gen_random_uuid(),
+    usuario_id uuid not null references usuarios(id) on delete cascade,
+    tipo text not null,
+    titulo text not null,
+    cuerpo text,
+    leida boolean default false,
+    creado_en timestamptz default now()
+);
+
+-- row level security
+alter table usuarios enable row level security;
+alter table datos_bancarios enable row level security;
+alter table contactos enable row level security;
+alter table grupos_contacto enable row level security;
+alter table contactos_grupos enable row level security;
+alter table eventos enable row level security;
+alter table participantes_evento enable row level security;
+alter table gastos enable row level security;
+alter table gastos_pagadores enable row level security;
+alter table gastos_consumidores enable row level security;
+alter table pagos enable row level security;
+alter table comprobantes enable row level security;
+alter table log_auditoria enable row level security;
+alter table notificaciones enable row level security;
+
+-- usuarios: cada uno ve y edita solo su perfil
+create policy "usuarios: ver propio" on usuarios for select using (auth.uid() = id);
+create policy "usuarios: editar propio" on usuarios for update using (auth.uid() = id);
+create policy "usuarios: insertar propio" on usuarios for insert with check (auth.uid() = id);
+
+-- datos_bancarios: solo el dueño edita; acreedores con deuda activa pueden leer
+create policy "datos_bancarios: dueño gestiona" on datos_bancarios
+    for all using (auth.uid() = usuario_id);
+
+create policy "datos_bancarios: acreedor puede leer" on datos_bancarios
+    for select using (
+    exists (
+        select 1 from pagos p
+        join contactos c on c.id = p.acreedor_id
+        where c.referencia_usuario_id = auth.uid()
+        and p.deudor_id in (
+            select id from contactos where referencia_usuario_id = datos_bancarios.usuario_id
+        )
+        and p.estado != 'saldado'
+    )
+    );
+
+-- contactos: el dueño gestiona los suyos
+create policy "contactos: dueño gestiona" on contactos
+    for all using (auth.uid() = usuario_id);
+
+-- grupos_contacto: el dueño gestiona los suyos
+create policy "grupos_contacto: dueño gestiona" on grupos_contacto
+    for all using (auth.uid() = usuario_id);
+
+-- contactos_grupos: el dueño del contacto gestiona
+create policy "contactos_grupos: dueño gestiona" on contactos_grupos
+    for all using (
+    exists (
+        select 1 from contactos c where c.id = contacto_id and c.usuario_id = auth.uid()
+    )
+    );
+
+-- eventos: participantes pueden leer; creador puede modificar
+create policy "eventos: participantes leen" on eventos
+    for select using (
+    auth.uid() = creador_id or
+    exists (
+        select 1 from participantes_evento pe
+        join contactos c on c.id = pe.contacto_id
+        where pe.evento_id = eventos.id and c.referencia_usuario_id = auth.uid()
+    )
+    );
+
+create policy "eventos: creador gestiona" on eventos
+    for all using (auth.uid() = creador_id);
+
+-- participantes_evento: participantes del evento pueden leer
+create policy "participantes_evento: participantes leen" on participantes_evento
+    for select using (
+    exists (
+        select 1 from participantes_evento pe2
+        join contactos c on c.id = pe2.contacto_id
+        where pe2.evento_id = participantes_evento.evento_id
+        and c.referencia_usuario_id = auth.uid()
+    )
+    );
+
+create policy "participantes_evento: creador gestiona" on participantes_evento
+    for all using (
+    exists (
+        select 1 from eventos e where e.id = evento_id and e.creador_id = auth.uid()
+    )
+    );
+
+-- gastos: participantes del evento pueden leer y crear
+create policy "gastos: participantes gestionan" on gastos
+    for all using (
+    exists (
+        select 1 from participantes_evento pe
+        join contactos c on c.id = pe.contacto_id
+        where pe.evento_id = gastos.evento_id and c.referencia_usuario_id = auth.uid()
+    )
+    );
+
+-- gastos_pagadores y gastos_consumidores: igual que gastos
+create policy "gastos_pagadores: participantes gestionan" on gastos_pagadores
+    for all using (
+    exists (
+        select 1 from gastos g
+        join participantes_evento pe on pe.evento_id = g.evento_id
+        join contactos c on c.id = pe.contacto_id
+        where g.id = gasto_id and c.referencia_usuario_id = auth.uid()
+    )
+    );
+
+create policy "gastos_consumidores: participantes gestionan" on gastos_consumidores
+    for all using (
+    exists (
+        select 1 from gastos g
+        join participantes_evento pe on pe.evento_id = g.evento_id
+        join contactos c on c.id = pe.contacto_id
+        where g.id = gasto_id and c.referencia_usuario_id = auth.uid()
+    )
+    );
+
+-- pagos: participantes del evento pueden leer y gestionar
+create policy "pagos: participantes gestionan" on pagos
+    for all using (
+    exists (
+        select 1 from participantes_evento pe
+        join contactos c on c.id = pe.contacto_id
+        where pe.evento_id = pagos.evento_id and c.referencia_usuario_id = auth.uid()
+    )
+    );
+
+-- comprobantes: participantes del evento del gasto pueden leer
+create policy "comprobantes: participantes leen" on comprobantes
+    for select using (
+    exists (
+        select 1 from gastos g
+        join participantes_evento pe on pe.evento_id = g.evento_id
+        join contactos c on c.id = pe.contacto_id
+        where g.id = gasto_id and c.referencia_usuario_id = auth.uid()
+    )
+    );
+
+-- log_auditoria: participantes leen; escritura solo vía service role (Edge Functions)
+create policy "log_auditoria: participantes leen" on log_auditoria
+    for select using (
+    exists (
+        select 1 from participantes_evento pe
+        join contactos c on c.id = pe.contacto_id
+        where pe.evento_id = log_auditoria.evento_id and c.referencia_usuario_id = auth.uid()
+    )
+    );
+
+-- notificaciones: cada usuario ve las suyas
+create policy "notificaciones: usuario propio" on notificaciones
+    for all using (auth.uid() = usuario_id);
