@@ -49,9 +49,23 @@ export const createContactoConGrupos = async (
     data: { user },
   } = await supabase.auth.getUser();
 
+  const { data: usuarioExistente } = telefono
+    ? await supabase
+        .from("usuarios")
+        .select("id")
+        .eq("telefono", telefono)
+        .maybeSingle()
+    : { data: null };
+
   const { data: contacto, error } = await supabase
     .from("contactos")
-    .insert({ nombre, telefono: telefono || null, usuario_id: user!.id })
+    .insert({
+      nombre,
+      telefono: telefono || null,
+      usuario_id: user!.id,
+      referencia_usuario_id: usuarioExistente?.id ?? null,
+      es_temporal: !usuarioExistente,
+    })
     .select()
     .single();
   if (error) throw error;

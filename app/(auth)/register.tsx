@@ -2,13 +2,13 @@ import { signUpWithEmail } from "@/lib/api/auth";
 import { useRouter } from "expo-router";
 import { useState } from "react";
 import {
-    ActivityIndicator,
-    Alert,
-    StyleSheet,
-    Text,
-    TextInput,
-    TouchableOpacity,
-    View,
+  ActivityIndicator,
+  Alert,
+  StyleSheet,
+  Text,
+  TextInput,
+  TouchableOpacity,
+  View,
 } from "react-native";
 
 export default function RegisterScreen() {
@@ -17,9 +17,10 @@ export default function RegisterScreen() {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [loading, setLoading] = useState(false);
+  const [telefono, setTelefono] = useState("");
 
   const handleRegister = async () => {
-    if (!nombre || !email || !password) {
+    if (!nombre || !email || !password || !telefono) {
       Alert.alert("Error", "Completa todos los campos");
       return;
     }
@@ -29,7 +30,7 @@ export default function RegisterScreen() {
     }
     try {
       setLoading(true);
-      await signUpWithEmail(email, password, nombre);
+      await signUpWithEmail(email, password, nombre, telefono);
       Alert.alert("¡Listo!", "Revisa tu email para confirmar tu cuenta", [
         { text: "OK", onPress: () => router.push("/(auth)/login") },
       ]);
@@ -68,6 +69,14 @@ export default function RegisterScreen() {
         value={password}
         onChangeText={setPassword}
         secureTextEntry
+      />
+      <TextInput
+        style={styles.input}
+        placeholder="Teléfono"
+        placeholderTextColor="#888"
+        value={telefono}
+        onChangeText={setTelefono}
+        keyboardType="phone-pad"
       />
 
       <TouchableOpacity
