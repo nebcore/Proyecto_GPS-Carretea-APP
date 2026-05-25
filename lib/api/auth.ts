@@ -4,11 +4,12 @@ export const signUpWithEmail = async (
   email: string,
   password: string,
   nombre: string,
+  telefono: string,
 ) => {
   const { data, error } = await supabase.auth.signUp({
     email,
     password,
-    options: { data: { nombre } },
+    options: { data: { nombre, telefono } },
   });
   if (error) throw error;
   return data;
