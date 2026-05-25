@@ -126,7 +126,7 @@ export function FormGasto({
     );
   }
 
-  async function onSubmit(data: GastoFormData) {
+  async function onSubmit(data: GastoFormValues) {
     console.log("FormGasto onSubmit invoked", { data });
     try {
       setGuardando(true);
