@@ -8,12 +8,14 @@ import { Stack, useRouter, useSegments } from "expo-router";
 import { StatusBar } from "expo-status-bar";
 import { useEffect } from "react";
 import "react-native-reanimated";
-
+import { Alert } from "react-native";
+import { supabase } from "@/lib/supabase";
 import { useColorScheme } from "@/hooks/use-color-scheme";
 import { useAuthStore } from "@/store/auth";
 
 const queryClient = new QueryClient();
 
+// --- MANEJADOR DE RUTAS (AUTH GATE) ---
 function AuthGate() {
   const { session, loading } = useAuthStore();
   const segments = useSegments();
@@ -38,9 +40,17 @@ export const unstable_settings = {
   anchor: "(tabs)",
 };
 
+// --- COMPONENTE PRINCIPAL (ROOT LAYOUT) ---
 export default function RootLayout() {
   const colorScheme = useColorScheme();
   const initialize = useAuthStore((s) => s.initialize);
+  
+  // 1. Obtenemos la sesión global para sacar el ID de tu usuario actual
+  const session = useAuthStore((s) => s.session);
+  const miUsuarioId = session?.user?.id;
+
+  // 2. ¡ENCENDEMOS EL ESCUCHADOR DE NOTIFICACIONES AQUÍ!
+  useEscucharBroadcast(miUsuarioId);
 
   useEffect(() => {
     initialize();
@@ -62,4 +72,28 @@ export default function RootLayout() {
       </ThemeProvider>
     </QueryClientProvider>
   );
+}
+
+// --- HOOK DE ESCUCHA (BROADCAST) ---
+export function useEscucharBroadcast(miUsuarioId: string | undefined) {
+  useEffect(() => {
+    if (!miUsuarioId) return;
+
+    // 1. Nos conectamos a una "radio" global para toda la app
+    const canalGlobal = supabase.channel("radio_invitaciones");
+
+    canalGlobal
+      .on("broadcast", { event: "nueva_invitacion" }, (payload) => {
+        // 2. Revisamos si el mensaje es para nosotros
+        if (payload.payload.destinatario_id === miUsuarioId) {
+          Alert.alert(payload.payload.titulo, payload.payload.mensaje);
+        }
+      })
+      .subscribe();
+
+    // 3. Apagamos la radio si el usuario cierra sesión o sale
+    return () => {
+      supabase.removeChannel(canalGlobal);
+    };
+  }, [miUsuarioId]);
 }

@@ -49,9 +49,23 @@ export const createContactoConGrupos = async (
     data: { user },
   } = await supabase.auth.getUser();
 
+  const { data: usuarioExistente } = telefono
+    ? await supabase
+        .from("usuarios")
+        .select("id")
+        .eq("telefono", telefono)
+        .maybeSingle()
+    : { data: null };
+
   const { data: contacto, error } = await supabase
     .from("contactos")
-    .insert({ nombre, telefono: telefono || null, usuario_id: user!.id })
+    .insert({
+      nombre,
+      telefono: telefono || null,
+      usuario_id: user!.id,
+      referencia_usuario_id: usuarioExistente?.id ?? null,
+      es_temporal: !usuarioExistente,
+    })
     .select()
     .single();
   if (error) throw error;
@@ -68,6 +82,55 @@ export const createContactoConGrupos = async (
   }
 
   return contacto;
+};
+
+export const getOrCreateContactoPropio = async () => {
+  const {
+    data: { user },
+    error: authError,
+  } = await supabase.auth.getUser();
+
+  if (authError || !user) {
+    throw new Error("Usuario no autenticado");
+  }
+
+  const { data: contactoExistente, error: errorBusqueda } = await supabase
+    .from("contactos")
+    .select("*")
+    .eq("usuario_id", user.id)
+    .eq("referencia_usuario_id", user.id)
+    .maybeSingle();
+
+  if (errorBusqueda) {
+    throw errorBusqueda;
+  }
+
+  if (contactoExistente) {
+    return contactoExistente;
+  }
+
+  const nombre =
+    user.user_metadata?.nombre ||
+    user.user_metadata?.name ||
+    user.email ||
+    "Yo";
+
+  const { data: contactoCreado, error: errorCreacion } = await supabase
+    .from("contactos")
+    .insert({
+      usuario_id: user.id,
+      referencia_usuario_id: user.id,
+      nombre,
+      es_temporal: false,
+    })
+    .select()
+    .single();
+
+  if (errorCreacion) {
+    throw errorCreacion;
+  }
+
+  return contactoCreado;
 };
 
 export const updateContactoConGrupos = async (
