@@ -1,4 +1,5 @@
 import { supabase } from "@/lib/supabase";
+import { getOrCreateMiContacto } from "./contactos";
 
 // 1. OBTENER LISTA DE EVENTOS (Separado en pasos para evitar error de RLS)
 export const getEventos = async () => {
@@ -62,6 +63,35 @@ export const invitarUsuarioAlEvento = async (eventoId: string, contactoId: strin
 };
 
 // 2. CREAR UN EVENTO CON SUS PARTICIPANTES
+export const asegurarUsuarioParticipaEnEvento = async (eventoId: string) => {
+  const contactoPropio = await getOrCreateMiContacto();
+
+  const { data: existente, error: errorExistente } = await supabase
+    .from("participantes_evento")
+    .select("*")
+    .eq("evento_id", eventoId)
+    .eq("contacto_id", contactoPropio.id)
+    .maybeSingle();
+
+  if (errorExistente) throw errorExistente;
+
+  if (!existente) {
+    const { error: errorInsert } = await supabase
+      .from("participantes_evento")
+      .insert([
+        {
+          evento_id: eventoId,
+          contacto_id: contactoPropio.id,
+          rol: "creador",
+        },
+      ]);
+
+    if (errorInsert) throw errorInsert;
+  }
+
+  return contactoPropio;
+};
+
 export const createEventoConParticipantes = async (
   titulo: string,
   descripcion: string,
@@ -92,14 +122,22 @@ export const createEventoConParticipantes = async (
     throw errorEvento;
   }
 
-  // Insertar en 'participantes_evento' incluyendo el 'rol'
-  if (contactosIds && contactosIds.length > 0) {
-    const participantesData = contactosIds.map((contactoId) => ({
+  // Agregar al creador como participante del evento.
+  const contactoPropio = await getOrCreateMiContacto();
+  const participantesData = [
+    {
+      evento_id: nuevoEvento.id,
+      contacto_id: contactoPropio.id,
+      rol: "creador",
+    },
+    ...(contactosIds || []).map((contactoId) => ({
       evento_id: nuevoEvento.id,
       contacto_id: contactoId,
-      rol: "invitado" // Definimos el rol que pide tu diagrama
-    }));
+      rol: "invitado",
+    })),
+  ];
 
+  if (participantesData.length > 0) {
     const { error: errorParticipantes } = await supabase
       .from("participantes_evento")
       .insert(participantesData);
