@@ -1,4 +1,5 @@
 import { useThemeColor } from '@/hooks/use-theme-color';
+import { router } from 'expo-router';
 import { useState } from "react";
 import { Controller, Resolver, useForm } from "react-hook-form";
 import {
@@ -15,7 +16,7 @@ import {
 import { zodResolver } from "@hookform/resolvers/zod";
 import DateTimePicker from "@react-native-community/datetimepicker";
 
-import { crearGasto, GastoFormData, gastoSchema } from "../lib/api/gastos";
+import { crearGasto, GastoFormData, gastoFormSchema, GastoFormValues } from "../lib/api/gastos";
 import { CalculoDivision, TipoDivision } from "../lib/api/gastos_logic";
 
 type Participante = {
@@ -42,15 +43,16 @@ export function FormGasto({
   const [mostrarCalendario, setMostrarCalendario] = useState(false);
   const [mostrarReloj, setMostrarReloj] = useState(false);
   const [fechaSeleccionada, setFechaSeleccionada] = useState<Date>(new Date());
+  const [guardando, setGuardando] = useState(false);
 
-  const resolver = zodResolver(gastoSchema) as Resolver<GastoFormData>;
+  const resolver = zodResolver(gastoFormSchema) as Resolver<GastoFormValues>;
 
   const {
     control,
     handleSubmit,
     setValue,
     formState: { errors },
-  } = useForm<GastoFormData>({
+  } = useForm<GastoFormValues>({
     resolver,
     defaultValues: {
       evento_id: eventoId,
@@ -59,8 +61,6 @@ export function FormGasto({
       monto_total: undefined as unknown as number,
       fecha: new Date().toISOString(),
       tipo_division: "equitativo",
-      gastos_pagadores: [],
-      gastos_consumidores: [],
     },
   });
 
@@ -113,8 +113,23 @@ export function FormGasto({
     onChange(nuevaFecha.toISOString());
   }
 
+  function onInvalid(errors: any) {
+    console.log("FormGasto invalid", { errors });
+    const mensajes = Object.values(errors)
+      .map((err: any) => err.message)
+      .filter(Boolean)
+      .join("\n");
+
+    Alert.alert(
+      "Errores en el formulario",
+      mensajes || "Por favor revisa los campos del formulario."
+    );
+  }
+
   async function onSubmit(data: GastoFormData) {
+    console.log("FormGasto onSubmit invoked", { data });
     try {
+      setGuardando(true);
       const consumidoresIds = participantes.map(
         (participante) => participante.contacto_id
       );
@@ -136,16 +151,22 @@ export function FormGasto({
           },
         ],
         gastos_consumidores: consumidoresCalculados,
-      } as unknown as GastoFormData;
+      };
 
       await crearGasto(gastoFinal);
 
-      Alert.alert(
-        "Gasto creado",
-        "El gasto ha sido creado con éxito."
-      );
+      Alert.alert("Gasto creado", "El gasto ha sido creado con éxito.");
+      router.back();
     } catch (error: any) {
-      Alert.alert("Error", error.message || "Falló al crear el gasto.");
+      const msg =
+        error?.message ||
+        (error?.errors
+          ? error.errors.map((e: any) => e.message).join("\n")
+          : JSON.stringify(error));
+
+      Alert.alert("Error", msg || "Falló al crear el gasto.");
+    } finally {
+      setGuardando(false);
     }
   }
 
@@ -183,6 +204,9 @@ export function FormGasto({
           />
         )}
       />
+      {errors.categoria && (
+        <Text>{errors.categoria.message}</Text>
+      )}
 
       <Text>Monto total</Text>
       <Controller
@@ -207,6 +231,10 @@ export function FormGasto({
       )}
 
       <Text>Fecha y hora</Text>
+
+      {errors.fecha && (
+        <Text>{errors.fecha.message}</Text>
+      )}
 
       <Controller
         control={control}
@@ -372,8 +400,9 @@ export function FormGasto({
       )}
 
       <Button
-        title="Guardar gasto"
-        onPress={handleSubmit(onSubmit)}
+        title={guardando ? "Guardando..." : "Guardar gasto"}
+        onPress={handleSubmit(onSubmit, onInvalid)}
+        disabled={guardando}
       />
     </ScrollView>
   );

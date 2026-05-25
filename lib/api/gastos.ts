@@ -1,8 +1,7 @@
 import { z } from "zod";
 import { supabase } from "../supabase";
 
-export const gastoSchema = z.object({
-  id: z.string(),
+export const gastoFormSchema = z.object({
   evento_id: z.string().uuid(),
   descripcion: z.string().min(1, "La descripción es obligatoria"),
   categoria: z.string().min(1, "La categoría es obligatoria"),
@@ -12,6 +11,10 @@ export const gastoSchema = z.object({
     "equitativo",
     "montos_exactos"
   ]),
+});
+
+export const gastoSchema = gastoFormSchema.extend({
+  id: z.string().optional(),
 
   gastos_pagadores: z.array(
     z.object({
@@ -31,6 +34,7 @@ export const gastoSchema = z.object({
   ).min(1, "Debe haber al menos un consumidor")
 });
 
+export type GastoFormValues = z.infer<typeof gastoFormSchema>;
 export type GastoFormData = z.infer<typeof gastoSchema>;
 
 export async function crearGasto(data: GastoFormData) {
