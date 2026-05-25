@@ -144,6 +144,33 @@ alter table comprobantes enable row level security;
 alter table log_auditoria enable row level security;
 alter table notificaciones enable row level security;
 
+-- funciones para evitar recursión infinita en RLS
+create or replace function es_participante_evento(p_evento_id uuid)
+returns boolean
+language sql
+security definer
+stable
+as $$
+  select exists (
+    select 1 from participantes_evento pe
+    join contactos c on c.id = pe.contacto_id
+    where pe.evento_id = p_evento_id
+    and c.referencia_usuario_id = auth.uid()
+  );
+$$;
+
+create or replace function es_creador_evento(p_evento_id uuid)
+returns boolean
+language sql
+security definer
+stable
+as $$
+  select exists (
+    select 1 from eventos e
+    where e.id = p_evento_id and e.creador_id = auth.uid()
+  );
+$$;
+
 -- usuarios: cada uno ve y edita solo su perfil
 create policy "usuarios: ver propio" on usuarios for select using (auth.uid() = id);
 create policy "usuarios: editar propio" on usuarios for update using (auth.uid() = id);
@@ -200,29 +227,12 @@ create policy "eventos: creador gestiona" on eventos
 -- participantes_evento: participantes del evento pueden leer
 create policy "participantes_evento: participantes leen" on participantes_evento
     for select using (
-    exists (
-        select 1 from participantes_evento pe2
-        join contactos c on c.id = pe2.contacto_id
-        where pe2.evento_id = participantes_evento.evento_id
-        and c.referencia_usuario_id = auth.uid()
-    )
+        es_participante_evento(evento_id)
     );
 
 create policy "participantes_evento: creador gestiona" on participantes_evento
     for all using (
-    exists (
-        select 1 from eventos e where e.id = evento_id and e.creador_id = auth.uid()
-    )
-    );
-
--- gastos: participantes del evento pueden leer y crear
-create policy "gastos: participantes gestionan" on gastos
-    for all using (
-    exists (
-        select 1 from participantes_evento pe
-        join contactos c on c.id = pe.contacto_id
-        where pe.evento_id = gastos.evento_id and c.referencia_usuario_id = auth.uid()
-    )
+        es_creador_evento(evento_id)
     );
 
 -- gastos_pagadores y gastos_consumidores: igual que gastos
@@ -253,6 +263,16 @@ create policy "pagos: participantes gestionan" on pagos
         select 1 from participantes_evento pe
         join contactos c on c.id = pe.contacto_id
         where pe.evento_id = pagos.evento_id and c.referencia_usuario_id = auth.uid()
+    )
+    );
+
+-- gastos: participantes del evento pueden leer y crear
+create policy "gastos: participantes gestionan" on gastos
+    for all using (
+    exists (
+        select 1 from participantes_evento pe
+        join contactos c on c.id = pe.contacto_id
+        where pe.evento_id = gastos.evento_id and c.referencia_usuario_id = auth.uid()
     )
     );
 
