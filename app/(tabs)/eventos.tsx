@@ -22,9 +22,18 @@ import { getEventos, createEventoConParticipantes, deleteEvento, invitarUsuarioA
 const getMisContactos = async () => {
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) return [];
-  const { data, error } = await supabase.from("contactos").select("*");
+
+  const { data, error } = await supabase
+    .from("contactos")
+    .select("*")
+    .eq("usuario_id", user.id)
+    .order("nombre", { ascending: true });
+
   if (error) throw error;
-  return data;
+
+  return (data || []).filter(
+    (contacto: any) => contacto.referencia_usuario_id !== user.id
+  );
 };
 
 export default function EventosScreen() {

@@ -1,5 +1,5 @@
 import { supabase } from "@/lib/supabase";
-import { getOrCreateMiContacto } from "./contactos";
+import { getOrCreateContactoPropio } from "../api/contactos";
 
 // 1. OBTENER LISTA DE EVENTOS (Separado en pasos para evitar error de RLS)
 export const getEventos = async () => {
@@ -64,7 +64,7 @@ export const invitarUsuarioAlEvento = async (eventoId: string, contactoId: strin
 
 // 2. CREAR UN EVENTO CON SUS PARTICIPANTES
 export const asegurarUsuarioParticipaEnEvento = async (eventoId: string) => {
-  const contactoPropio = await getOrCreateMiContacto();
+  const contactoPropio = await getOrCreateContactoPropio();
 
   const { data: existente, error: errorExistente } = await supabase
     .from("participantes_evento")
@@ -123,7 +123,7 @@ export const createEventoConParticipantes = async (
   }
 
   // Agregar al creador como participante del evento.
-  const contactoPropio = await getOrCreateMiContacto();
+  const contactoPropio = await getOrCreateContactoPropio();
   const participantesData = [
     {
       evento_id: nuevoEvento.id,

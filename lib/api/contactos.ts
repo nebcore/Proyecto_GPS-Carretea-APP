@@ -84,7 +84,7 @@ export const createContactoConGrupos = async (
   return contacto;
 };
 
-export const getOrCreateMiContacto = async () => {
+export const getOrCreateContactoPropio = async () => {
   const {
     data: { user },
     error: authError,
@@ -94,31 +94,42 @@ export const getOrCreateMiContacto = async () => {
     throw new Error("Usuario no autenticado");
   }
 
-  const { data: contactoExistente, error: errorContacto } = await supabase
+  const { data: contactoExistente, error: errorBusqueda } = await supabase
     .from("contactos")
     .select("*")
     .eq("usuario_id", user.id)
     .eq("referencia_usuario_id", user.id)
     .maybeSingle();
 
-  if (errorContacto) throw errorContacto;
-  if (contactoExistente) return contactoExistente;
+  if (errorBusqueda) {
+    throw errorBusqueda;
+  }
+
+  if (contactoExistente) {
+    return contactoExistente;
+  }
 
   const nombre =
-    (user.user_metadata as any)?.nombre || user.email || "Yo";
+    user.user_metadata?.nombre ||
+    user.user_metadata?.name ||
+    user.email ||
+    "Yo";
 
   const { data: contactoCreado, error: errorCreacion } = await supabase
     .from("contactos")
     .insert({
-      nombre,
       usuario_id: user.id,
       referencia_usuario_id: user.id,
+      nombre,
       es_temporal: false,
     })
     .select()
     .single();
 
-  if (errorCreacion) throw errorCreacion;
+  if (errorCreacion) {
+    throw errorCreacion;
+  }
+
   return contactoCreado;
 };
 
