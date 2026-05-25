@@ -11,6 +11,7 @@ create table usuarios (
     id uuid primary key references auth.users(id) on delete cascade,
     email text not null unique,
     nombre text not null,
+    telefono text unique,
     foto_url text,
     creado_en timestamptz default now()
 );
@@ -147,6 +148,7 @@ alter table notificaciones enable row level security;
 create policy "usuarios: ver propio" on usuarios for select using (auth.uid() = id);
 create policy "usuarios: editar propio" on usuarios for update using (auth.uid() = id);
 create policy "usuarios: insertar propio" on usuarios for insert with check (auth.uid() = id);
+create policy "usuarios: buscar por telefono" on usuarios for select using (auth.uid() is not null);
 
 -- datos_bancarios: solo el dueño edita; acreedores con deuda activa pueden leer
 create policy "datos_bancarios: dueño gestiona" on datos_bancarios
@@ -278,3 +280,22 @@ create policy "log_auditoria: participantes leen" on log_auditoria
 -- notificaciones: cada usuario ve las suyas
 create policy "notificaciones: usuario propio" on notificaciones
     for all using (auth.uid() = usuario_id);
+
+-- trigger: crear fila en usuarios al registrarse
+create or replace function handle_new_user()
+returns trigger as $$
+begin
+  insert into public.usuarios (id, email, nombre, telefono)
+  values (
+    new.id,
+    new.email,
+    coalesce(new.raw_user_meta_data->>'nombre', split_part(new.email, '@', 1)),
+    new.raw_user_meta_data->>'telefono'
+  );
+  return new;
+end;
+$$ language plpgsql security definer;
+
+create trigger on_auth_user_created
+  after insert on auth.users
+  for each row execute function handle_new_user();
