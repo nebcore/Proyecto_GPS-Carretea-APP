@@ -1,11 +1,12 @@
+import { useThemeColor } from '@/hooks/use-theme-color';
 import { useState } from "react";
 import { Controller, Resolver, useForm } from "react-hook-form";
 import { Alert, Button, ScrollView, Text, TextInput, View } from "react-native";
 
 import { zodResolver } from "@hookform/resolvers/zod";
 
-import { crearGasto, GastoFormData, gastoSchema } from "../../lib/api/gastos";
-import { CalculoDivision, TipoDivision } from "../../lib/api/gastos_logic";
+import { crearGasto, GastoFormData, gastoSchema } from "../lib/api/gastos";
+import { CalculoDivision, TipoDivision } from "../lib/api/gastos_logic";
 
 type Participante = {
     contacto_id: string;
@@ -41,6 +42,10 @@ export function FormGasto({
             gastos_consumidores: [],
         },
     });
+
+    const inputBg = useThemeColor({ light: '#fff', dark: '#222' }, 'background');
+    const inputColor = useThemeColor({}, 'text');
+    const inputStyle = { backgroundColor: inputBg, color: inputColor, borderWidth: 1, padding: 10, borderRadius: 8 } as any;
 
   async function onSubmit(data: GastoFormData) {
     try {
@@ -88,11 +93,8 @@ export function FormGasto({
             value={value}
             onChangeText={onChange}
             placeholder="Ej: Compra de comida"
-            style={{
-              borderWidth: 1,
-              padding: 10,
-              borderRadius: 8,
-            }}
+            placeholderTextColor={inputColor}
+            style={inputStyle}
           />
         )}
       />
@@ -109,11 +111,8 @@ export function FormGasto({
             value={value || ""}
             onChangeText={onChange}
             placeholder="Ej: Comida, transporte, entrada"
-            style={{
-              borderWidth: 1,
-              padding: 10,
-              borderRadius: 8,
-            }}
+            placeholderTextColor={inputColor}
+            style={inputStyle}
           />
         )}
       />
@@ -128,11 +127,8 @@ export function FormGasto({
             value={String(value)}
             onChangeText={(text) => onChange(Number(text))}
             placeholder="Ej: 15000"
-            style={{
-              borderWidth: 1,
-              padding: 10,
-              borderRadius: 8,
-            }}
+            placeholderTextColor={inputColor}
+            style={inputStyle}
           />
         )}
       />
@@ -149,11 +145,8 @@ export function FormGasto({
             value={value}
             onChangeText={onChange}
             placeholder="YYYY-MM-DD"
-            style={{
-              borderWidth: 1,
-              padding: 10,
-              borderRadius: 8,
-            }}
+            placeholderTextColor={inputColor}
+            style={inputStyle}
           />
         )}
       />
@@ -207,18 +200,15 @@ export function FormGasto({
               <Text>{participante.nombre}</Text>
               <TextInput
                 keyboardType="numeric"
-                placeholder="Monto"
+                placeholder={`Monto ${participante.nombre}`}
+                placeholderTextColor={inputColor}
                 onChangeText={(text) => {
                   setMontosExactos((prev) => ({
                     ...prev,
                     [participante.contacto_id]: Number(text),
                   }));
                 }}
-                style={{
-                  borderWidth: 1,
-                  padding: 10,
-                  borderRadius: 8,
-                }}
+                style={inputStyle}
               />
             </View>
           ))}
