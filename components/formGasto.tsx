@@ -1,22 +1,27 @@
-import { useThemeColor } from '@/hooks/use-theme-color';
-import { router } from 'expo-router';
+import { useThemeColor } from "@/hooks/use-theme-color";
+import { router } from "expo-router";
 import { useState } from "react";
 import { Controller, Resolver, useForm } from "react-hook-form";
 import {
-  Alert,
-  Button,
-  Platform,
-  Pressable,
-  ScrollView,
-  Text,
-  TextInput,
-  View,
+    Alert,
+    Button,
+    Platform,
+    Pressable,
+    ScrollView,
+    Text,
+    TextInput,
+    View,
 } from "react-native";
 
 import { zodResolver } from "@hookform/resolvers/zod";
 import DateTimePicker from "@react-native-community/datetimepicker";
 
-import { crearGasto, GastoFormData, gastoFormSchema, GastoFormValues } from "../lib/api/gastos";
+import {
+    crearGasto,
+    GastoFormData,
+    gastoFormSchema,
+    GastoFormValues,
+} from "../lib/api/gastos";
 import { CalculoDivision, TipoDivision } from "../lib/api/gastos_logic";
 
 type Participante = {
@@ -30,15 +35,14 @@ type Props = {
   participantes: Participante[];
 };
 
-export function FormGasto({
-  eventoId,
-  participantes,
-}: Props) {
+export function FormGasto({ eventoId, participantes }: Props) {
   const [tipoDivision, setTipoDivision] = useState<TipoDivision>("equitativo");
   const [pagadorId, setPagadorId] = useState<string>(
-    participantes[0]?.contacto_id || ""
+    participantes[0]?.contacto_id || "",
   );
-  const [montosExactos, setMontosExactos] = useState<Record<string, number>>({});
+  const [montosExactos, setMontosExactos] = useState<Record<string, number>>(
+    {},
+  );
 
   const [mostrarCalendario, setMostrarCalendario] = useState(false);
   const [mostrarReloj, setMostrarReloj] = useState(false);
@@ -64,8 +68,8 @@ export function FormGasto({
     },
   });
 
-  const inputBg = useThemeColor({ light: '#fff', dark: '#222' }, 'background');
-  const inputColor = useThemeColor({}, 'text');
+  const inputBg = useThemeColor({ light: "#fff", dark: "#222" }, "background");
+  const inputColor = useThemeColor({}, "text");
 
   const inputStyle = {
     backgroundColor: inputBg,
@@ -107,14 +111,13 @@ export function FormGasto({
 
   function actualizarFechaCompleta(
     nuevaFecha: Date,
-    onChange: (value: string) => void
+    onChange: (value: string) => void,
   ) {
     setFechaSeleccionada(nuevaFecha);
     onChange(nuevaFecha.toISOString());
   }
 
   function onInvalid(errors: any) {
-    console.log("FormGasto invalid", { errors });
     const mensajes = Object.values(errors)
       .map((err: any) => err.message)
       .filter(Boolean)
@@ -122,16 +125,15 @@ export function FormGasto({
 
     Alert.alert(
       "Errores en el formulario",
-      mensajes || "Por favor revisa los campos del formulario."
+      mensajes || "Por favor revisa los campos del formulario.",
     );
   }
 
   async function onSubmit(data: GastoFormValues) {
-    console.log("FormGasto onSubmit invoked", { data });
     try {
       setGuardando(true);
       const consumidoresIds = participantes.map(
-        (participante) => participante.contacto_id
+        (participante) => participante.contacto_id,
       );
 
       const consumidoresCalculados = CalculoDivision({
@@ -186,9 +188,7 @@ export function FormGasto({
           />
         )}
       />
-      {errors.descripcion && (
-        <Text>{errors.descripcion.message}</Text>
-      )}
+      {errors.descripcion && <Text>{errors.descripcion.message}</Text>}
 
       <Text>Categoría</Text>
       <Controller
@@ -204,9 +204,7 @@ export function FormGasto({
           />
         )}
       />
-      {errors.categoria && (
-        <Text>{errors.categoria.message}</Text>
-      )}
+      {errors.categoria && <Text>{errors.categoria.message}</Text>}
 
       <Text>Monto total</Text>
       <Controller
@@ -226,15 +224,11 @@ export function FormGasto({
           />
         )}
       />
-      {errors.monto_total && (
-        <Text>{errors.monto_total.message}</Text>
-      )}
+      {errors.monto_total && <Text>{errors.monto_total.message}</Text>}
 
       <Text>Fecha y hora</Text>
 
-      {errors.fecha && (
-        <Text>{errors.fecha.message}</Text>
-      )}
+      {errors.fecha && <Text>{errors.fecha.message}</Text>}
 
       <Controller
         control={control}
@@ -349,11 +343,7 @@ export function FormGasto({
       <Text>Tipo de división</Text>
 
       <Button
-        title={
-          tipoDivision === "equitativo"
-            ? "✓ Equitativo"
-            : "Equitativo"
-        }
+        title={tipoDivision === "equitativo" ? "✓ Equitativo" : "Equitativo"}
         onPress={() => {
           setTipoDivision("equitativo");
           setValue("tipo_division", "equitativo");

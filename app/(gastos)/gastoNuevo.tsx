@@ -5,7 +5,7 @@ import {
     ScrollView,
     Text,
     TouchableOpacity,
-    View
+    View,
 } from "react-native";
 
 import { FormGasto } from "../../components/formGasto";
@@ -35,21 +35,22 @@ export default function NuevoGastoScreen() {
           throw new Error("No se recibió el ID del evento.");
         }
 
-        await asegurarUsuarioParticipaEnEvento(String(eventoId)).catch((err) => {
-          console.log("No se pudo asegurar la participación del usuario:", err);
+        await asegurarUsuarioParticipaEnEvento(String(eventoId)).catch(() => {
+          // Si falla, se intentará cargar igual el formulario.
         });
 
         const data = await obtenerParticipantesEvento(String(eventoId));
 
-        const participantesFormateados: Participante[] = data.map((item: any) => ({
-          contacto_id: item.contacto_id,
-          nombre: item.contactos?.nombre || "Sin nombre",
-          rol: item.rol || "participante",
-        }));
+        const participantesFormateados: Participante[] = data.map(
+          (item: any) => ({
+            contacto_id: item.contacto_id,
+            nombre: item.contactos?.nombre || "Sin nombre",
+            rol: item.rol || "participante",
+          }),
+        );
 
         setParticipantes(participantesFormateados);
       } catch (err: any) {
-        console.log("Error al cargar participantes:", err);
         setError(err.message || "No se pudieron cargar los participantes.");
       } finally {
         setCargando(false);
@@ -100,9 +101,7 @@ export default function NuevoGastoScreen() {
             alignItems: "center",
           }}
         >
-          <Text style={{ color: "white", fontWeight: "bold" }}>
-            Volver
-          </Text>
+          <Text style={{ color: "white", fontWeight: "bold" }}>Volver</Text>
         </TouchableOpacity>
       </View>
     );
@@ -136,9 +135,7 @@ export default function NuevoGastoScreen() {
             alignItems: "center",
           }}
         >
-          <Text style={{ color: "white", fontWeight: "bold" }}>
-            Volver
-          </Text>
+          <Text style={{ color: "white", fontWeight: "bold" }}>Volver</Text>
         </TouchableOpacity>
       </View>
     );
@@ -161,10 +158,7 @@ export default function NuevoGastoScreen() {
         </Text>
       </View>
 
-      <FormGasto
-        eventoId={String(eventoId)}
-        participantes={participantes}
-      />
+      <FormGasto eventoId={String(eventoId)} participantes={participantes} />
     </ScrollView>
   );
 }
