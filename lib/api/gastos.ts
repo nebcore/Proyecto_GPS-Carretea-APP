@@ -102,6 +102,17 @@ export async function obtenerParticipantesEvento(eventoId: string){
   return data;
 }
 
+export async function obtenerGastosxEvento(eventoId: string){
+  const {data, error} = await supabase
+    .from("gastos")
+    .select("*")
+    .eq("evento_id", eventoId)
+    .order("fecha", { ascending: false });
+
+  if (error) throw error;
+  return data;
+}
+
 
 /*
 export const getGastosByEvento = async (eventoId: string) => {
