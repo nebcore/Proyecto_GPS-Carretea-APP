@@ -1,18 +1,23 @@
 import { useLocalSearchParams } from "expo-router";
 import React from "react";
 import {
-    ActivityIndicator,
-    FlatList,
-    StyleSheet,
-    Text,
-    View,
+  ActivityIndicator,
+  FlatList,
+  StyleSheet,
+  Text,
+  View,
 } from "react-native";
 import { useBalancesEvento } from "../../lib/realtime/useBalancesEvento";
 
 export default function SaldosScreen() {
   const { eventoId } = useLocalSearchParams();
+  const eventoIdValue = Array.isArray(eventoId) ? eventoId[0] : eventoId;
+  const eventoIdString = eventoIdValue ? String(eventoIdValue) : "";
 
-  if (!eventoId) {
+  const { balances, deudas, isLoading, error } =
+    useBalancesEvento(eventoIdString);
+
+  if (!eventoIdString) {
     return (
       <View style={styles.center}>
         <Text style={styles.message}>
@@ -21,10 +26,6 @@ export default function SaldosScreen() {
       </View>
     );
   }
-
-  const { balances, deudas, isLoading, error } = useBalancesEvento(
-    String(eventoId),
-  );
 
   if (isLoading) {
     return (
