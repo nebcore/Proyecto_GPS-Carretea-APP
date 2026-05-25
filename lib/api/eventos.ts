@@ -119,7 +119,7 @@ export const suscribirAEventos = (onCambio: () => void) => {
     .channel("cambios-en-eventos")
     .on(
       "postgres_changes",
-      { event: "*", scheme: "public", table: "eventos" }, // Corregido a plural
+      { event: "*", schema: "public", table: "eventos" }, // Corregido a plural
       (payload) => {
         console.log("Cambio en eventos detectado:", payload);
         onCambio();
