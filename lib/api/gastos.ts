@@ -3,11 +3,11 @@ import { supabase } from "../supabase";
 
 export const gastoSchema = z.object({
   id: z.string(),
-  evento_id: z.string(),
-  descripcion: z.string().min(1, "La descripción no puede estar vacía"),
-  categoria: z.string().min(1, "La categoría no puede estar vacía"),
-  monto_total: z.number().positive("El monto total debe ser mayor a cero"),
-  fecha: z.string().min(1, "La fecha es requerida"),
+  evento_id: z.string().uuid(),
+  descripcion: z.string().min(1, "La descripción es obligatoria"),
+  categoria: z.string().min(1, "La categoría es obligatoria"),
+  monto_total: z.coerce.number().positive("El monto total debe ser mayor a cero"),
+  fecha: z.string().optional(),
   tipo_division: z.enum([
     "equitativo",
     "montos_exactos"
@@ -17,16 +17,16 @@ export const gastoSchema = z.object({
     z.object({
       id: z.string(),
       gasto_id: z.string(),
-      contacto_id: z.string(),
-      monto_aportado: z.number()
+      contacto_id: z.string().uuid(),
+      monto_aportado: z.coerce.number().positive("El monto aportado debe ser mayor a cero")
     })
   ).min(1, "Debe haber al menos un pagador"),
 
   gastos_consumidores: z.array(
     z.object({
-      contacto_id: z.string(),
+      contacto_id: z.string().uuid(),
       gasto_id: z.string(),
-      parte: z.number().positive("La parte debe ser mayor a cero")
+      parte: z.coerce.number().positive("La parte debe ser mayor a cero")
     })
   ).min(1, "Debe haber al menos un consumidor")
 });
@@ -34,13 +34,20 @@ export const gastoSchema = z.object({
 export type GastoFormData = z.infer<typeof gastoSchema>;
 
 export async function crearGasto(data: GastoFormData) {
-  const validado = gastoSchema.safeParse(data);
+  const validado = gastoSchema.parse(data);
 
-  const {gastos_pagadores, gastos_consumidores, ...gasto} = validado.data;
+  const {gastos_pagadores, gastos_consumidores, ...gasto} = validado;
 
   const {data: nuevoGasto, error: errorGasto} = await supabase
     .from("gastos")
-    .insert(gasto)
+    .insert({
+      evento_id: gasto.evento_id,
+      descripcion: gasto.descripcion,
+      categoria: gasto.categoria,
+      monto_total: gasto.monto_total,
+      fecha: gasto.fecha || new Date().toISOString(),
+      tipo_division: gasto.tipo_division
+    })
     .select()
     .single();
 
@@ -48,35 +55,55 @@ export async function crearGasto(data: GastoFormData) {
 
   const gastoId = nuevoGasto.id;
 
-  const pagadoresData = gastos_pagadores.map((p)=> ({
-    gasto_id: gastoId,
-    contacto_id: p.contacto_id,
-    monto_aportado: p.monto_aportado,
-  }));
-
-  const consumidoresData = gastos_consumidores.map((c) => ({
-    gastos_id: gastoId,
-    contacto_id: c.contacto_id,
-    parte: c.parte,
-  }));
-
   const {error: errorPagadores} = await supabase
     .from("gastos_pagadores")
-    .insert(pagadoresData);
-  
-  if(errorPagadores) throw errorPagadores;
+    .insert(
+      gastos_pagadores.map((pagador) => ({
+        gasto_id: gastoId,
+        contacto_id: pagador.contacto_id,
+        monto_aportado : pagador.monto_aportado,
+      }))
+    );
+
+  if (errorPagadores) throw errorPagadores;
 
   const {error: errorConsumidores} = await supabase
-    .from("gastos_consumidores")
-    .insert(consumidoresData);
+  .from("gastos_consumidores")
+  .insert(
+    gastos_consumidores.map((consumidor) => ({
+      gasto_id: gastoId,
+      contacto_id: consumidor.contacto_id,
+      parte: consumidor.parte,
+    }))
+  );
 
-  if(errorConsumidores) throw errorConsumidores;
+  if (errorConsumidores) throw errorConsumidores;
 
   return nuevoGasto;
 }
 
+export async function obtenerParticipantesEvento(eventoId: string){
+  const {data, error} = await supabase
+    .from("participantes_evento")
+    .select(`
+      evento_id,
+      contacto_id,
+      rol,
+      contactos (
+        id,
+        nombre,
+        telefono,
+        referencia_usuario_id
+        )
+      `).eq("evento_id", eventoId);
+
+  if (error) throw error;
+
+  return data;
+}
 
 
+/*
 export const getGastosByEvento = async (eventoId: string) => {
   const { data, error } = await supabase
     .from("gastos")
@@ -103,3 +130,4 @@ export const createGasto = async (gasto: {
   if (error) throw error;
   return data;
 };
+*/
