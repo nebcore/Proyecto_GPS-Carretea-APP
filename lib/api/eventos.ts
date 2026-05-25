@@ -22,10 +22,11 @@ export const getEventos = async () => {
   // PASO B: Extraer los IDs de los eventos que acabamos de traer
   const eventosIds = eventos.map((evento) => evento.id);
 
- // PASO C: Traer los participantes e incluir la relación con la tabla 'contactos'
+  // PASO C: Traer los participantes e incluir la relación con la tabla 'contactos'
   const { data: participantes, error: errorParticipantes } = await supabase
     .from("participantes_evento")
-    .select(`
+    .select(
+      `
       evento_id, 
       contacto_id, 
       rol,
@@ -33,11 +34,15 @@ export const getEventos = async () => {
         id,
         nombre
       )
-    `)
+    `,
+    )
     .in("evento_id", eventosIds);
 
   if (errorParticipantes) {
-    console.error("Error al obtener participantes:", errorParticipantes.message);
+    console.error(
+      "Error al obtener participantes:",
+      errorParticipantes.message,
+    );
     throw errorParticipantes;
   }
 
@@ -45,15 +50,17 @@ export const getEventos = async () => {
   const eventosCompletos = eventos.map((evento) => ({
     ...evento,
     // Filtramos los participantes que corresponden a este evento en particular
-    participantes_evento: participantes?.filter(
-      (p) => p.evento_id === evento.id
-    ) || [],
+    participantes_evento:
+      participantes?.filter((p) => p.evento_id === evento.id) || [],
   }));
 
   return eventosCompletos;
 };
 
-export const invitarUsuarioAlEvento = async (eventoId: string, contactoId: string) => {
+export const invitarUsuarioAlEvento = async (
+  eventoId: string,
+  contactoId: string,
+) => {
   const { data, error } = await supabase
     .from("participantes_evento")
     .insert([{ evento_id: eventoId, contacto_id: contactoId }]);
@@ -97,9 +104,12 @@ export const createEventoConParticipantes = async (
   descripcion: string,
   ubicacion: string,
   fechaEvento: string,
-  contactosIds: string[]
+  contactosIds: string[],
 ) => {
-  const { data: { user }, error: authError } = await supabase.auth.getUser();
+  const {
+    data: { user },
+    error: authError,
+  } = await supabase.auth.getUser();
   if (authError || !user) throw new Error("Usuario no autenticado");
 
   // Insertar en 'eventos'
@@ -143,7 +153,10 @@ export const createEventoConParticipantes = async (
       .insert(participantesData);
 
     if (errorParticipantes) {
-      console.error("Error al insertar participantes:", errorParticipantes.message);
+      console.error(
+        "Error al insertar participantes:",
+        errorParticipantes.message,
+      );
       throw errorParticipantes;
     }
   }
@@ -159,19 +172,15 @@ export const suscribirAEventos = (onCambio: () => void) => {
       "postgres_changes",
       { event: "*", schema: "public", table: "eventos" }, // Corregido a plural
       (payload) => {
-        console.log("Cambio en eventos detectado:", payload);
         onCambio();
-      }
+      },
     )
     .subscribe();
 };
 
 // 4. ELIMINAR UN EVENTO
 export const deleteEvento = async (eventoId: string) => {
-  const { error } = await supabase
-    .from("eventos")
-    .delete()
-    .eq("id", eventoId);
+  const { error } = await supabase.from("eventos").delete().eq("id", eventoId);
 
   if (error) {
     console.error("Error al eliminar el evento:", error.message);

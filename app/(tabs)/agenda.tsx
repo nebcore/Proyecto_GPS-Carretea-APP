@@ -94,7 +94,6 @@ export default function AgendaScreen() {
       setGruposSeleccionados([]);
     },
     onError: (error) => {
-      console.log("ERROR contacto:", JSON.stringify(error));
       Alert.alert("Error", "No se pudo guardar el contacto.");
     },
   });
@@ -116,7 +115,6 @@ export default function AgendaScreen() {
       setModalEditarVisible(false);
     },
     onError: (error) => {
-      console.log("ERROR actualizando contacto:", JSON.stringify(error));
       Alert.alert("Error", "No se pudieron guardar los cambios.");
     },
   });
@@ -145,9 +143,7 @@ export default function AgendaScreen() {
       setNuevoNombreGrupo("");
       setIsCreatingGroup(false);
     },
-    onError: (error) => {
-      console.log("ERROR grupo:", JSON.stringify(error));
-    },
+    onError: (error) => {},
   });
 
   const borrarGrupoMutation = useMutation({
