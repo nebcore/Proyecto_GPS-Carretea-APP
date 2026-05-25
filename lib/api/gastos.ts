@@ -15,8 +15,8 @@ export const gastoSchema = z.object({
 
   gastos_pagadores: z.array(
     z.object({
-      id: z.string(),
-      gasto_id: z.string(),
+      id: z.string().optional(),
+      gasto_id: z.string().optional(),
       contacto_id: z.string().uuid(),
       monto_aportado: z.coerce.number().positive("El monto aportado debe ser mayor a cero")
     })
@@ -25,7 +25,7 @@ export const gastoSchema = z.object({
   gastos_consumidores: z.array(
     z.object({
       contacto_id: z.string().uuid(),
-      gasto_id: z.string(),
+      gasto_id: z.string().optional(),
       parte: z.coerce.number().positive("La parte debe ser mayor a cero")
     })
   ).min(1, "Debe haber al menos un consumidor")
