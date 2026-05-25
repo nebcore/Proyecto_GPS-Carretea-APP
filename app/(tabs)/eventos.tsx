@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react"; // 👈 Añadido useEffect aquí
 import { 
   View, 
   Text, 
@@ -59,6 +59,39 @@ export default function EventosScreen() {
     queryFn: getMisContactos,
   });
 
+  // 👇 --- NUEVO: ESCUCHADOR EN TIEMPO REAL --- 👇
+  useEffect(() => {
+    // Suscribirse al canal de tiempo real de Supabase para la tabla participantes_evento
+    const canalInvitaciones = supabase
+      .channel("cambios_participantes")
+      .on(
+        "postgres_changes",
+        {
+          event: "*", // Escucha inserciones (invitaciones) y eliminaciones
+          schema: "public",
+          table: "participantes_evento",
+        },
+        (payload) => {
+          console.log("¡Cambio en tiempo real detectado!", payload);
+          
+          // Refrescamos automáticamente la consulta de TanStack Query
+          refetchEventos();
+
+          // Si es una nueva invitación (INSERT), mostramos una alerta visual discreta
+          if (payload.eventType === "INSERT") {
+            Alert.alert("🎉 ¡Nueva Juntada!", "Te han invitado a un nuevo evento o la lista se actualizó.");
+          }
+        }
+      )
+      .subscribe();
+
+    // Limpieza de la suscripción de WebSockets cuando el componente se desmonte
+    return () => {
+      supabase.removeChannel(canalInvitaciones);
+    };
+  }, []);
+  // 👆 --- FIN TIEMPO REAL --- 👆
+
   // Funciones para CREAR
   const toggleContacto = (id: string) => {
     if (contactosSeleccionados.includes(id)) {
@@ -73,14 +106,13 @@ export default function EventosScreen() {
     setTitulo("");
     setDescripcion("");
     setUbicacion("");
-    setFecha(new Date()); // Reseteamos la fecha al día de hoy
+    setFecha(new Date()); 
     setContactosSeleccionados([]);
   };
 
-  // Manejador del cambio de fecha/hora
   const onChangeFecha = (event: any, selectedDate?: Date) => {
     if (Platform.OS === "android") {
-      setShowDatePicker(false); // En Android hay que cerrarlo manual después de elegir
+      setShowDatePicker(false); 
     }
     if (selectedDate) {
       setFecha(selectedDate);
@@ -99,7 +131,7 @@ export default function EventosScreen() {
     }
     try {
       setIsSubmitting(true);
-      const fechaISO = fecha.toISOString(); // Ahora usamos el objeto Date directamente
+      const fechaISO = fecha.toISOString(); 
       await createEventoConParticipantes(titulo, descripcion, ubicacion, fechaISO, contactosSeleccionados);
       
       Alert.alert("¡Éxito!", "Juntada creada correctamente.");
@@ -127,9 +159,9 @@ export default function EventosScreen() {
       await invitarUsuarioAlEvento(eventoSeleccionado.id, contactoId);
       
       Alert.alert("¡Invitado!", "El usuario ha sido agregado a la juntada.");
-      refetchEventos(); // Actualizamos la lista para que aparezca
-      setModalInvitarVisible(false); // Cerramos el modal de invitar
-      setModalDetalleVisible(false); // Opcional: cerramos el detalle para refrescar la vista
+      refetchEventos(); 
+      setModalInvitarVisible(false); 
+      setModalDetalleVisible(false); 
     } catch (error: any) {
       Alert.alert("Error", "No se pudo invitar al usuario. Quizás ya estaba invitado.");
       console.error(error);
@@ -162,12 +194,10 @@ export default function EventosScreen() {
       ]
     );
   };
+
   const handleInvitarPorTelefono = async (evento: any) => {
     try {
-      // Armamos el texto que le llegará a tu amigo
       const mensaje = `¡Hola! Te invito a mi juntada: "${evento.titulo}".\n📅 Cuándo: ${formatearFecha(evento.fecha_evento)}\n📍 Dónde: ${evento.ubicacion || 'A definir'}.\n¡Avisame si venís!`;
-      
-      // Abrimos el menú nativo del celular
       await Share.share({
         message: mensaje,
       });
@@ -177,7 +207,6 @@ export default function EventosScreen() {
     }
   };
 
-  // Helper para formatear fecha visualmente
   const formatearFecha = (fechaString: string) => {
     if (!fechaString) return "Fecha sin definir";
     const fechaObj = new Date(fechaString);
@@ -189,7 +218,6 @@ export default function EventosScreen() {
 
   return (
     <View style={styles.container}>
-      {/* --- PANTALLA PRINCIPAL: LISTA DE EVENTOS --- */}
       <Text style={styles.headerTitle}>Mis Juntadas</Text>
 
       {isLoadingEventos ? (
@@ -215,7 +243,6 @@ export default function EventosScreen() {
         </View>
       )}
 
-      {/* Botón Flotante para CREAR */}
       <TouchableOpacity style={styles.fab} onPress={() => setModalCrearVisible(true)}>
         <Text style={styles.fabText}>+</Text>
       </TouchableOpacity>
@@ -223,7 +250,6 @@ export default function EventosScreen() {
       {/* --- POP-UP 1 (MODAL): CREAR EVENTO --- */}
       <Modal animationType="slide" transparent={true} visible={modalCrearVisible} onRequestClose={cerrarModalCrear}>
         <View style={styles.modalOverlay}>
-          {/* AQUÍ ESTÁ LA MAGIA DEL TECLADO: KeyboardAvoidingView */}
           <KeyboardAvoidingView 
             behavior={Platform.OS === "ios" ? "padding" : "height"}
             style={{ width: '100%', maxHeight: '90%' }}
@@ -237,7 +263,6 @@ export default function EventosScreen() {
                   <TextInput style={styles.input} value={titulo} onChangeText={setTitulo} placeholder="Ej: Asado del viernes" />
                 </View>
 
-                {/* --- NUEVO SELECTOR DE FECHA Y HORA --- */}
                 <View style={styles.inputGroup}>
                   <Text style={styles.label}>Fecha y Hora *</Text>
                   <View style={styles.datePickerContainer}>
@@ -272,7 +297,7 @@ export default function EventosScreen() {
 
                 <View style={styles.inputGroup}>
                   <Text style={styles.label}>Descripción</Text>
-                  <TextInput style={[styles.input, styles.textArea]} value={descripcion} onChangeText={setDescripcion} multiline placeholder="Lleven algo para tomar..." />
+                  <TextInput style={[styles.input, styles.textArea]} value={descripcion} onChangeText={setDescripcion} multiline placeholder="Lleyen algo para tomar..." />
                 </View>
 
                 <View style={styles.inputGroup}>
@@ -355,7 +380,7 @@ export default function EventosScreen() {
                     <Text style={styles.detalleText}>Este evento aún no tiene invitados.</Text>
                   </View>
                 )}
-                {/* Botón para Invitar Usuarios de la App */}
+
                 <TouchableOpacity 
                   style={{ marginTop: 20, padding: 15, borderRadius: 10, alignItems: "center", backgroundColor: "#007AFF", marginBottom: 5 }} 
                   onPress={() => setModalInvitarVisible(true)}
@@ -376,7 +401,7 @@ export default function EventosScreen() {
         </View>
       </Modal>
 
-          {/* --- POP-UP 3 (MODAL): ELEGIR A QUIÉN INVITAR --- */}
+      {/* --- POP-UP 3 (MODAL): ELEGIR A QUIÊN INVITAR --- */}
       <Modal animationType="slide" transparent={true} visible={modalInvitarVisible} onRequestClose={() => setModalInvitarVisible(false)}>
         <View style={styles.modalOverlay}>
           <View style={[styles.modalContent, { maxHeight: "70%" }]}>
@@ -387,7 +412,6 @@ export default function EventosScreen() {
             ) : (
               <ScrollView>
                 {contactos?.map((contacto: any) => {
-                  // Verificamos si ya está invitado para no mostrarlo o deshabilitarlo
                   const yaEstaInvitado = eventoSeleccionado?.participantes_evento?.some(
                     (p: any) => p.contacto_id === contacto.id
                   );
@@ -441,39 +465,32 @@ const styles = StyleSheet.create({
   emptyContainer: { flex: 1, justifyContent: "center", alignItems: "center" },
   emptyText: { color: "#888", fontSize: 16, fontStyle: "italic" },
   
-  // Tarjetas
   eventoCard: { backgroundColor: "#FFF", padding: 16, borderRadius: 12, marginBottom: 12, elevation: 2, shadowColor: "#000", shadowOffset: { width: 0, height: 1 }, shadowOpacity: 0.1, shadowRadius: 3 },
   eventoTitulo: { fontSize: 18, fontWeight: "bold", color: "#333", marginBottom: 6 },
   eventoDetalle: { fontSize: 14, color: "#666", marginBottom: 4 },
   
-  // Botón flotante
   fab: { position: "absolute", bottom: 20, right: 20, backgroundColor: "#007AFF", width: 60, height: 60, borderRadius: 30, justifyContent: "center", alignItems: "center", elevation: 5, shadowColor: "#000", shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.3, shadowRadius: 3 },
   fabText: { color: "#FFF", fontSize: 30, fontWeight: "bold", marginTop: -2 },
   
-  // Modales compartidos
   modalOverlay: { flex: 1, backgroundColor: "rgba(0,0,0,0.5)", justifyContent: "flex-end" },
   modalContent: { backgroundColor: "#FFF", borderTopLeftRadius: 20, borderTopRightRadius: 20, padding: 20, width: "100%" },
   
-  // Formulario Crear
   modalTitle: { fontSize: 22, fontWeight: "bold", marginBottom: 15, color: "#333" },
   inputGroup: { marginBottom: 15 },
   label: { fontSize: 14, fontWeight: "600", color: "#555", marginBottom: 8 },
   input: { backgroundColor: "#F9F9F9", borderWidth: 1, borderColor: "#DDD", borderRadius: 8, padding: 12, fontSize: 16 },
   textArea: { minHeight: 80, textAlignVertical: "top" },
   
-  // DatePicker Botones
   datePickerContainer: { flexDirection: "row", gap: 10 },
   datePickerButton: { flex: 1, backgroundColor: "#F9F9F9", borderWidth: 1, borderColor: "#DDD", borderRadius: 8, padding: 12, alignItems: "center" },
   datePickerText: { fontSize: 16, color: "#333", fontWeight: "500" },
 
-  // Contactos
   contactosContainer: { flexDirection: "row", flexWrap: "wrap", gap: 10, marginTop: 8 },
   contactoChip: { backgroundColor: "#E0E0E0", paddingHorizontal: 12, paddingVertical: 8, borderRadius: 20 },
   contactoChipSelected: { backgroundColor: "#007AFF", paddingHorizontal: 12, paddingVertical: 8, borderRadius: 20 },
   contactoText: { color: "#333", fontSize: 14 },
   contactoTextSelected: { color: "#FFF", fontWeight: "bold", fontSize: 14 },
   
-  // Botones Crear
   modalActions: { flexDirection: "row", justifyContent: "space-between", marginTop: 20 },
   cancelButton: { flex: 1, padding: 15, borderRadius: 10, alignItems: "center", marginRight: 10, backgroundColor: "#FFE5E5" },
   cancelButtonText: { color: "#D9534F", fontWeight: "bold", fontSize: 16 },
@@ -481,7 +498,6 @@ const styles = StyleSheet.create({
   submitButtonDisabled: { backgroundColor: "#85C895" },
   submitButtonText: { color: "#FFF", fontWeight: "bold", fontSize: 16 },
 
-  // Estilos específicos Pop-up Detalle
   detalleModal: { justifyContent: "center", borderTopLeftRadius: 20, borderTopRightRadius: 20, maxHeight: "90%" }, 
   detalleTitulo: { fontSize: 26, fontWeight: "900", color: "#111", marginBottom: 20, textAlign: "center" },
   detalleInfoGroup: { marginBottom: 16, backgroundColor: "#F9F9F9", padding: 12, borderRadius: 10 },
