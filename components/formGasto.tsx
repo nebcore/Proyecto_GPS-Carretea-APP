@@ -35,7 +35,7 @@ export function FormGasto({
             evento_id: eventoId,
             descripcion: "",
             categoria: "",
-            monto_total: 0,
+            monto_total: undefined as unknown as number,
             fecha: new Date().toISOString(),
             tipo_division: "equitativo",
             gastos_pagadores: [],
