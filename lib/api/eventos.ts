@@ -52,6 +52,15 @@ export const getEventos = async () => {
   return eventosCompletos;
 };
 
+export const invitarUsuarioAlEvento = async (eventoId: string, contactoId: string) => {
+  const { data, error } = await supabase
+    .from("participantes_evento")
+    .insert([{ evento_id: eventoId, contacto_id: contactoId }]);
+
+  if (error) throw error;
+  return data;
+};
+
 // 2. CREAR UN EVENTO CON SUS PARTICIPANTES
 export const createEventoConParticipantes = async (
   titulo: string,

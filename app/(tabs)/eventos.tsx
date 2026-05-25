@@ -10,12 +10,13 @@ import {
   Alert,
   Modal,
   KeyboardAvoidingView,
-  Platform
+  Platform,
+  Share
 } from "react-native";
 import DateTimePicker from "@react-native-community/datetimepicker";
 import { useQuery } from "@tanstack/react-query";
 import { supabase } from "../../lib/supabase";
-import { getEventos, createEventoConParticipantes, deleteEvento } from "../../lib/api/eventos";
+import { getEventos, createEventoConParticipantes, deleteEvento, invitarUsuarioAlEvento } from "../../lib/api/eventos";
 
 const getMisContactos = async () => {
   const { data: { user } } = await supabase.auth.getUser();
@@ -43,6 +44,9 @@ export default function EventosScreen() {
   // Estados para el Pop-up de DETALLE de evento
   const [modalDetalleVisible, setModalDetalleVisible] = useState(false);
   const [eventoSeleccionado, setEventoSeleccionado] = useState<any>(null);
+
+  const [modalInvitarVisible, setModalInvitarVisible] = useState(false);
+  const [invitandoId, setInvitandoId] = useState<string | null>(null);
 
   // Consultas
   const { data: eventos, isLoading: isLoadingEventos, refetch: refetchEventos } = useQuery({
@@ -115,6 +119,25 @@ export default function EventosScreen() {
     setModalDetalleVisible(true);
   };
 
+  const handleInvitarInterno = async (contactoId: string) => {
+    if (!eventoSeleccionado) return;
+    
+    try {
+      setInvitandoId(contactoId);
+      await invitarUsuarioAlEvento(eventoSeleccionado.id, contactoId);
+      
+      Alert.alert("¡Invitado!", "El usuario ha sido agregado a la juntada.");
+      refetchEventos(); // Actualizamos la lista para que aparezca
+      setModalInvitarVisible(false); // Cerramos el modal de invitar
+      setModalDetalleVisible(false); // Opcional: cerramos el detalle para refrescar la vista
+    } catch (error: any) {
+      Alert.alert("Error", "No se pudo invitar al usuario. Quizás ya estaba invitado.");
+      console.error(error);
+    } finally {
+      setInvitandoId(null);
+    }
+  };
+
   const handleEliminarEvento = async (id: string) => {
     Alert.alert(
       "¿Eliminar juntada?",
@@ -138,6 +161,20 @@ export default function EventosScreen() {
         }
       ]
     );
+  };
+  const handleInvitarPorTelefono = async (evento: any) => {
+    try {
+      // Armamos el texto que le llegará a tu amigo
+      const mensaje = `¡Hola! Te invito a mi juntada: "${evento.titulo}".\n📅 Cuándo: ${formatearFecha(evento.fecha_evento)}\n📍 Dónde: ${evento.ubicacion || 'A definir'}.\n¡Avisame si venís!`;
+      
+      // Abrimos el menú nativo del celular
+      await Share.share({
+        message: mensaje,
+      });
+    } catch (error: any) {
+      Alert.alert("Error", "No se pudo abrir la agenda del teléfono.");
+      console.error(error.message);
+    }
   };
 
   // Helper para formatear fecha visualmente
@@ -318,6 +355,13 @@ export default function EventosScreen() {
                     <Text style={styles.detalleText}>Este evento aún no tiene invitados.</Text>
                   </View>
                 )}
+                {/* Botón para Invitar Usuarios de la App */}
+                <TouchableOpacity 
+                  style={{ marginTop: 20, padding: 15, borderRadius: 10, alignItems: "center", backgroundColor: "#007AFF", marginBottom: 5 }} 
+                  onPress={() => setModalInvitarVisible(true)}
+                >
+                  <Text style={{ color: "#FFF", fontWeight: "bold", fontSize: 16 }}>➕ Invitar amigo de la App</Text>
+                </TouchableOpacity>
 
                 <TouchableOpacity style={styles.eliminarButton} onPress={() => handleEliminarEvento(eventoSeleccionado.id)}>
                   <Text style={styles.eliminarButtonText}>🗑️ Eliminar Juntada</Text>
@@ -332,6 +376,61 @@ export default function EventosScreen() {
         </View>
       </Modal>
 
+          {/* --- POP-UP 3 (MODAL): ELEGIR A QUIÉN INVITAR --- */}
+      <Modal animationType="slide" transparent={true} visible={modalInvitarVisible} onRequestClose={() => setModalInvitarVisible(false)}>
+        <View style={styles.modalOverlay}>
+          <View style={[styles.modalContent, { maxHeight: "70%" }]}>
+            <Text style={styles.modalTitle}>¿A quién quieres invitar?</Text>
+            
+            {isLoadingContactos ? (
+              <ActivityIndicator size="large" color="#007AFF" />
+            ) : (
+              <ScrollView>
+                {contactos?.map((contacto: any) => {
+                  // Verificamos si ya está invitado para no mostrarlo o deshabilitarlo
+                  const yaEstaInvitado = eventoSeleccionado?.participantes_evento?.some(
+                    (p: any) => p.contacto_id === contacto.id
+                  );
+
+                  return (
+                    <TouchableOpacity 
+                      key={contacto.id} 
+                      style={{
+                        padding: 15,
+                        backgroundColor: yaEstaInvitado ? "#F0F0F0" : "#F9F9F9",
+                        borderBottomWidth: 1,
+                        borderColor: "#DDD",
+                        flexDirection: "row",
+                        justifyContent: "space-between"
+                      }}
+                      onPress={() => handleInvitarInterno(contacto.id)}
+                      disabled={yaEstaInvitado || invitandoId === contacto.id}
+                    >
+                      <Text style={{ fontSize: 16, color: yaEstaInvitado ? "#999" : "#333" }}>
+                        {contacto.nombre || contacto.email}
+                      </Text>
+                      {yaEstaInvitado ? (
+                        <Text style={{ color: "#999" }}>Ya invitado</Text>
+                      ) : invitandoId === contacto.id ? (
+                        <ActivityIndicator size="small" color="#007AFF" />
+                      ) : (
+                        <Text style={{ color: "#007AFF", fontWeight: "bold" }}>Invitar</Text>
+                      )}
+                    </TouchableOpacity>
+                  );
+                })}
+              </ScrollView>
+            )}
+            
+            <TouchableOpacity 
+              style={[styles.cancelButton, { marginTop: 20 }]} 
+              onPress={() => setModalInvitarVisible(false)}
+            >
+              <Text style={styles.cancelButtonText}>Cancelar</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal> 
     </View>
   );
 }
