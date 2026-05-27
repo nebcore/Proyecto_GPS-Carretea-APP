@@ -1,15 +1,14 @@
 import { router, useLocalSearchParams } from "expo-router";
 import { useEffect, useState } from "react";
 import {
-    ActivityIndicator,
-    ScrollView,
-    Text,
-    TouchableOpacity,
-    View,
+  ActivityIndicator,
+  ScrollView,
+  Text,
+  TouchableOpacity,
+  View,
 } from "react-native";
 
 import { FormGasto } from "../../components/formGasto";
-import { asegurarUsuarioParticipaEnEvento } from "../../lib/api/eventos";
 import { obtenerParticipantesEvento } from "../../lib/api/gastos";
 
 type Participante = {
@@ -34,10 +33,6 @@ export default function NuevoGastoScreen() {
         if (!eventoId) {
           throw new Error("No se recibió el ID del evento.");
         }
-
-        await asegurarUsuarioParticipaEnEvento(String(eventoId)).catch(() => {
-          // Si falla, se intentará cargar igual el formulario.
-        });
 
         const data = await obtenerParticipantesEvento(String(eventoId));
 
