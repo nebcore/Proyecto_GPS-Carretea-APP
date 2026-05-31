@@ -133,8 +133,78 @@ export const getGastosByEvento = async (eventoId: string) => {
     .order("fecha", { ascending: false });
 
   if (error) throw error;
+<<<<<<< Updated upstream
   return data;
 };
+=======
+
+  return true;
+}
+
+//Discutir con el grupo si es necesario Actualizar los gastos
+//Igualmente pondre la funcion para no tener que hacerlo en el futuro
+/*
+export async function actualizarGasto(fastoId: string, data: GastoFormData){
+  const validado = gastoSchema.parse(data);
+
+  const(gastos_pagadores, gastos_consumidores, ...gasto) = validado;
+
+  const(data: gastoActualizado, error: errorGasto) = await supabase
+    .from("gastos")
+    .update({
+      evento_id: gasto.evento_id,
+      descripcion: gasto.descripcion,
+      categoria: gasto.categoria,
+      monto_total: gasto.monto_total,
+      fecha: gasto.fecha || new.Date().toISOString(),
+      tipo_division: gasto.tipo_division
+    }).eq("id", gastoId)
+    .select()
+    .single();
+
+    if (errorGasto) throw errorGasto;
+
+    const{error: errorBorrarPagadores} = await supabase
+    .from("gastos_pagadores")
+    .delete()
+    .eq("gasto_id", gastoId);
+
+    if (errorBorrarPagadores) throw errrorBorrarPagadores;
+
+    const{error: errorBorrarConsumidores} = await supabase
+    .from("gastos_consumidores")
+    .delete()
+    .eq("gasto_id", gastoId);
+
+    if (errorBorrarConsumidores) throw errorBorrarConsumidores;
+
+    const{error: errorInsertarPagadores} = await supabase
+      .from("gastos_pagadores")
+      .insert(gastos_pagadores.map((pagador)=> ({
+        gasto_id: gastoId,
+        contacto_id: pagador.contacto_id,
+        monto_aportado: pagador.monto_aportado,
+        }))
+      );
+    
+    if (errorInsertarPagadores) throw errorInsertarPagadores;
+
+    const{error: errorInsertarConsumidores} = await supabase
+      .from("gastos_consumidores")
+      .insert(gastos_consumidores.map((consumidor)=> ({
+        gasto_id: gastoId,
+        contacto_id: consumidor.contacto_id,
+        parte: consumidor.parte,
+        }))
+      );
+    
+    if (errorInsertarConsumidores) throw errorInsertarConsumidores;
+
+  return gastoActualizado;
+}
+*/
+
+>>>>>>> Stashed changes
 
 /*
 export const getGastosByEvento = async (eventoId: string) => {

@@ -1,16 +1,25 @@
 import { router, useLocalSearchParams } from "expo-router";
 import { useEffect, useState } from "react";
 import {
+<<<<<<< Updated upstream
     ActivityIndicator,
     ScrollView,
     Text,
     TouchableOpacity,
     View,
+=======
+  ActivityIndicator,
+  ScrollView,
+  Text,
+  TouchableOpacity,
+  View
+>>>>>>> Stashed changes
 } from "react-native";
 
 import { FormGasto } from "../../components/formGasto";
 import { asegurarUsuarioParticipaEnEvento } from "../../lib/api/eventos";
 import { obtenerParticipantesEvento } from "../../lib/api/gastos";
+import { supabase } from "../../lib/supabase";
 
 type Participante = {
   contacto_id: string;
@@ -18,7 +27,7 @@ type Participante = {
   rol: string;
 };
 
-export default function NuevoGastoScreen() {
+export default async function NuevoGastoScreen() {
   const { eventoId } = useLocalSearchParams();
 
   const [participantes, setParticipantes] = useState<Participante[]>([]);
@@ -59,6 +68,14 @@ export default function NuevoGastoScreen() {
 
     cargarParticipantes();
   }, [eventoId]);
+
+   const usuarioCreador = await supabase.auth.getUser();
+   
+
+  if (usuarioCreador.data?.user?.id === eventoId) {
+    
+  }
+
 
   if (cargando) {
     return (
