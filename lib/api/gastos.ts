@@ -133,10 +133,6 @@ export const getGastosByEvento = async (eventoId: string) => {
     .order("fecha", { ascending: false });
 
   if (error) throw error;
-<<<<<<< Updated upstream
-  return data;
-};
-=======
 
   return true;
 }
@@ -204,7 +200,6 @@ export async function actualizarGasto(fastoId: string, data: GastoFormData){
 }
 */
 
->>>>>>> Stashed changes
 
 /*
 export const getGastosByEvento = async (eventoId: string) => {
