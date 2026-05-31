@@ -171,20 +171,3 @@ export const deleteContactos = async (ids: string[]) => {
   const { error } = await supabase.from("contactos").delete().in("id", ids);
   if (error) throw error;
 };
-
-export const getContactosParaInvitar = async () => {
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
-  if (!user) return [];
-
-  const { data, error } = await supabase
-    .from("contactos")
-    .select("*")
-    .eq("usuario_id", user.id)
-    .or(`referencia_usuario_id.is.null,referencia_usuario_id.neq.${user.id}`)
-    .order("nombre", { ascending: true });
-
-  if (error) throw error;
-  return data || [];
-};
