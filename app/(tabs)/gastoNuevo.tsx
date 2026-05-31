@@ -23,16 +23,18 @@ import Header from "@/components/ui/Header";
 import {
   crearGasto,
   GastoFormData,
+  GastoFormInput,
   GastoFormValues,
   gastoFormSchema,
   obtenerParticipantesEvento,
 } from "@/lib/api/gastos";
 import { CalculoDivision, TipoDivision } from "@/lib/api/gastos_logic";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 
 export default function GastoNuevoScreen() {
   const { eventoId } = useLocalSearchParams<{ eventoId: string }>();
   const insets = useSafeAreaInsets();
+  const queryClient = useQueryClient();
 
   const [tipoDivision, setTipoDivision] = useState<TipoDivision>("equitativo");
   const [pagadorId, setPagadorId] = useState<string>("");
@@ -52,19 +54,17 @@ export default function GastoNuevoScreen() {
       })),
   });
 
-  const { control, handleSubmit, setValue, watch, formState: { errors } } =
-    useForm<GastoFormValues>({
+  const { control, handleSubmit, setValue, formState: { errors } } =
+    useForm<GastoFormInput, unknown, GastoFormValues>({
       resolver: zodResolver(gastoFormSchema),
       defaultValues: {
         evento_id: eventoId,
         descripcion: "",
-        monto_total: undefined as unknown as number,
+        monto_total: undefined,
         fecha: new Date().toISOString(),
         tipo_division: "equitativo",
       },
     });
-
-  const fechaValue = watch("fecha");
 
   const formatearFecha = (iso?: string) => {
     if (!iso) return "Hoy";
@@ -100,6 +100,12 @@ export default function GastoNuevoScreen() {
       };
 
       await crearGasto(gastoFinal);
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ["gastos-detalle", eventoId] }),
+        queryClient.invalidateQueries({ queryKey: ["gastos", eventoId] }),
+        queryClient.invalidateQueries({ queryKey: ["total-gastos"] }),
+        queryClient.invalidateQueries({ queryKey: ["actividad-reciente"] }),
+      ]);
       router.back();
     } catch (err: any) {
       Alert.alert("Error", err?.message ?? "No se pudo registrar el gasto.");

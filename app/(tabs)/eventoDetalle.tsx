@@ -1,9 +1,10 @@
 import Feather from "@expo/vector-icons/Feather";
-import { useQuery } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { router, useLocalSearchParams } from "expo-router";
 import { useState } from "react";
 import {
   ActivityIndicator,
+  Alert,
   ScrollView,
   StyleSheet,
   Text,
@@ -13,6 +14,7 @@ import {
 
 import { getEvento } from "@/lib/api/eventos";
 import {
+  borrarGasto,
   getGastosConPagador,
   obtenerParticipantesEvento,
 } from "@/lib/api/gastos";
@@ -36,6 +38,7 @@ type Tab = "gastos" | "balances" | "participantes";
 export default function EventoDetalleScreen() {
   const { eventoId } = useLocalSearchParams<{ eventoId: string }>();
   const [tabActivo, setTabActivo] = useState<Tab>("gastos");
+  const queryClient = useQueryClient();
 
   const { data: evento, isLoading: loadingEvento } = useQuery({
     queryKey: ["evento", eventoId],
@@ -57,6 +60,34 @@ export default function EventoDetalleScreen() {
     });
 
   const { balances, deudas } = useBalancesEvento(eventoId);
+
+  const borrarGastoMutation = useMutation({
+    mutationFn: borrarGasto,
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["gastos-detalle", eventoId] });
+      queryClient.invalidateQueries({ queryKey: ["gastos", eventoId] });
+      queryClient.invalidateQueries({ queryKey: ["total-gastos"] });
+      queryClient.invalidateQueries({ queryKey: ["actividad-reciente"] });
+    },
+    onError: (error: any) => {
+      Alert.alert("No se pudo borrar", error?.message ?? "Intenta nuevamente.");
+    },
+  });
+
+  const confirmarBorradoGasto = (gastoId: string, descripcion: string) => {
+    Alert.alert(
+      "Borrar gasto",
+      `¿Quieres borrar "${descripcion}"?`,
+      [
+        { text: "Cancelar", style: "cancel" },
+        {
+          text: "Borrar",
+          style: "destructive",
+          onPress: () => borrarGastoMutation.mutate(gastoId),
+        },
+      ],
+    );
+  };
 
   const montoTotal = gastos.reduce(
     (acc: number, g: any) => acc + (g.monto_total ?? 0),
@@ -174,6 +205,13 @@ export default function EventoDetalleScreen() {
                       <Text style={styles.gastoMonto}>
                         {formatearMonto(g.monto_total)}
                       </Text>
+                      <TouchableOpacity
+                        style={styles.deleteButton}
+                        onPress={() => confirmarBorradoGasto(g.id, g.descripcion)}
+                        disabled={borrarGastoMutation.isPending}
+                      >
+                        <Feather name="trash-2" size={17} color="#FF6B6B" />
+                      </TouchableOpacity>
                     </TouchableOpacity>
                   );
                 })
@@ -405,6 +443,17 @@ const styles = StyleSheet.create({
     color: "#4CAF50",
     fontSize: 15,
     fontWeight: "bold",
+  },
+  deleteButton: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    justifyContent: "center",
+    alignItems: "center",
+    marginLeft: 10,
+    backgroundColor: "rgba(255, 82, 82, 0.2)",
+    borderWidth: 1,
+    borderColor: "rgba(255, 107, 107, 0.35)",
   },
   deudaMonto: { color: "#FF5252" },
   flecha: { color: "rgba(255,255,255,0.4)" },

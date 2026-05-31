@@ -3,24 +3,24 @@ import { router } from "expo-router";
 import { useState } from "react";
 import { Controller, Resolver, useForm } from "react-hook-form";
 import {
-    Alert,
-    Button,
-    Platform,
-    Pressable,
-    ScrollView,
-    Text,
-    TextInput,
-    View,
+  Alert,
+  Button,
+  Platform,
+  Pressable,
+  ScrollView,
+  Text,
+  TextInput,
+  View,
 } from "react-native";
 
 import { zodResolver } from "@hookform/resolvers/zod";
 import DateTimePicker from "@react-native-community/datetimepicker";
 
 import {
-    crearGasto,
-    GastoFormData,
-    gastoFormSchema,
-    GastoFormValues,
+  crearGasto,
+  GastoFormData,
+  gastoFormSchema,
+  GastoFormValues,
 } from "../lib/api/gastos";
 import { CalculoDivision, TipoDivision } from "../lib/api/gastos_logic";
 
@@ -61,6 +61,7 @@ export function FormGasto({ eventoId, participantes }: Props) {
     defaultValues: {
       evento_id: eventoId,
       descripcion: "",
+      categoria: undefined,
       monto_total: undefined as unknown as number,
       fecha: new Date().toISOString(),
       tipo_division: "equitativo",
