@@ -107,3 +107,22 @@ export const deleteEvento = async (eventoId: string) => {
 
   if (error) throw error;
 };
+
+export const getEvento = async (eventoId: string) => {
+  const { data, error } = await supabase
+    .from("eventos")
+    .select(
+      `
+      *,
+      participantes_evento(
+        contacto_id,
+        rol,
+        contactos(id, nombre)
+      )
+    `,
+    )
+    .eq("id", eventoId)
+    .single();
+  if (error) throw error;
+  return data;
+};

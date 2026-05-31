@@ -1,22 +1,22 @@
 "use no memo";
+import Header from "@/components/ui/Header";
 import Feather from "@expo/vector-icons/Feather";
 import DateTimePicker from "@react-native-community/datetimepicker";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useRouter } from "expo-router";
 import React, { useState } from "react";
 import {
-    Alert,
-    KeyboardAvoidingView,
-    Modal,
-    Platform,
-    ScrollView,
-    StyleSheet,
-    Text,
-    TextInput,
-    TouchableOpacity,
-    View,
+  Alert,
+  KeyboardAvoidingView,
+  Modal,
+  Platform,
+  ScrollView,
+  StyleSheet,
+  Text,
+  TextInput,
+  TouchableOpacity,
+  View,
 } from "react-native";
-import { GestureHandlerRootView } from "react-native-gesture-handler";
 
 import { createContactoConGrupos, getContactos } from "@/lib/api/contactos";
 import { createEventoConParticipantes } from "@/lib/api/eventos";
@@ -200,7 +200,8 @@ export default function NuevoEventoScreen() {
   };
 
   return (
-    <GestureHandlerRootView style={styles.root}>
+    <View style={styles.root}>
+      <Header mostrarVolver onVolver={() => router.back()} />
       <KeyboardAvoidingView
         style={styles.container}
         behavior={Platform.OS === "ios" ? "padding" : "height"}
@@ -210,7 +211,7 @@ export default function NuevoEventoScreen() {
             {/* ENCABEZADO */}
             <View style={styles.headerForm}>
               <View style={styles.headerTextContainer}>
-                <Text style={styles.title}>Nueva Juntada</Text>
+                <Text style={styles.title}>Nuevo Evento</Text>
                 <Text style={styles.subtitle}>
                   Parámetros necesarios del evento
                 </Text>
@@ -655,7 +656,7 @@ export default function NuevoEventoScreen() {
           </View>
         </KeyboardAvoidingView>
       </Modal>
-    </GestureHandlerRootView>
+    </View>
   );
 }
 
@@ -664,7 +665,6 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: "transparent",
-    justifyContent: "center",
     padding: 20,
   },
   formCard: {

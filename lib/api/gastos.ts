@@ -4,7 +4,6 @@ import { supabase } from "../supabase";
 export const gastoFormSchema = z.object({
   evento_id: z.string().uuid(),
   descripcion: z.string().min(1, "La descripción es obligatoria"),
-  categoria: z.string().min(1, "La categoría es obligatoria"),
   monto_total: z.coerce
     .number()
     .positive("El monto total debe ser mayor a cero"),
@@ -52,7 +51,6 @@ export async function crearGasto(data: GastoFormData) {
     .insert({
       evento_id: gasto.evento_id,
       descripcion: gasto.descripcion,
-      categoria: gasto.categoria,
       monto_total: gasto.monto_total,
       fecha: gasto.fecha || new Date().toISOString(),
       tipo_division: gasto.tipo_division,
@@ -164,3 +162,49 @@ export const createGasto = async (gasto: {
   return data;
 };
 */
+
+export const getActividadReciente = async (limit = 8) => {
+  const { data, error } = await supabase
+    .from("gastos")
+    .select(`
+      id,
+      descripcion,
+      monto_total,
+      fecha,
+      eventos(titulo),
+      gastos_pagadores(
+        monto_aportado,
+        contactos(nombre)
+      )
+    `)
+    .order("fecha", { ascending: false })
+    .limit(limit);
+  if (error) throw error;
+  return data ?? [];
+};
+
+export const getTotalGastos = async () => {
+  const { data, error } = await supabase
+    .from("gastos")
+    .select("monto_total");
+  if (error) throw error;
+  return (data ?? []).reduce((acc: number, g: any) => acc + (g.monto_total ?? 0), 0);
+};
+
+export const getGastosConPagador = async (eventoId: string) => {
+  const { data, error } = await supabase
+    .from("gastos")
+    .select(
+      `
+      *,
+      gastos_pagadores(
+        monto_aportado,
+        contactos(id, nombre)
+      )
+    `,
+    )
+    .eq("evento_id", eventoId)
+    .order("fecha", { ascending: false });
+  if (error) throw error;
+  return data;
+};

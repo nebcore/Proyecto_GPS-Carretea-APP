@@ -1,3 +1,5 @@
+import GlassCard from "@/components/ui/GlassCard";
+import Header from "@/components/ui/Header";
 import Feather from "@expo/vector-icons/Feather";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { router } from "expo-router";
@@ -14,7 +16,7 @@ import {
   TouchableOpacity,
   View,
 } from "react-native";
-import { GestureHandlerRootView } from "react-native-gesture-handler";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { getContactosParaInvitar } from "@/lib/api/contactos";
 import {
@@ -37,6 +39,7 @@ const formatearFecha = (fechaString: string) => {
 export default function EventosScreen() {
   "use no memo";
   const queryClient = useQueryClient();
+  const insets = useSafeAreaInsets();
 
   const [modalDetalleVisible, setModalDetalleVisible] = useState(false);
   const [eventoSeleccionado, setEventoSeleccionado] = useState<any>(null);
@@ -58,7 +61,7 @@ export default function EventosScreen() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["eventos"] });
       setModalInvitarVisible(false);
-      Alert.alert("¡Invitado!", "Contacto agregado a la juntada.");
+      Alert.alert("¡Invitado!", "Contacto agregado al evento.");
     },
     onError: (error: any) =>
       Alert.alert("Error", error.message || "No se pudo invitar al contacto."),
@@ -69,18 +72,20 @@ export default function EventosScreen() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["eventos"] });
       setModalDetalleVisible(false);
-      Alert.alert("Eliminado", "La juntada fue borrada.");
+      Alert.alert("Eliminado", "El evento fue borrado.");
     },
-    onError: () => Alert.alert("Error", "No se pudo eliminar la juntada."),
+    onError: () => Alert.alert("Error", "No se pudo eliminar el evento."),
   });
 
   const abrirDetalle = (evento: any) => {
-    setEventoSeleccionado(evento);
-    setModalDetalleVisible(true);
+    router.push({
+      pathname: "/(tabs)/eventoDetalle" as any,
+      params: { eventoId: evento.id },
+    });
   };
 
   const confirmarEliminar = () => {
-    Alert.alert("¿Eliminar juntada?", "Esta acción no se puede deshacer.", [
+    Alert.alert("¿Eliminar evento?", "Esta acción no se puede deshacer.", [
       { text: "Cancelar", style: "cancel" },
       {
         text: "Eliminar",
@@ -96,24 +101,28 @@ export default function EventosScreen() {
     );
 
   return (
-    <GestureHandlerRootView style={styles.root}>
+    <View style={styles.root}>
+      <Header />
       <KeyboardAvoidingView
-        style={styles.container}
+        style={styles.flex}
         behavior={Platform.OS === "ios" ? "padding" : "height"}
       >
-        <ScrollView showsVerticalScrollIndicator={false}>
-          <View style={styles.formCard}>
+        <ScrollView
+          contentContainerStyle={styles.container}
+          showsVerticalScrollIndicator={false}
+        >
+          <GlassCard style={styles.formCard}>
             {/* HEADER */}
             <View style={styles.headerRow}>
               <View>
-                <Text style={styles.title}>Mis Juntadas</Text>
+                <Text style={styles.title}>Mis Eventos</Text>
                 <Text style={styles.subtitle}>
                   {eventos.length} evento{eventos.length !== 1 ? "s" : ""}
                 </Text>
               </View>
               <TouchableOpacity
                 style={styles.addBtn}
-                onPress={() => router.push("../(gastos)/nuevoEvento")}
+                onPress={() => router.push("/(tabs)/nuevoEvento")}
               >
                 <Feather name="plus" size={24} color="#FFFFFF" />
               </TouchableOpacity>
@@ -124,7 +133,7 @@ export default function EventosScreen() {
               <ActivityIndicator color="#FFFFFF" style={{ marginTop: 20 }} />
             ) : eventos.length === 0 ? (
               <Text style={styles.emptyText}>
-                Aún no tienes juntadas. ¡Crea la primera!
+                Aún no tienes Eventos. ¡Crea la primera!
               </Text>
             ) : (
               eventos.map((evento: any) => (
@@ -134,30 +143,37 @@ export default function EventosScreen() {
                   onPress={() => abrirDetalle(evento)}
                   activeOpacity={0.7}
                 >
-                  <View style={styles.eventoCardTop}>
-                    <Text style={styles.eventoTitulo}>{evento.titulo}</Text>
-                    <View style={styles.estadoBadge}>
-                      <Text style={styles.estadoText}>{evento.estado}</Text>
-                    </View>
-                  </View>
-                  <Text style={styles.eventoInfo}>
-                    <Feather name="calendar" size={12} />{" "}
-                    {formatearFecha(evento.fecha_evento)}
-                  </Text>
-                  {evento.ubicacion ? (
-                    <Text style={styles.eventoInfo}>
-                      <Feather name="map-pin" size={12} /> {evento.ubicacion}
+                  <View style={styles.eventoAvatar}>
+                    <Text style={styles.eventoAvatarText}>
+                      {evento.titulo.substring(0, 1).toUpperCase()}
                     </Text>
-                  ) : null}
-                  <Text style={styles.eventoParticipantes}>
-                    <Feather name="users" size={12} />{" "}
-                    {evento.participantes_evento?.length ?? 0} participante
-                    {evento.participantes_evento?.length !== 1 ? "s" : ""}
-                  </Text>
+                  </View>
+                  <View style={styles.eventoCardBody}>
+                    <View style={styles.eventoCardTop}>
+                      <Text style={styles.eventoTitulo}>{evento.titulo}</Text>
+                      <View style={styles.estadoBadge}>
+                        <Text style={styles.estadoText}>{evento.estado}</Text>
+                      </View>
+                    </View>
+                    <Text style={styles.eventoInfo}>
+                      <Feather name="calendar" size={12} />{" "}
+                      {formatearFecha(evento.fecha_evento)}
+                    </Text>
+                    {evento.ubicacion ? (
+                      <Text style={styles.eventoInfo}>
+                        <Feather name="map-pin" size={12} /> {evento.ubicacion}
+                      </Text>
+                    ) : null}
+                    <Text style={styles.eventoParticipantes}>
+                      <Feather name="users" size={12} />{" "}
+                      {evento.participantes_evento?.length ?? 0} participante
+                      {evento.participantes_evento?.length !== 1 ? "s" : ""}
+                    </Text>
+                  </View>
                 </TouchableOpacity>
               ))
             )}
-          </View>
+          </GlassCard>
         </ScrollView>
       </KeyboardAvoidingView>
 
@@ -228,7 +244,7 @@ export default function EventosScreen() {
                   onPress={() => {
                     setModalDetalleVisible(false);
                     router.push(
-                      `/(gastos)/gastoNuevo?eventoId=${eventoSeleccionado.id}`,
+                      `/(tabs)/gastoNuevo?eventoId=${eventoSeleccionado.id}`,
                     );
                   }}
                 >
@@ -257,7 +273,7 @@ export default function EventosScreen() {
                   onPress={confirmarEliminar}
                 >
                   <Feather name="trash-2" size={16} color="#FF5555" />
-                  <Text style={styles.deleteBtnText}>Eliminar juntada</Text>
+                  <Text style={styles.deleteBtnText}>Eliminar evento</Text>
                 </TouchableOpacity>
 
                 <TouchableOpacity
@@ -322,19 +338,17 @@ export default function EventosScreen() {
           </View>
         </View>
       </Modal>
-    </GestureHandlerRootView>
+    </View>
   );
 }
 
 const styles = StyleSheet.create({
   root: { flex: 1, backgroundColor: "transparent" },
-  container: { flex: 1, padding: 20 },
+  flex: { flex: 1 },
+  container: { paddingHorizontal: 24, paddingBottom: 24, paddingTop: 8 },
   formCard: {
-    backgroundColor: "rgba(25, 25, 25, 0.5)",
     borderRadius: 30,
     padding: 20,
-    borderWidth: 1,
-    borderColor: "rgba(255,255,255,0.05)",
     marginTop: 20,
     marginBottom: 40,
   },
@@ -361,13 +375,30 @@ const styles = StyleSheet.create({
     fontSize: 14,
   },
   eventoCard: {
-    backgroundColor: "rgba(0,0,0,0.3)",
+    backgroundColor: "rgba(40, 40, 40, 0.6)",
     borderRadius: 16,
-    padding: 16,
+    padding: 15,
     marginBottom: 12,
     borderWidth: 1,
-    borderColor: "rgba(255,255,255,0.08)",
+    borderColor: "rgba(255,255,255,0.05)",
+    flexDirection: "row",
+    alignItems: "center",
   },
+  eventoAvatar: {
+    width: 48,
+    height: 48,
+    borderRadius: 24,
+    backgroundColor: "rgba(255, 255, 255, 0.1)",
+    justifyContent: "center",
+    alignItems: "center",
+    marginRight: 14,
+  },
+  eventoAvatarText: {
+    color: "#FFFFFF",
+    fontSize: 18,
+    fontWeight: "bold",
+  },
+  eventoCardBody: { flex: 1 },
   eventoCardTop: {
     flexDirection: "row",
     justifyContent: "space-between",
