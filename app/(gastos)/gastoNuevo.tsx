@@ -1,24 +1,19 @@
 import { router, useLocalSearchParams } from "expo-router";
 import { useEffect, useState } from "react";
 import {
-<<<<<<< Updated upstream
-    ActivityIndicator,
-    ScrollView,
-    Text,
-    TouchableOpacity,
-    View,
-=======
   ActivityIndicator,
   ScrollView,
   Text,
   TouchableOpacity,
   View
->>>>>>> Stashed changes
 } from "react-native";
 
 import { FormGasto } from "../../components/formGasto";
 import { asegurarUsuarioParticipaEnEvento } from "../../lib/api/eventos";
-import { obtenerParticipantesEvento } from "../../lib/api/gastos";
+import {
+  obtenerParticipantesEvento
+} from "../../lib/api/gastos";
+
 import { supabase } from "../../lib/supabase";
 
 type Participante = {

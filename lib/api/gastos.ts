@@ -134,7 +134,20 @@ export const getGastosByEvento = async (eventoId: string) => {
 
   if (error) throw error;
 
-  return true;
+  return data;
+}
+
+export const borrarGasto = async (gastoId: string) => {
+  const gastoIdValido = z.string().uuid().parse(gastoId);
+  const {data, error} = await supabase
+    .from("gastos")
+    .delete()
+    .select(`*, gastos_pagadores(*), gastos_consumidores(*)`)
+    .eq("id", gastoIdValido)
+    .maybeSingle();
+
+  if (error) throw error;
+  return data;
 }
 
 //Discutir con el grupo si es necesario Actualizar los gastos
