@@ -61,7 +61,6 @@ export function FormGasto({ eventoId, participantes }: Props) {
     defaultValues: {
       evento_id: eventoId,
       descripcion: "",
-      categoria: "",
       monto_total: undefined as unknown as number,
       fecha: new Date().toISOString(),
       tipo_division: "equitativo",
@@ -189,22 +188,6 @@ export function FormGasto({ eventoId, participantes }: Props) {
         )}
       />
       {errors.descripcion && <Text>{errors.descripcion.message}</Text>}
-
-      <Text>Categoría</Text>
-      <Controller
-        control={control}
-        name="categoria"
-        render={({ field: { onChange, value } }) => (
-          <TextInput
-            value={value || ""}
-            onChangeText={onChange}
-            placeholder="Ej: Comida, transporte, entrada"
-            placeholderTextColor="#9CA3AF"
-            style={inputStyle}
-          />
-        )}
-      />
-      {errors.categoria && <Text>{errors.categoria.message}</Text>}
 
       <Text>Monto total</Text>
       <Controller
