@@ -40,6 +40,9 @@ export function FormGasto({ eventoId, participantes }: Props) {
   const [pagadorId, setPagadorId] = useState<string>(
     participantes[0]?.contacto_id || "",
   );
+  const [montosPagadores, setMontosPagadores] = useState<
+    Record<string, number>
+  >({});
   const [montosExactos, setMontosExactos] = useState<Record<string, number>>(
     {},
   );
@@ -167,6 +170,26 @@ export function FormGasto({ eventoId, participantes }: Props) {
         }
       }
 
+      // Validar y construir aportes de pagadores
+      const aportes = Object.values(montosPagadores).map((v) => Number(v) || 0);
+      const sumaAportes = aportes.reduce((s, v) => s + v, 0);
+      if (sumaAportes <= 0) {
+        Alert.alert(
+          "Falta el pagador",
+          "Ingresa al menos un aporte de pagador.",
+        );
+        setGuardando(false);
+        return;
+      }
+      if (data.monto_total && Math.abs(sumaAportes - data.monto_total) > 1) {
+        Alert.alert(
+          "Aportes no coinciden",
+          `La suma de aportes (${sumaAportes}) no coincide con el monto total (${data.monto_total}).`,
+        );
+        setGuardando(false);
+        return;
+      }
+
       const consumidoresCalculados = CalculoDivision({
         monto_total: data.monto_total,
         consumidoresID: consumidoresIds,
@@ -174,15 +197,17 @@ export function FormGasto({ eventoId, participantes }: Props) {
         montosExactos,
       });
 
+      const gastosPagadoresArr = Object.entries(montosPagadores)
+        .map(([contacto_id, monto]) => ({
+          contacto_id,
+          monto_aportado: Number(monto),
+        }))
+        .filter((p) => Number(p.monto_aportado) > 0);
+
       const gastoFinal: GastoFormData = {
         ...data,
         tipo_division: tipoDivision,
-        gastos_pagadores: [
-          {
-            contacto_id: pagadorId,
-            monto_aportado: data.monto_total,
-          },
-        ],
+        gastos_pagadores: gastosPagadoresArr,
         gastos_consumidores: consumidoresCalculados,
       };
 
@@ -341,19 +366,31 @@ export function FormGasto({ eventoId, participantes }: Props) {
         )}
       />
 
-      <Text>Pagador</Text>
-
-      {participantes.map((participante) => (
-        <Button
-          key={participante.contacto_id}
-          title={
-            pagadorId === participante.contacto_id
-              ? `✓ ${participante.nombre}`
-              : participante.nombre
-          }
-          onPress={() => setPagadorId(participante.contacto_id)}
-        />
-      ))}
+      <Text>Aportes (pagadores)</Text>
+      <View style={{ gap: 8 }}>
+        {participantes.map((participante) => (
+          <View
+            key={participante.contacto_id}
+            style={{ flexDirection: "row", alignItems: "center", gap: 8 }}
+          >
+            <Text style={{ flex: 1 }}>{participante.nombre}</Text>
+            <TextInput
+              keyboardType="numeric"
+              placeholder="0"
+              placeholderTextColor="#9CA3AF"
+              onChangeText={(text) => {
+                const limpio = text.replace(/[^0-9]/g, "");
+                setMontosPagadores((prev) => ({
+                  ...prev,
+                  [participante.contacto_id]:
+                    limpio === "" ? 0 : Number(limpio),
+                }));
+              }}
+              style={[inputStyle, { width: 120 }]}
+            />
+          </View>
+        ))}
+      </View>
 
       <Text>Tipo de división</Text>
 

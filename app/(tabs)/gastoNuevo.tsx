@@ -38,6 +38,9 @@ export default function GastoNuevoScreen() {
 
   const [tipoDivision, setTipoDivision] = useState<TipoDivision>("equitativo");
   const [pagadorId, setPagadorId] = useState<string>("");
+  const [montosPagadores, setMontosPagadores] = useState<
+    Record<string, number>
+  >({});
   const [montosExactos, setMontosExactos] = useState<Record<string, number>>(
     {},
   );
@@ -82,8 +85,23 @@ export default function GastoNuevoScreen() {
   };
 
   async function onSubmit(data: GastoFormValues) {
-    if (!pagadorId) {
-      Alert.alert("Falta el pagador", "Selecciona quién pagó el gasto.");
+    // Validar que haya al menos un pagador con aporte
+    const aportes = Object.values(montosPagadores).map((v) => Number(v) || 0);
+    const sumaAportes = aportes.reduce((s, v) => s + v, 0);
+    if (sumaAportes <= 0) {
+      Alert.alert(
+        "Falta el pagador",
+        "Ingresa al menos un aporte de pagador o utiliza el pagador único.",
+      );
+      return;
+    }
+
+    // Validación: suma aportes ≈ monto_total
+    if (data.monto_total && Math.abs(sumaAportes - data.monto_total) > 1) {
+      Alert.alert(
+        "Aportes no coinciden",
+        `La suma de aportes (${sumaAportes}) no coincide con el monto total (${data.monto_total}).`,
+      );
       return;
     }
 
@@ -127,12 +145,17 @@ export default function GastoNuevoScreen() {
         montosExactos,
       });
 
+      const gastosPagadoresArr = Object.entries(montosPagadores)
+        .map(([contacto_id, monto]) => ({
+          contacto_id,
+          monto_aportado: Number(monto),
+        }))
+        .filter((p) => Number(p.monto_aportado) > 0);
+
       const gastoFinal: GastoFormData = {
         ...data,
         tipo_division: tipoDivision,
-        gastos_pagadores: [
-          { contacto_id: pagadorId, monto_aportado: data.monto_total },
-        ],
+        gastos_pagadores: gastosPagadoresArr,
         gastos_consumidores: consumidoresCalculados,
       };
 
@@ -266,29 +289,36 @@ export default function GastoNuevoScreen() {
           )}
         />
 
-        {/* PAGADOR */}
-        <Text style={styles.label}>¿Quién pagó?</Text>
-        <View style={styles.chipsRow}>
-          {participantes.map((p: any) => {
-            const seleccionado = pagadorId === p.contacto_id;
-            return (
-              <TouchableOpacity
-                key={p.contacto_id}
-                style={[styles.chip, seleccionado && styles.chipActivo]}
-                onPress={() => setPagadorId(p.contacto_id)}
-              >
-                <Text
-                  style={[
-                    styles.chipText,
-                    seleccionado && styles.chipTextActivo,
-                  ]}
-                >
-                  {p.nombre}
+        {/* PAGADORES: permite múltiples aportes */}
+        <Text style={styles.label}>Aportes (pagadores)</Text>
+        <GlassCard style={styles.montosCard}>
+          {participantes.map((p: any) => (
+            <View key={p.contacto_id} style={styles.montoPersonaRow}>
+              <View style={styles.avatar}>
+                <Text style={styles.avatarText}>
+                  {p.nombre.substring(0, 1).toUpperCase()}
                 </Text>
-              </TouchableOpacity>
-            );
-          })}
-        </View>
+              </View>
+              <Text style={styles.montoPersonaNombre}>{p.nombre}</Text>
+              <View style={styles.montoPersonaInputWrap}>
+                <Text style={styles.montoPrefix}>$</Text>
+                <TextInput
+                  style={styles.montoPersonaInput}
+                  keyboardType="numeric"
+                  placeholder="0"
+                  placeholderTextColor="rgba(255,255,255,0.3)"
+                  onChangeText={(text) => {
+                    const limpio = text.replace(/[^0-9]/g, "");
+                    setMontosPagadores((prev) => ({
+                      ...prev,
+                      [p.contacto_id]: limpio === "" ? 0 : Number(limpio),
+                    }));
+                  }}
+                />
+              </View>
+            </View>
+          ))}
+        </GlassCard>
 
         {/* TIPO DE DIVISIÓN */}
         <Text style={styles.label}>División</Text>
