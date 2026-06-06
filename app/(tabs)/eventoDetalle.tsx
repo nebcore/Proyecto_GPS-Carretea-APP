@@ -68,9 +68,10 @@ export default function EventoDetalleScreen() {
 
   const participantesPorId = useMemo(() => {
     const mapa = new Map<string, string>();
-    for (const participante of participantes) {
-      const nombre = participante.nombre ?? "Participante";
-      mapa.set(participante.contacto_id, nombre);
+    for (const participante of participantes as any[]) {
+      const nombre =
+        participante["contactos"]?.[0]?.["nombre"] ?? "Participante";
+      mapa.set(participante["contacto_id"], nombre);
     }
     return mapa;
   }, [participantes]);
@@ -393,7 +394,10 @@ export default function EventoDetalleScreen() {
                     (b) => b.contactoId === p.contacto_id,
                   );
                   const monto = balance?.balance ?? 0;
-                  const nombre = p.contactos?.nombre ?? "Participante";
+                  const contactos = p.contactos as
+                    | { nombre?: string }[]
+                    | undefined;
+                  const nombre = contactos?.[0]?.nombre ?? "Participante";
                   return (
                     <View key={p.contacto_id} style={styles.gastoCard}>
                       <View style={styles.avatar}>
