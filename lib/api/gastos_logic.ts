@@ -27,100 +27,121 @@ export function CalculoDivision(params: {
   }
 
   if (tipo_division === "equitativo") {
-    const PartexPersona = monto_total / consumidoresID.length;
+    // trabajar en centavos para evitar errores de redondeo
+    const totalCents = Math.round(monto_total * 100);
+    const n = consumidoresID.length;
+    const base = Math.floor(totalCents / n);
+    let remainder = totalCents - base * n;
 
-    return consumidoresID.map((contacto_id) => ({
-      contacto_id,
-      parte: Number(PartexPersona.toFixed(4)),
-    }));
+    return consumidoresID.map((contacto_id) => {
+      const asignado = base + (remainder > 0 ? 1 : 0);
+      if (remainder > 0) remainder -= 1;
+      return { contacto_id, parte: Number((asignado / 100).toFixed(2)) };
+    });
   }
 
   if (tipo_division === "montos_exactos") {
+    // redondear montos exactos a centavos y ajustar diferencia mínima
+    const totalCents = Math.round(monto_total * 100);
     const consumidores = consumidoresID.map((contacto_id) => ({
       contacto_id,
-      parte: Number(montosExactos[contacto_id] || 0),
+      cents: Math.round((montosExactos[contacto_id] || 0) * 100),
     }));
 
-    const sumaPartes = consumidores.reduce(
-      (total, consumidor) => total + consumidor.parte,
-      0,
-    );
-
-    if (Number(sumaPartes.toFixed(2)) !== Number(monto_total.toFixed(2))) {
+    const sumaCents = consumidores.reduce((s, c) => s + c.cents, 0);
+    if (sumaCents !== totalCents) {
       throw new Error("La suma de las partes no coincide con el monto total");
     }
 
-    return consumidores;
+    return consumidores.map((c) => ({
+      contacto_id: c.contacto_id,
+      parte: Number((c.cents / 100).toFixed(2)),
+    }));
   }
 
   if (tipo_division === "porcentual") {
     // montosExactos contains percentages per contacto_id
-    const consumidores = consumidoresID.map(
-      (contacto_id) =>
-        ({
-          contacto_id,
-          porcentaje: Number(montosExactos[contacto_id] || 0),
-        }) as any,
-    );
+    const consumidores = consumidoresID.map((contacto_id) => ({
+      contacto_id,
+      porcentaje: Number(montosExactos[contacto_id] || 0),
+    }));
 
-    const sumaPct = consumidores.reduce(
-      (t: any, c: any) => t + c.porcentaje,
-      0,
-    );
+    const sumaPct = consumidores.reduce((t, c) => t + c.porcentaje, 0);
     if (Math.round(sumaPct) !== 100) {
       throw new Error("La suma de los porcentajes debe ser 100%");
     }
 
-    // calcular montos y ajustar por redondeo
-    const resultados: CalculoConsumidor[] = consumidores.map((c: any) => ({
-      contacto_id: c.contacto_id,
-      parte: Number(((monto_total * c.porcentaje) / 100).toFixed(4)),
-    }));
+    const totalCents = Math.round(monto_total * 100);
+    // calcular asignaciones en centavos usando la técnica de partes fraccionarias
+    const raw = consumidores.map((c) => {
+      const exact = (totalCents * c.porcentaje) / 100;
+      const floored = Math.floor(exact);
+      return {
+        contacto_id: c.contacto_id,
+        exact,
+        floored,
+        frac: exact - floored,
+      };
+    });
 
-    // ajustar diferencia por redondeo en el último participante
-    const sumaAsignada = resultados.reduce((s, r) => s + r.parte, 0);
-    const diff = Number((monto_total - sumaAsignada).toFixed(4));
-    if (Math.abs(diff) >= 0.0001) {
-      resultados[resultados.length - 1].parte = Number(
-        (resultados[resultados.length - 1].parte + diff).toFixed(4),
-      );
+    let assigned = raw.reduce((s, r) => s + r.floored, 0);
+    let diff = totalCents - assigned; // cuantos centavos faltan
+
+    // ordenar por fracción descendente para distribuir centavos restantes
+    raw.sort((a, b) => b.frac - a.frac);
+    for (let i = 0; i < raw.length && diff > 0; i += 1) {
+      raw[i].floored += 1;
+      diff -= 1;
     }
 
-    return resultados;
+    // devolver en el orden original consumidoresID
+    const asignMap: Record<string, number> = {};
+    raw.forEach((r) => (asignMap[r.contacto_id] = r.floored));
+
+    return consumidoresID.map((contacto_id) => ({
+      contacto_id,
+      parte: Number((asignMap[contacto_id] / 100).toFixed(2)),
+    }));
   }
 
   if (tipo_division === "por_cuotas") {
-    // montosExactos contains integer "partes" per contacto_id
-    const consumidores = consumidoresID.map(
-      (contacto_id) =>
-        ({
-          contacto_id,
-          partes: Number(montosExactos[contacto_id] || 0),
-        }) as any,
-    );
+    const consumidores = consumidoresID.map((contacto_id) => ({
+      contacto_id,
+      partes: Number(montosExactos[contacto_id] || 0),
+    }));
 
-    const totalPartes = consumidores.reduce(
-      (t: any, c: any) => t + c.partes,
-      0,
-    );
+    const totalPartes = consumidores.reduce((t, c) => t + c.partes, 0);
     if (totalPartes <= 0) {
       throw new Error("Debe asignarse al menos una parte en por_cuotas");
     }
 
-    const resultados: CalculoConsumidor[] = consumidores.map((c: any) => ({
-      contacto_id: c.contacto_id,
-      parte: Number(((monto_total * c.partes) / totalPartes).toFixed(4)),
-    }));
+    const totalCents = Math.round(monto_total * 100);
+    const raw = consumidores.map((c) => {
+      const exact = (totalCents * c.partes) / totalPartes;
+      const floored = Math.floor(exact);
+      return {
+        contacto_id: c.contacto_id,
+        exact,
+        floored,
+        frac: exact - floored,
+      };
+    });
 
-    const sumaAsignada = resultados.reduce((s, r) => s + r.parte, 0);
-    const diff = Number((monto_total - sumaAsignada).toFixed(4));
-    if (Math.abs(diff) >= 0.0001) {
-      resultados[resultados.length - 1].parte = Number(
-        (resultados[resultados.length - 1].parte + diff).toFixed(4),
-      );
+    let assigned = raw.reduce((s, r) => s + r.floored, 0);
+    let diff = totalCents - assigned;
+    raw.sort((a, b) => b.frac - a.frac);
+    for (let i = 0; i < raw.length && diff > 0; i += 1) {
+      raw[i].floored += 1;
+      diff -= 1;
     }
 
-    return resultados;
+    const asignMap: Record<string, number> = {};
+    raw.forEach((r) => (asignMap[r.contacto_id] = r.floored));
+
+    return consumidoresID.map((contacto_id) => ({
+      contacto_id,
+      parte: Number((asignMap[contacto_id] / 100).toFixed(2)),
+    }));
   }
 
   throw new Error("Tipo de división no reconocido");

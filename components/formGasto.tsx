@@ -43,6 +43,13 @@ export function FormGasto({ eventoId, participantes }: Props) {
   const [montosPagadores, setMontosPagadores] = useState<
     Record<string, number>
   >({});
+  const [selectedPagadores, setSelectedPagadores] = useState<
+    Record<string, boolean>
+  >(
+    Object.fromEntries(
+      participantes.map((p, i) => [p.contacto_id, i === 0]),
+    ) as Record<string, boolean>,
+  );
   const [selectedConsumers, setSelectedConsumers] = useState<
     Record<string, boolean>
   >({});
@@ -388,11 +395,45 @@ export function FormGasto({ eventoId, participantes }: Props) {
             key={participante.contacto_id}
             style={{ flexDirection: "row", alignItems: "center", gap: 8 }}
           >
+            <Pressable
+              onPress={() =>
+                setSelectedPagadores((prev) => ({
+                  ...prev,
+                  [participante.contacto_id]: !(
+                    prev[participante.contacto_id] ?? false
+                  ),
+                }))
+              }
+              style={{
+                width: 36,
+                height: 36,
+                borderRadius: 6,
+                borderWidth: 1,
+                borderColor: "#D1D5DB",
+                alignItems: "center",
+                justifyContent: "center",
+                backgroundColor: selectedPagadores[participante.contacto_id]
+                  ? "#10B981"
+                  : "transparent",
+              }}
+            >
+              <Text
+                style={{
+                  color: selectedPagadores[participante.contacto_id]
+                    ? "#fff"
+                    : "#000",
+                }}
+              >
+                {selectedPagadores[participante.contacto_id] ? "✓" : "+"}
+              </Text>
+            </Pressable>
+
             <Text style={{ flex: 1 }}>{participante.nombre}</Text>
             <TextInput
               keyboardType="numeric"
               placeholder="0"
               placeholderTextColor="#9CA3AF"
+              editable={selectedPagadores[participante.contacto_id] ?? false}
               onChangeText={(text) => {
                 const limpio = text.replace(/[^0-9]/g, "");
                 setMontosPagadores((prev) => ({
@@ -401,10 +442,34 @@ export function FormGasto({ eventoId, participantes }: Props) {
                     limpio === "" ? 0 : Number(limpio),
                 }));
               }}
-              style={[inputStyle, { width: 120 }]}
+              style={[
+                inputStyle,
+                {
+                  width: 120,
+                  opacity: selectedPagadores[participante.contacto_id]
+                    ? 1
+                    : 0.5,
+                },
+              ]}
             />
           </View>
         ))}
+        <View
+          style={{
+            flexDirection: "row",
+            justifyContent: "flex-end",
+            marginTop: 6,
+          }}
+        >
+          <Text style={{ color: "#6B7280" }}>
+            Total aportes:{" "}
+            {Object.entries(montosPagadores).reduce(
+              (s, [id, v]) =>
+                s + ((selectedPagadores[id] ?? false) ? Number(v || 0) : 0),
+              0,
+            )}
+          </Text>
+        </View>
       </View>
 
       <Text style={{ marginTop: 16 }}>Consumidores</Text>
