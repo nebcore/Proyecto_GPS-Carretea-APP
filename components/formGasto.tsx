@@ -346,19 +346,35 @@ export function FormGasto({ eventoId, participantes }: Props) {
         }}
       />
 
-      {tipoDivision === "montos_exactos" && (
+      <Button
+        title={tipoDivision === "porcentual" ? "✓ Porcentual" : "Porcentual"}
+        onPress={() => {
+          setTipoDivision("porcentual");
+          setValue("tipo_division", "porcentual");
+        }}
+      />
+
+      <Button
+        title={tipoDivision === "por_cuotas" ? "✓ Por cuotas" : "Por cuotas"}
+        onPress={() => {
+          setTipoDivision("por_cuotas");
+          setValue("tipo_division", "por_cuotas");
+        }}
+      />
+
+      {tipoDivision === "montos_exactos" || tipoDivision === "porcentual" || tipoDivision === "por_cuotas" ? (
         <View style={{ gap: 10 }}>
-          <Text>Montos exactos por consumidor</Text>
+          <Text>{tipoDivision === "montos_exactos" ? "Montos exactos por consumidor" : tipoDivision === "porcentual" ? "Porcentaje por consumidor (%)" : "Partes por consumidor"}</Text>
 
           {participantes.map((participante) => (
             <View key={participante.contacto_id}>
               <Text>{participante.nombre}</Text>
               <TextInput
                 keyboardType="numeric"
-                placeholder={`Monto ${participante.nombre}`}
+                placeholder={tipoDivision === "montos_exactos" ? `Monto ${participante.nombre}` : tipoDivision === "porcentual" ? `Pct ${participante.nombre}` : `Partes ${participante.nombre}`}
                 placeholderTextColor="#9CA3AF"
                 onChangeText={(text) => {
-                  const limpio = text.replace(/[^0-9]/g, "");
+                  const limpio = text.replace(/[^0-9\.]/g, "");
 
                   setMontosExactos((prev) => ({
                     ...prev,
@@ -371,7 +387,7 @@ export function FormGasto({ eventoId, participantes }: Props) {
             </View>
           ))}
         </View>
-      )}
+      ) : null}
 
       <Button
         title={guardando ? "Guardando..." : "Guardar gasto"}

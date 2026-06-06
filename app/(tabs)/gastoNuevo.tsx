@@ -272,12 +272,48 @@ export default function GastoNuevoScreen() {
               Montos exactos
             </Text>
           </TouchableOpacity>
+
+          <TouchableOpacity
+            style={[styles.toggleBtn, tipoDivision === "porcentual" && styles.toggleActivo]}
+            onPress={() => {
+              setTipoDivision("porcentual");
+              setValue("tipo_division", "porcentual");
+            }}
+          >
+            <Feather
+              name="percent"
+              size={14}
+              color={tipoDivision === "porcentual" ? "#000000" : "rgba(255,255,255,0.6)"}
+            />
+            <Text style={[styles.toggleText, tipoDivision === "porcentual" && styles.toggleTextActivo]}>
+              Porcentual
+            </Text>
+          </TouchableOpacity>
+
+          <TouchableOpacity
+            style={[styles.toggleBtn, tipoDivision === "por_cuotas" && styles.toggleActivo]}
+            onPress={() => {
+              setTipoDivision("por_cuotas");
+              setValue("tipo_division", "por_cuotas");
+            }}
+          >
+            <Feather
+              name="slash"
+              size={14}
+              color={tipoDivision === "por_cuotas" ? "#000000" : "rgba(255,255,255,0.6)"}
+            />
+            <Text style={[styles.toggleText, tipoDivision === "por_cuotas" && styles.toggleTextActivo]}>
+              Por cuotas
+            </Text>
+          </TouchableOpacity>
         </View>
 
         {/* MONTOS EXACTOS */}
-        {tipoDivision === "montos_exactos" && (
+        {(tipoDivision === "montos_exactos" || tipoDivision === "porcentual" || tipoDivision === "por_cuotas") && (
           <GlassCard style={styles.montosCard}>
-            <Text style={styles.montosCardTitulo}>Monto por persona</Text>
+            <Text style={styles.montosCardTitulo}>
+              {tipoDivision === "montos_exactos" ? "Monto por persona" : tipoDivision === "porcentual" ? "Porcentaje por persona (%)" : "Partes por persona"}
+            </Text>
             {participantes.map((p: any) => (
               <View key={p.contacto_id} style={styles.montoPersonaRow}>
                 <View style={styles.avatar}>
@@ -287,20 +323,38 @@ export default function GastoNuevoScreen() {
                 </View>
                 <Text style={styles.montoPersonaNombre}>{p.nombre}</Text>
                 <View style={styles.montoPersonaInputWrap}>
-                  <Text style={styles.montoPrefix}>$</Text>
-                  <TextInput
-                    style={styles.montoPersonaInput}
-                    keyboardType="numeric"
-                    placeholder="0"
-                    placeholderTextColor="rgba(255,255,255,0.3)"
-                    onChangeText={(text) => {
-                      const limpio = text.replace(/[^0-9]/g, "");
-                      setMontosExactos((prev) => ({
-                        ...prev,
-                        [p.contacto_id]: limpio === "" ? 0 : Number(limpio),
-                      }));
-                    }}
-                  />
+                  {tipoDivision === "porcentual" ? (
+                    <TextInput
+                      style={styles.montoPersonaInput}
+                      keyboardType="numeric"
+                      placeholder="0"
+                      placeholderTextColor="rgba(255,255,255,0.3)"
+                      onChangeText={(text) => {
+                        const limpio = text.replace(/[^0-9\.]/g, "");
+                        setMontosExactos((prev) => ({
+                          ...prev,
+                          [p.contacto_id]: limpio === "" ? 0 : Number(limpio),
+                        }));
+                      }}
+                    />
+                  ) : (
+                    <>
+                      <Text style={styles.montoPrefix}>{tipoDivision === "montos_exactos" ? "$" : ""}</Text>
+                      <TextInput
+                        style={styles.montoPersonaInput}
+                        keyboardType="numeric"
+                        placeholder={tipoDivision === "montos_exactos" ? "0" : "1"}
+                        placeholderTextColor="rgba(255,255,255,0.3)"
+                        onChangeText={(text) => {
+                          const limpio = text.replace(/[^0-9]/g, "");
+                          setMontosExactos((prev) => ({
+                            ...prev,
+                            [p.contacto_id]: limpio === "" ? 0 : Number(limpio),
+                          }));
+                        }}
+                      />
+                    </>
+                  )}
                 </View>
               </View>
             ))}

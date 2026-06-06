@@ -10,7 +10,7 @@ export const gastoFormSchema = z.object({
     .number()
     .positive("El monto total debe ser mayor a cero"),
   fecha: z.string().optional(),
-  tipo_division: z.enum(["equitativo", "montos_exactos"]),
+  tipo_division: z.enum(["equitativo", "montos_exactos", "porcentual", "por_cuotas"]),
 });
 
 export const gastoSchema = gastoFormSchema.extend({
