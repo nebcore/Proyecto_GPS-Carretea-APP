@@ -1,10 +1,11 @@
 import { z } from "zod";
 import { supabase } from "../supabase";
+import { getOrCreateContactoPropio } from "./contactos";
 
 export const gastoFormSchema = z.object({
   evento_id: z.string().uuid(),
   descripcion: z.string().min(1, "La descripción es obligatoria"),
-  categoria: z.string().min(1, "La categoría es obligatoria"),
+  categoria: z.string().optional(),
   monto_total: z.coerce
     .number()
     .positive("El monto total debe ser mayor a cero"),
@@ -40,19 +41,67 @@ export const gastoSchema = gastoFormSchema.extend({
 });
 
 export type GastoFormValues = z.infer<typeof gastoFormSchema>;
+export type GastoFormInput = z.input<typeof gastoFormSchema>;
 export type GastoFormData = z.infer<typeof gastoSchema>;
+
+async function asegurarParticipacionDelCreador(eventoId: string) {
+  const {
+    data: { user },
+    error: authError,
+  } = await supabase.auth.getUser();
+
+  if (authError || !user) {
+    throw new Error("Usuario no autenticado");
+  }
+
+  const contactoPropio = await getOrCreateContactoPropio();
+
+  const { data: participacion, error: errorParticipacion } = await supabase
+    .from("participantes_evento")
+    .select("contacto_id")
+    .eq("evento_id", eventoId)
+    .eq("contacto_id", contactoPropio.id)
+    .maybeSingle();
+
+  if (errorParticipacion) throw errorParticipacion;
+  if (participacion) return;
+
+  const { data: evento, error: errorEvento } = await supabase
+    .from("eventos")
+    .select("creador_id")
+    .eq("id", eventoId)
+    .single();
+
+  if (errorEvento) throw errorEvento;
+
+  if (evento.creador_id !== user.id) {
+    return;
+  }
+
+  const { error: errorInsertarParticipante } = await supabase
+    .from("participantes_evento")
+    .insert({
+      evento_id: eventoId,
+      contacto_id: contactoPropio.id,
+      rol: "creador",
+    });
+
+  if (errorInsertarParticipante?.code === "23505") return;
+  if (errorInsertarParticipante) throw errorInsertarParticipante;
+}
 
 export async function crearGasto(data: GastoFormData) {
   const validado = gastoSchema.parse(data);
 
   const { gastos_pagadores, gastos_consumidores, ...gasto } = validado;
 
+  await asegurarParticipacionDelCreador(gasto.evento_id);
+
   const { data: nuevoGasto, error: errorGasto } = await supabase
     .from("gastos")
     .insert({
       evento_id: gasto.evento_id,
       descripcion: gasto.descripcion,
-      categoria: gasto.categoria,
       monto_total: gasto.monto_total,
       fecha: gasto.fecha || new Date().toISOString(),
       tipo_division: gasto.tipo_division,
@@ -133,8 +182,86 @@ export const getGastosByEvento = async (eventoId: string) => {
     .order("fecha", { ascending: false });
 
   if (error) throw error;
+
   return data;
-};
+}
+
+export const borrarGasto = async (gastoId: string) => {
+  const gastoIdValido = z.string().uuid().parse(gastoId);
+  const {data, error} = await supabase
+    .from("gastos")
+    .delete()
+    .select(`*, gastos_pagadores(*), gastos_consumidores(*)`)
+    .eq("id", gastoIdValido)
+    .maybeSingle();
+
+  if (error) throw error;
+  return data;
+}
+
+//Discutir con el grupo si es necesario Actualizar los gastos
+//Igualmente pondre la funcion para no tener que hacerlo en el futuro
+/*
+export async function actualizarGasto(fastoId: string, data: GastoFormData){
+  const validado = gastoSchema.parse(data);
+
+  const(gastos_pagadores, gastos_consumidores, ...gasto) = validado;
+
+  const(data: gastoActualizado, error: errorGasto) = await supabase
+    .from("gastos")
+    .update({
+      evento_id: gasto.evento_id,
+      descripcion: gasto.descripcion,
+      categoria: gasto.categoria,
+      monto_total: gasto.monto_total,
+      fecha: gasto.fecha || new.Date().toISOString(),
+      tipo_division: gasto.tipo_division
+    }).eq("id", gastoId)
+    .select()
+    .single();
+
+    if (errorGasto) throw errorGasto;
+
+    const{error: errorBorrarPagadores} = await supabase
+    .from("gastos_pagadores")
+    .delete()
+    .eq("gasto_id", gastoId);
+
+    if (errorBorrarPagadores) throw errrorBorrarPagadores;
+
+    const{error: errorBorrarConsumidores} = await supabase
+    .from("gastos_consumidores")
+    .delete()
+    .eq("gasto_id", gastoId);
+
+    if (errorBorrarConsumidores) throw errorBorrarConsumidores;
+
+    const{error: errorInsertarPagadores} = await supabase
+      .from("gastos_pagadores")
+      .insert(gastos_pagadores.map((pagador)=> ({
+        gasto_id: gastoId,
+        contacto_id: pagador.contacto_id,
+        monto_aportado: pagador.monto_aportado,
+        }))
+      );
+    
+    if (errorInsertarPagadores) throw errorInsertarPagadores;
+
+    const{error: errorInsertarConsumidores} = await supabase
+      .from("gastos_consumidores")
+      .insert(gastos_consumidores.map((consumidor)=> ({
+        gasto_id: gastoId,
+        contacto_id: consumidor.contacto_id,
+        parte: consumidor.parte,
+        }))
+      );
+    
+    if (errorInsertarConsumidores) throw errorInsertarConsumidores;
+
+  return gastoActualizado;
+}
+*/
+
 
 /*
 export const getGastosByEvento = async (eventoId: string) => {
@@ -164,3 +291,50 @@ export const createGasto = async (gasto: {
   return data;
 };
 */
+
+export const getActividadReciente = async (limit = 8) => {
+  const { data, error } = await supabase
+    .from("gastos")
+    .select(`
+      id,
+      evento_id,
+      descripcion,
+      monto_total,
+      fecha,
+      eventos(titulo),
+      gastos_pagadores(
+        monto_aportado,
+        contactos(nombre)
+      )
+    `)
+    .order("fecha", { ascending: false })
+    .limit(limit);
+  if (error) throw error;
+  return data ?? [];
+};
+
+export const getTotalGastos = async () => {
+  const { data, error } = await supabase
+    .from("gastos")
+    .select("monto_total");
+  if (error) throw error;
+  return (data ?? []).reduce((acc: number, g: any) => acc + (g.monto_total ?? 0), 0);
+};
+
+export const getGastosConPagador = async (eventoId: string) => {
+  const { data, error } = await supabase
+    .from("gastos")
+    .select(
+      `
+      *,
+      gastos_pagadores(
+        monto_aportado,
+        contactos(id, nombre)
+      )
+    `,
+    )
+    .eq("evento_id", eventoId)
+    .order("fecha", { ascending: false });
+  if (error) throw error;
+  return data;
+};
