@@ -10,7 +10,12 @@ export const gastoFormSchema = z.object({
     .number()
     .positive("El monto total debe ser mayor a cero"),
   fecha: z.string().optional(),
-  tipo_division: z.enum(["equitativo", "montos_exactos", "porcentual", "por_cuotas"]),
+  tipo_division: z.enum([
+    "equitativo",
+    "montos_exactos",
+    "porcentual",
+    "por_cuotas",
+  ]),
 });
 
 export const gastoSchema = gastoFormSchema.extend({
@@ -184,11 +189,11 @@ export const getGastosByEvento = async (eventoId: string) => {
   if (error) throw error;
 
   return data;
-}
+};
 
 export const borrarGasto = async (gastoId: string) => {
   const gastoIdValido = z.string().uuid().parse(gastoId);
-  const {data, error} = await supabase
+  const { data, error } = await supabase
     .from("gastos")
     .delete()
     .select(`*, gastos_pagadores(*), gastos_consumidores(*)`)
@@ -197,7 +202,7 @@ export const borrarGasto = async (gastoId: string) => {
 
   if (error) throw error;
   return data;
-}
+};
 
 //Discutir con el grupo si es necesario Actualizar los gastos
 //Igualmente pondre la funcion para no tener que hacerlo en el futuro
@@ -262,7 +267,6 @@ export async function actualizarGasto(fastoId: string, data: GastoFormData){
 }
 */
 
-
 /*
 export const getGastosByEvento = async (eventoId: string) => {
   const { data, error } = await supabase
@@ -295,7 +299,8 @@ export const createGasto = async (gasto: {
 export const getActividadReciente = async (limit = 8) => {
   const { data, error } = await supabase
     .from("gastos")
-    .select(`
+    .select(
+      `
       id,
       evento_id,
       descripcion,
@@ -306,7 +311,8 @@ export const getActividadReciente = async (limit = 8) => {
         monto_aportado,
         contactos(nombre)
       )
-    `)
+    `,
+    )
     .order("fecha", { ascending: false })
     .limit(limit);
   if (error) throw error;
@@ -314,11 +320,12 @@ export const getActividadReciente = async (limit = 8) => {
 };
 
 export const getTotalGastos = async () => {
-  const { data, error } = await supabase
-    .from("gastos")
-    .select("monto_total");
+  const { data, error } = await supabase.from("gastos").select("monto_total");
   if (error) throw error;
-  return (data ?? []).reduce((acc: number, g: any) => acc + (g.monto_total ?? 0), 0);
+  return (data ?? []).reduce(
+    (acc: number, g: any) => acc + (g.monto_total ?? 0),
+    0,
+  );
 };
 
 export const getGastosConPagador = async (eventoId: string) => {

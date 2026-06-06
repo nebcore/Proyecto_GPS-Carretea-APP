@@ -1,6 +1,6 @@
+import Feather from "@expo/vector-icons/Feather";
 import { zodResolver } from "@hookform/resolvers/zod";
 import DateTimePicker from "@react-native-community/datetimepicker";
-import Feather from "@expo/vector-icons/Feather";
 import { router, useLocalSearchParams } from "expo-router";
 import { useState } from "react";
 import { Controller, useForm } from "react-hook-form";
@@ -24,8 +24,8 @@ import {
   crearGasto,
   GastoFormData,
   GastoFormInput,
-  GastoFormValues,
   gastoFormSchema,
+  GastoFormValues,
   obtenerParticipantesEvento,
 } from "@/lib/api/gastos";
 import { CalculoDivision, TipoDivision } from "@/lib/api/gastos_logic";
@@ -38,7 +38,9 @@ export default function GastoNuevoScreen() {
 
   const [tipoDivision, setTipoDivision] = useState<TipoDivision>("equitativo");
   const [pagadorId, setPagadorId] = useState<string>("");
-  const [montosExactos, setMontosExactos] = useState<Record<string, number>>({});
+  const [montosExactos, setMontosExactos] = useState<Record<string, number>>(
+    {},
+  );
   const [mostrarFecha, setMostrarFecha] = useState(false);
   const [fechaSeleccionada, setFechaSeleccionada] = useState(new Date());
   const [guardando, setGuardando] = useState(false);
@@ -54,17 +56,21 @@ export default function GastoNuevoScreen() {
       })),
   });
 
-  const { control, handleSubmit, setValue, formState: { errors } } =
-    useForm<GastoFormInput, unknown, GastoFormValues>({
-      resolver: zodResolver(gastoFormSchema),
-      defaultValues: {
-        evento_id: eventoId,
-        descripcion: "",
-        monto_total: undefined,
-        fecha: new Date().toISOString(),
-        tipo_division: "equitativo",
-      },
-    });
+  const {
+    control,
+    handleSubmit,
+    setValue,
+    formState: { errors },
+  } = useForm<GastoFormInput, unknown, GastoFormValues>({
+    resolver: zodResolver(gastoFormSchema),
+    defaultValues: {
+      evento_id: eventoId,
+      descripcion: "",
+      monto_total: undefined,
+      fecha: new Date().toISOString(),
+      tipo_division: "equitativo",
+    },
+  });
 
   const formatearFecha = (iso?: string) => {
     if (!iso) return "Hoy";
@@ -95,13 +101,17 @@ export default function GastoNuevoScreen() {
       const gastoFinal: GastoFormData = {
         ...data,
         tipo_division: tipoDivision,
-        gastos_pagadores: [{ contacto_id: pagadorId, monto_aportado: data.monto_total }],
+        gastos_pagadores: [
+          { contacto_id: pagadorId, monto_aportado: data.monto_total },
+        ],
         gastos_consumidores: consumidoresCalculados,
       };
 
       await crearGasto(gastoFinal);
       await Promise.all([
-        queryClient.invalidateQueries({ queryKey: ["gastos-detalle", eventoId] }),
+        queryClient.invalidateQueries({
+          queryKey: ["gastos-detalle", eventoId],
+        }),
         queryClient.invalidateQueries({ queryKey: ["gastos", eventoId] }),
         queryClient.invalidateQueries({ queryKey: ["total-gastos"] }),
         queryClient.invalidateQueries({ queryKey: ["actividad-reciente"] }),
@@ -134,7 +144,10 @@ export default function GastoNuevoScreen() {
       <Header mostrarVolver onVolver={() => router.back()} />
 
       <ScrollView
-        contentContainerStyle={[styles.scroll, { paddingBottom: insets.bottom + 32 }]}
+        contentContainerStyle={[
+          styles.scroll,
+          { paddingBottom: insets.bottom + 32 },
+        ]}
         showsVerticalScrollIndicator={false}
         keyboardShouldPersistTaps="handled"
       >
@@ -166,7 +179,10 @@ export default function GastoNuevoScreen() {
             name="monto_total"
             render={({ field: { onChange, value } }) => (
               <TextInput
-                style={[styles.montoInput, errors.monto_total && styles.inputError]}
+                style={[
+                  styles.montoInput,
+                  errors.monto_total && styles.inputError,
+                ]}
                 value={value ? String(value) : ""}
                 onChangeText={(text) => {
                   const limpio = text.replace(/[^0-9]/g, "");
@@ -193,7 +209,11 @@ export default function GastoNuevoScreen() {
                 onPress={() => setMostrarFecha(true)}
               >
                 <View style={styles.fechaRow}>
-                  <Feather name="calendar" size={16} color="rgba(255,255,255,0.5)" />
+                  <Feather
+                    name="calendar"
+                    size={16}
+                    color="rgba(255,255,255,0.5)"
+                  />
                   <Text style={styles.fechaText}>{formatearFecha(value)}</Text>
                 </View>
               </Pressable>
@@ -228,7 +248,12 @@ export default function GastoNuevoScreen() {
                 style={[styles.chip, seleccionado && styles.chipActivo]}
                 onPress={() => setPagadorId(p.contacto_id)}
               >
-                <Text style={[styles.chipText, seleccionado && styles.chipTextActivo]}>
+                <Text
+                  style={[
+                    styles.chipText,
+                    seleccionado && styles.chipTextActivo,
+                  ]}
+                >
                   {p.nombre}
                 </Text>
               </TouchableOpacity>
@@ -240,7 +265,10 @@ export default function GastoNuevoScreen() {
         <Text style={styles.label}>División</Text>
         <View style={styles.toggleRow}>
           <TouchableOpacity
-            style={[styles.toggleBtn, tipoDivision === "equitativo" && styles.toggleActivo]}
+            style={[
+              styles.toggleBtn,
+              tipoDivision === "equitativo" && styles.toggleActivo,
+            ]}
             onPress={() => {
               setTipoDivision("equitativo");
               setValue("tipo_division", "equitativo");
@@ -249,15 +277,27 @@ export default function GastoNuevoScreen() {
             <Feather
               name="users"
               size={14}
-              color={tipoDivision === "equitativo" ? "#000000" : "rgba(255,255,255,0.6)"}
+              color={
+                tipoDivision === "equitativo"
+                  ? "#000000"
+                  : "rgba(255,255,255,0.6)"
+              }
             />
-            <Text style={[styles.toggleText, tipoDivision === "equitativo" && styles.toggleTextActivo]}>
+            <Text
+              style={[
+                styles.toggleText,
+                tipoDivision === "equitativo" && styles.toggleTextActivo,
+              ]}
+            >
               Equitativo
             </Text>
           </TouchableOpacity>
 
           <TouchableOpacity
-            style={[styles.toggleBtn, tipoDivision === "montos_exactos" && styles.toggleActivo]}
+            style={[
+              styles.toggleBtn,
+              tipoDivision === "montos_exactos" && styles.toggleActivo,
+            ]}
             onPress={() => {
               setTipoDivision("montos_exactos");
               setValue("tipo_division", "montos_exactos");
@@ -266,15 +306,27 @@ export default function GastoNuevoScreen() {
             <Feather
               name="sliders"
               size={14}
-              color={tipoDivision === "montos_exactos" ? "#000000" : "rgba(255,255,255,0.6)"}
+              color={
+                tipoDivision === "montos_exactos"
+                  ? "#000000"
+                  : "rgba(255,255,255,0.6)"
+              }
             />
-            <Text style={[styles.toggleText, tipoDivision === "montos_exactos" && styles.toggleTextActivo]}>
+            <Text
+              style={[
+                styles.toggleText,
+                tipoDivision === "montos_exactos" && styles.toggleTextActivo,
+              ]}
+            >
               Montos exactos
             </Text>
           </TouchableOpacity>
 
           <TouchableOpacity
-            style={[styles.toggleBtn, tipoDivision === "porcentual" && styles.toggleActivo]}
+            style={[
+              styles.toggleBtn,
+              tipoDivision === "porcentual" && styles.toggleActivo,
+            ]}
             onPress={() => {
               setTipoDivision("porcentual");
               setValue("tipo_division", "porcentual");
@@ -283,15 +335,27 @@ export default function GastoNuevoScreen() {
             <Feather
               name="percent"
               size={14}
-              color={tipoDivision === "porcentual" ? "#000000" : "rgba(255,255,255,0.6)"}
+              color={
+                tipoDivision === "porcentual"
+                  ? "#000000"
+                  : "rgba(255,255,255,0.6)"
+              }
             />
-            <Text style={[styles.toggleText, tipoDivision === "porcentual" && styles.toggleTextActivo]}>
+            <Text
+              style={[
+                styles.toggleText,
+                tipoDivision === "porcentual" && styles.toggleTextActivo,
+              ]}
+            >
               Porcentual
             </Text>
           </TouchableOpacity>
 
           <TouchableOpacity
-            style={[styles.toggleBtn, tipoDivision === "por_cuotas" && styles.toggleActivo]}
+            style={[
+              styles.toggleBtn,
+              tipoDivision === "por_cuotas" && styles.toggleActivo,
+            ]}
             onPress={() => {
               setTipoDivision("por_cuotas");
               setValue("tipo_division", "por_cuotas");
@@ -300,19 +364,34 @@ export default function GastoNuevoScreen() {
             <Feather
               name="slash"
               size={14}
-              color={tipoDivision === "por_cuotas" ? "#000000" : "rgba(255,255,255,0.6)"}
+              color={
+                tipoDivision === "por_cuotas"
+                  ? "#000000"
+                  : "rgba(255,255,255,0.6)"
+              }
             />
-            <Text style={[styles.toggleText, tipoDivision === "por_cuotas" && styles.toggleTextActivo]}>
+            <Text
+              style={[
+                styles.toggleText,
+                tipoDivision === "por_cuotas" && styles.toggleTextActivo,
+              ]}
+            >
               Por cuotas
             </Text>
           </TouchableOpacity>
         </View>
 
         {/* MONTOS EXACTOS */}
-        {(tipoDivision === "montos_exactos" || tipoDivision === "porcentual" || tipoDivision === "por_cuotas") && (
+        {(tipoDivision === "montos_exactos" ||
+          tipoDivision === "porcentual" ||
+          tipoDivision === "por_cuotas") && (
           <GlassCard style={styles.montosCard}>
             <Text style={styles.montosCardTitulo}>
-              {tipoDivision === "montos_exactos" ? "Monto por persona" : tipoDivision === "porcentual" ? "Porcentaje por persona (%)" : "Partes por persona"}
+              {tipoDivision === "montos_exactos"
+                ? "Monto por persona"
+                : tipoDivision === "porcentual"
+                  ? "Porcentaje por persona (%)"
+                  : "Partes por persona"}
             </Text>
             {participantes.map((p: any) => (
               <View key={p.contacto_id} style={styles.montoPersonaRow}>
@@ -339,11 +418,15 @@ export default function GastoNuevoScreen() {
                     />
                   ) : (
                     <>
-                      <Text style={styles.montoPrefix}>{tipoDivision === "montos_exactos" ? "$" : ""}</Text>
+                      <Text style={styles.montoPrefix}>
+                        {tipoDivision === "montos_exactos" ? "$" : ""}
+                      </Text>
                       <TextInput
                         style={styles.montoPersonaInput}
                         keyboardType="numeric"
-                        placeholder={tipoDivision === "montos_exactos" ? "0" : "1"}
+                        placeholder={
+                          tipoDivision === "montos_exactos" ? "0" : "1"
+                        }
                         placeholderTextColor="rgba(255,255,255,0.3)"
                         onChangeText={(text) => {
                           const limpio = text.replace(/[^0-9]/g, "");
