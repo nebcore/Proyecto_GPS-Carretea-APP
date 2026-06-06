@@ -2,7 +2,7 @@ import { zodResolver } from "@hookform/resolvers/zod";
 import DateTimePicker from "@react-native-community/datetimepicker";
 import Feather from "@expo/vector-icons/Feather";
 import { router, useLocalSearchParams } from "expo-router";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Controller, useForm } from "react-hook-form";
 import {
   ActivityIndicator,
@@ -32,7 +32,10 @@ import { CalculoDivision, TipoDivision } from "@/lib/api/gastos_logic";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 
 export default function GastoNuevoScreen() {
-  const { eventoId } = useLocalSearchParams<{ eventoId: string }>();
+  const { eventoId } = useLocalSearchParams<{ eventoId?: string | string[] }>();
+  const eventoIdActual = Array.isArray(eventoId)
+    ? eventoId[0] ?? ""
+    : eventoId ?? "";
   const insets = useSafeAreaInsets();
   const queryClient = useQueryClient();
 
@@ -44,9 +47,9 @@ export default function GastoNuevoScreen() {
   const [guardando, setGuardando] = useState(false);
 
   const { data: participantes = [], isLoading } = useQuery({
-    queryKey: ["participantes", eventoId],
-    queryFn: () => obtenerParticipantesEvento(eventoId),
-    enabled: Boolean(eventoId),
+    queryKey: ["participantes", eventoIdActual],
+    queryFn: () => obtenerParticipantesEvento(eventoIdActual),
+    enabled: Boolean(eventoIdActual),
     select: (data) =>
       data.map((item: any) => ({
         contacto_id: item.contacto_id,
@@ -58,13 +61,19 @@ export default function GastoNuevoScreen() {
     useForm<GastoFormInput, unknown, GastoFormValues>({
       resolver: zodResolver(gastoFormSchema),
       defaultValues: {
-        evento_id: eventoId,
+        evento_id: eventoIdActual,
         descripcion: "",
         monto_total: undefined,
         fecha: new Date().toISOString(),
         tipo_division: "equitativo",
       },
     });
+
+  useEffect(() => {
+    if (eventoIdActual) {
+      setValue("evento_id", eventoIdActual);
+    }
+  }, [eventoIdActual, setValue]);
 
   const formatearFecha = (iso?: string) => {
     if (!iso) return "Hoy";
@@ -76,6 +85,14 @@ export default function GastoNuevoScreen() {
   };
 
   async function onSubmit(data: GastoFormValues) {
+    if (!eventoIdActual) {
+      Alert.alert(
+        "Evento no encontrado",
+        "Vuelve al evento e intenta agregar el gasto nuevamente.",
+      );
+      return;
+    }
+
     if (!pagadorId) {
       Alert.alert("Falta el pagador", "Selecciona quién pagó el gasto.");
       return;
@@ -94,6 +111,7 @@ export default function GastoNuevoScreen() {
 
       const gastoFinal: GastoFormData = {
         ...data,
+        evento_id: eventoIdActual,
         tipo_division: tipoDivision,
         gastos_pagadores: [{ contacto_id: pagadorId, monto_aportado: data.monto_total }],
         gastos_consumidores: consumidoresCalculados,
@@ -101,8 +119,8 @@ export default function GastoNuevoScreen() {
 
       await crearGasto(gastoFinal);
       await Promise.all([
-        queryClient.invalidateQueries({ queryKey: ["gastos-detalle", eventoId] }),
-        queryClient.invalidateQueries({ queryKey: ["gastos", eventoId] }),
+        queryClient.invalidateQueries({ queryKey: ["gastos-detalle", eventoIdActual] }),
+        queryClient.invalidateQueries({ queryKey: ["gastos", eventoIdActual] }),
         queryClient.invalidateQueries({ queryKey: ["total-gastos"] }),
         queryClient.invalidateQueries({ queryKey: ["actividad-reciente"] }),
       ]);
