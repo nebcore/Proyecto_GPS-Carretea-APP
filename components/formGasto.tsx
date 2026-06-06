@@ -40,6 +40,19 @@ export function FormGasto({ eventoId, participantes }: Props) {
   const [pagadorId, setPagadorId] = useState<string>(
     participantes[0]?.contacto_id || "",
   );
+  const [montosPagadores, setMontosPagadores] = useState<
+    Record<string, number>
+  >({});
+  const [selectedPagadores, setSelectedPagadores] = useState<
+    Record<string, boolean>
+  >(
+    Object.fromEntries(
+      participantes.map((p, i) => [p.contacto_id, i === 0]),
+    ) as Record<string, boolean>,
+  );
+  const [selectedConsumers, setSelectedConsumers] = useState<
+    Record<string, boolean>
+  >({});
   const [montosExactos, setMontosExactos] = useState<Record<string, number>>(
     {},
   );
@@ -132,9 +145,72 @@ export function FormGasto({ eventoId, participantes }: Props) {
   async function onSubmit(data: GastoFormValues) {
     try {
       setGuardando(true);
-      const consumidoresIds = participantes.map(
-        (participante) => participante.contacto_id,
-      );
+      const consumidoresIdsFromSelection = Object.keys(
+        selectedConsumers,
+      ).filter((k) => selectedConsumers[k]);
+      const consumidoresIds = consumidoresIdsFromSelection.length
+        ? consumidoresIdsFromSelection
+        : participantes.map((participante) => participante.contacto_id);
+
+      if (consumidoresIds.length === 0) {
+        Alert.alert(
+          "Consumidores vacíos",
+          "Selecciona al menos un consumidor.",
+        );
+        setGuardando(false);
+        return;
+      }
+
+      // Validaciones cliente para porcentual y por_cuotas
+      if (tipoDivision === "porcentual") {
+        const totalPct = Object.values(montosExactos).reduce(
+          (s, v) => s + (Number(v) || 0),
+          0,
+        );
+        if (Math.abs(totalPct - 100) > 0.5) {
+          Alert.alert(
+            "Porcentajes incorrectos",
+            `La suma de porcentajes debe ser 100 (actual: ${totalPct}).`,
+          );
+          setGuardando(false);
+          return;
+        }
+      }
+
+      if (tipoDivision === "por_cuotas") {
+        const totalParts = Object.values(montosExactos).reduce(
+          (s, v) => s + (Number(v) || 0),
+          0,
+        );
+        if (totalParts <= 0) {
+          Alert.alert(
+            "Partes inválidas",
+            "Debes asignar al menos una parte entre los participantes.",
+          );
+          setGuardando(false);
+          return;
+        }
+      }
+
+      // Validar y construir aportes de pagadores
+      const aportes = Object.values(montosPagadores).map((v) => Number(v) || 0);
+      const sumaAportes = aportes.reduce((s, v) => s + v, 0);
+      if (sumaAportes <= 0) {
+        Alert.alert(
+          "Falta el pagador",
+          "Ingresa al menos un aporte de pagador.",
+        );
+        setGuardando(false);
+        return;
+      }
+      if (data.monto_total && Math.abs(sumaAportes - data.monto_total) > 1) {
+        Alert.alert(
+          "Aportes no coinciden",
+          `La suma de aportes (${sumaAportes}) no coincide con el monto total (${data.monto_total}).`,
+        );
+        setGuardando(false);
+        return;
+      }
 
       const consumidoresCalculados = CalculoDivision({
         monto_total: data.monto_total,
@@ -143,15 +219,17 @@ export function FormGasto({ eventoId, participantes }: Props) {
         montosExactos,
       });
 
+      const gastosPagadoresArr = Object.entries(montosPagadores)
+        .map(([contacto_id, monto]) => ({
+          contacto_id,
+          monto_aportado: Number(monto),
+        }))
+        .filter((p) => Number(p.monto_aportado) > 0);
+
       const gastoFinal: GastoFormData = {
         ...data,
         tipo_division: tipoDivision,
-        gastos_pagadores: [
-          {
-            contacto_id: pagadorId,
-            monto_aportado: data.monto_total,
-          },
-        ],
+        gastos_pagadores: gastosPagadoresArr,
         gastos_consumidores: consumidoresCalculados,
       };
 
@@ -310,19 +388,125 @@ export function FormGasto({ eventoId, participantes }: Props) {
         )}
       />
 
-      <Text>Pagador</Text>
+      <Text>Aportes (pagadores)</Text>
+      <View style={{ gap: 8 }}>
+        {participantes.map((participante) => (
+          <View
+            key={participante.contacto_id}
+            style={{ flexDirection: "row", alignItems: "center", gap: 8 }}
+          >
+            <Pressable
+              onPress={() =>
+                setSelectedPagadores((prev) => ({
+                  ...prev,
+                  [participante.contacto_id]: !(
+                    prev[participante.contacto_id] ?? false
+                  ),
+                }))
+              }
+              style={{
+                width: 36,
+                height: 36,
+                borderRadius: 6,
+                borderWidth: 1,
+                borderColor: "#D1D5DB",
+                alignItems: "center",
+                justifyContent: "center",
+                backgroundColor: selectedPagadores[participante.contacto_id]
+                  ? "#10B981"
+                  : "transparent",
+              }}
+            >
+              <Text
+                style={{
+                  color: selectedPagadores[participante.contacto_id]
+                    ? "#fff"
+                    : "#000",
+                }}
+              >
+                {selectedPagadores[participante.contacto_id] ? "✓" : "+"}
+              </Text>
+            </Pressable>
 
-      {participantes.map((participante) => (
-        <Button
-          key={participante.contacto_id}
-          title={
-            pagadorId === participante.contacto_id
-              ? `✓ ${participante.nombre}`
-              : participante.nombre
-          }
-          onPress={() => setPagadorId(participante.contacto_id)}
-        />
-      ))}
+            <Text style={{ flex: 1 }}>{participante.nombre}</Text>
+            <TextInput
+              keyboardType="numeric"
+              placeholder="0"
+              placeholderTextColor="#9CA3AF"
+              editable={selectedPagadores[participante.contacto_id] ?? false}
+              onChangeText={(text) => {
+                const limpio = text.replace(/[^0-9]/g, "");
+                setMontosPagadores((prev) => ({
+                  ...prev,
+                  [participante.contacto_id]:
+                    limpio === "" ? 0 : Number(limpio),
+                }));
+              }}
+              style={[
+                inputStyle,
+                {
+                  width: 120,
+                  opacity: selectedPagadores[participante.contacto_id]
+                    ? 1
+                    : 0.5,
+                },
+              ]}
+            />
+          </View>
+        ))}
+        <View
+          style={{
+            flexDirection: "row",
+            justifyContent: "flex-end",
+            marginTop: 6,
+          }}
+        >
+          <Text style={{ color: "#6B7280" }}>
+            Total aportes:{" "}
+            {Object.entries(montosPagadores).reduce(
+              (s, [id, v]) =>
+                s + ((selectedPagadores[id] ?? false) ? Number(v || 0) : 0),
+              0,
+            )}
+          </Text>
+        </View>
+      </View>
+
+      <Text style={{ marginTop: 16 }}>Consumidores</Text>
+      <View
+        style={{ flexDirection: "row", flexWrap: "wrap", gap: 8, marginTop: 8 }}
+      >
+        {participantes.map((participante) => {
+          const seleccionado =
+            selectedConsumers[participante.contacto_id] ?? true;
+          return (
+            <Pressable
+              key={participante.contacto_id}
+              onPress={() =>
+                setSelectedConsumers((prev) => ({
+                  ...prev,
+                  [participante.contacto_id]: !(
+                    prev[participante.contacto_id] ?? true
+                  ),
+                }))
+              }
+              style={{
+                paddingVertical: 8,
+                paddingHorizontal: 12,
+                borderRadius: 20,
+                backgroundColor: seleccionado ? "#FFFFFF" : "rgba(0,0,0,0.08)",
+              }}
+            >
+              <Text style={{ color: seleccionado ? "#000" : "#666" }}>
+                {participante.nombre}
+              </Text>
+            </Pressable>
+          );
+        })}
+      </View>
+      <Text style={{ color: "#9CA3AF", fontSize: 12, marginTop: 8 }}>
+        Si no seleccionas ninguno se usarán todos los participantes
+      </Text>
 
       <Text>Tipo de división</Text>
 
@@ -346,19 +530,49 @@ export function FormGasto({ eventoId, participantes }: Props) {
         }}
       />
 
-      {tipoDivision === "montos_exactos" && (
+      <Button
+        title={tipoDivision === "porcentual" ? "✓ Porcentual" : "Porcentual"}
+        onPress={() => {
+          setTipoDivision("porcentual");
+          setValue("tipo_division", "porcentual");
+        }}
+      />
+
+      <Button
+        title={tipoDivision === "por_cuotas" ? "✓ Por cuotas" : "Por cuotas"}
+        onPress={() => {
+          setTipoDivision("por_cuotas");
+          setValue("tipo_division", "por_cuotas");
+        }}
+      />
+
+      {tipoDivision === "montos_exactos" ||
+      tipoDivision === "porcentual" ||
+      tipoDivision === "por_cuotas" ? (
         <View style={{ gap: 10 }}>
-          <Text>Montos exactos por consumidor</Text>
+          <Text>
+            {tipoDivision === "montos_exactos"
+              ? "Montos exactos por consumidor"
+              : tipoDivision === "porcentual"
+                ? "Porcentaje por consumidor (%)"
+                : "Partes por consumidor"}
+          </Text>
 
           {participantes.map((participante) => (
             <View key={participante.contacto_id}>
               <Text>{participante.nombre}</Text>
               <TextInput
                 keyboardType="numeric"
-                placeholder={`Monto ${participante.nombre}`}
+                placeholder={
+                  tipoDivision === "montos_exactos"
+                    ? `Monto ${participante.nombre}`
+                    : tipoDivision === "porcentual"
+                      ? `Pct ${participante.nombre}`
+                      : `Partes ${participante.nombre}`
+                }
                 placeholderTextColor="#9CA3AF"
                 onChangeText={(text) => {
-                  const limpio = text.replace(/[^0-9]/g, "");
+                  const limpio = text.replace(/[^0-9\.]/g, "");
 
                   setMontosExactos((prev) => ({
                     ...prev,
@@ -371,7 +585,7 @@ export function FormGasto({ eventoId, participantes }: Props) {
             </View>
           ))}
         </View>
-      )}
+      ) : null}
 
       <Button
         title={guardando ? "Guardando..." : "Guardar gasto"}

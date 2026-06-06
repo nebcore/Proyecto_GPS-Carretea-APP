@@ -1,7 +1,12 @@
+import {
+  confirmarPago,
+  obtenerPagosEvento,
+  reportarPago,
+} from "@/lib/api/pagos";
 import Feather from "@expo/vector-icons/Feather";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { router, useLocalSearchParams } from "expo-router";
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import {
   ActivityIndicator,
   Alert,
@@ -12,6 +17,8 @@ import {
   View,
 } from "react-native";
 
+import GlassCard from "@/components/ui/GlassCard";
+import Header from "@/components/ui/Header";
 import { getEvento } from "@/lib/api/eventos";
 import {
   borrarGasto,
@@ -19,8 +26,6 @@ import {
   obtenerParticipantesEvento,
 } from "@/lib/api/gastos";
 import { useBalancesEvento } from "@/lib/realtime/useBalancesEvento";
-import Header from "@/components/ui/Header";
-import GlassCard from "@/components/ui/GlassCard";
 
 const formatearFecha = (fechaString: string) => {
   if (!fechaString) return "";
@@ -61,6 +66,25 @@ export default function EventoDetalleScreen() {
 
   const { balances, deudas } = useBalancesEvento(eventoId);
 
+  const obtenerNombreContacto = (contacto: any, fallback = "Participante") => {
+    if (!contacto) return fallback;
+
+    if (Array.isArray(contacto)) {
+      return contacto[0]?.nombre ?? fallback;
+    }
+
+    return contacto.nombre ?? fallback;
+  };
+
+  const participantesPorId = useMemo(() => {
+    const mapa = new Map<string, string>();
+    for (const participante of participantes as any[]) {
+      const nombre = obtenerNombreContacto(participante["contactos"]);
+      mapa.set(participante["contacto_id"], nombre);
+    }
+    return mapa;
+  }, [participantes]);
+
   const borrarGastoMutation = useMutation({
     mutationFn: borrarGasto,
     onSuccess: () => {
@@ -74,19 +98,52 @@ export default function EventoDetalleScreen() {
     },
   });
 
+  const reportarPagoMutation = useMutation({
+    mutationFn: ({ eventoId, acreedorId, monto }: any) =>
+      reportarPago(eventoId, acreedorId, monto),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["gastos-detalle", eventoId] });
+      queryClient.invalidateQueries({ queryKey: ["gastos", eventoId] });
+      queryClient.invalidateQueries({ queryKey: ["total-gastos"] });
+      queryClient.invalidateQueries({ queryKey: ["actividad-reciente"] });
+      queryClient.invalidateQueries({ queryKey: ["balances", eventoId] });
+      Alert.alert("Pago reportado", "El pago fue reportado correctamente.");
+    },
+    onError: (error: any) => {
+      Alert.alert(
+        "No se pudo reportar",
+        error?.message ?? "Intenta nuevamente.",
+      );
+    },
+  });
+
+  const confirmarPagoMutation = useMutation({
+    mutationFn: (pagoId: string) => confirmarPago(pagoId),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["gastos-detalle", eventoId] });
+      queryClient.invalidateQueries({ queryKey: ["gastos", eventoId] });
+      queryClient.invalidateQueries({ queryKey: ["total-gastos"] });
+      queryClient.invalidateQueries({ queryKey: ["actividad-reciente"] });
+      queryClient.invalidateQueries({ queryKey: ["balances", eventoId] });
+      Alert.alert("Pago confirmado", "El pago ha sido confirmado.");
+    },
+    onError: (error: any) => {
+      Alert.alert(
+        "No se pudo confirmar",
+        error?.message ?? "Intenta nuevamente.",
+      );
+    },
+  });
+
   const confirmarBorradoGasto = (gastoId: string, descripcion: string) => {
-    Alert.alert(
-      "Borrar gasto",
-      `¿Quieres borrar "${descripcion}"?`,
-      [
-        { text: "Cancelar", style: "cancel" },
-        {
-          text: "Borrar",
-          style: "destructive",
-          onPress: () => borrarGastoMutation.mutate(gastoId),
-        },
-      ],
-    );
+    Alert.alert("Borrar gasto", `¿Quieres borrar "${descripcion}"?`, [
+      { text: "Cancelar", style: "cancel" },
+      {
+        text: "Borrar",
+        style: "destructive",
+        onPress: () => borrarGastoMutation.mutate(gastoId),
+      },
+    ]);
   };
 
   const montoTotal = gastos.reduce(
@@ -115,7 +172,11 @@ export default function EventoDetalleScreen() {
                 {evento?.titulo}
               </Text>
               <TouchableOpacity>
-                <Feather name="edit-3" size={16} color="rgba(255,255,255,0.5)" />
+                <Feather
+                  name="edit-3"
+                  size={16}
+                  color="rgba(255,255,255,0.5)"
+                />
               </TouchableOpacity>
             </View>
             {evento?.descripcion ? (
@@ -125,20 +186,26 @@ export default function EventoDetalleScreen() {
             ) : null}
             <View style={styles.infoPills}>
               <View style={styles.pill}>
-                <Feather name="calendar" size={11} color="rgba(255,255,255,0.5)" />
+                <Feather
+                  name="calendar"
+                  size={11}
+                  color="rgba(255,255,255,0.5)"
+                />
                 <Text style={styles.pillText}>
                   {formatearFecha(evento?.fecha_evento)}
                 </Text>
               </View>
               <View style={styles.pill}>
                 <Feather name="users" size={11} color="rgba(255,255,255,0.5)" />
-                <Text style={styles.pillText}>{participantes.length} personas</Text>
+                <Text style={styles.pillText}>
+                  {participantes.length} personas
+                </Text>
               </View>
             </View>
           </View>
           <View style={styles.headerRight}>
             <Text style={styles.totalMonto}>{formatearMonto(montoTotal)}</Text>
-            <Text style={styles.totalLabel}>total</Text>
+            <Text style={styles.totalLabel}>Total gastado</Text>
           </View>
         </GlassCard>
 
@@ -207,7 +274,9 @@ export default function EventoDetalleScreen() {
                       </Text>
                       <TouchableOpacity
                         style={styles.deleteButton}
-                        onPress={() => confirmarBorradoGasto(g.id, g.descripcion)}
+                        onPress={() =>
+                          confirmarBorradoGasto(g.id, g.descripcion)
+                        }
                         disabled={borrarGastoMutation.isPending}
                       >
                         <Feather name="trash-2" size={17} color="#FF6B6B" />
@@ -229,9 +298,9 @@ export default function EventoDetalleScreen() {
                   <View key={i} style={styles.gastoCard}>
                     <View style={styles.cardInfo}>
                       <Text style={styles.cardTitulo}>
-                        {d.deudorId}{" "}
+                        {participantesPorId.get(d.deudorId) ?? d.deudorId}{" "}
                         <Text style={styles.flecha}>→</Text>{" "}
-                        {d.acreedorId}
+                        {participantesPorId.get(d.acreedorId) ?? d.acreedorId}
                       </Text>
                     </View>
                     <Text style={[styles.gastoMonto, styles.deudaMonto]}>
@@ -240,8 +309,75 @@ export default function EventoDetalleScreen() {
                   </View>
                 ))
               )}
-              <TouchableOpacity style={styles.botonSecundario}>
+
+              <TouchableOpacity
+                style={[styles.botonSecundario, { marginTop: 12 }]}
+                onPress={() => {
+                  if (!deudas || deudas.length === 0) {
+                    Alert.alert("Sin deudas", "No hay deudas para reportar.");
+                    return;
+                  }
+
+                  const d = deudas[0];
+                  const acreedorNombre =
+                    participantesPorId.get(d.acreedorId) ?? d.acreedorId;
+                  Alert.alert(
+                    "Reportar pago",
+                    `Reportar pago a ${acreedorNombre} por ${formatearMonto(d.monto)}?`,
+                    [
+                      { text: "Cancelar", style: "cancel" },
+                      {
+                        text: "Reportar",
+                        onPress: () =>
+                          reportarPagoMutation.mutate({
+                            eventoId,
+                            acreedorId: d.acreedorId,
+                            monto: d.monto,
+                          }),
+                      },
+                    ],
+                  );
+                }}
+              >
                 <Text style={styles.botonSecundarioText}>Reportar pago</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[styles.botonSecundario, { marginTop: 12 }]}
+                onPress={async () => {
+                  try {
+                    const pagos: any[] = await obtenerPagosEvento(eventoId);
+                    const reporte = pagos.find((p) => p.estado === "reportado");
+                    if (!reporte) {
+                      Alert.alert(
+                        "No hay reportes",
+                        "No hay pagos reportados para confirmar.",
+                      );
+                      return;
+                    }
+                    const acreedorNombre =
+                      participantesPorId.get(reporte.acreedor_id) ??
+                      reporte.acreedor_id;
+                    Alert.alert(
+                      "Confirmar pago",
+                      `Confirmar pago de ${formatearMonto(reporte.monto)} reportado a ${acreedorNombre}?`,
+                      [
+                        { text: "Cancelar", style: "cancel" },
+                        {
+                          text: "Confirmar",
+                          onPress: () =>
+                            confirmarPagoMutation.mutate(reporte.id),
+                        },
+                      ],
+                    );
+                  } catch (err: any) {
+                    Alert.alert(
+                      "Error",
+                      err?.message ?? "No se pudo consultar pagos.",
+                    );
+                  }
+                }}
+              >
+                <Text style={styles.botonSecundarioText}>Confirmar pago</Text>
               </TouchableOpacity>
             </>
           )}
@@ -259,7 +395,7 @@ export default function EventoDetalleScreen() {
                     (b) => b.contactoId === p.contacto_id,
                   );
                   const monto = balance?.balance ?? 0;
-                  const nombre = p.contactos?.nombre ?? "Participante";
+                  const nombre = obtenerNombreContacto(p.contactos);
                   return (
                     <View key={p.contacto_id} style={styles.gastoCard}>
                       <View style={styles.avatar}>

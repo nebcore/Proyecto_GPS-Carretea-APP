@@ -10,7 +10,12 @@ export const gastoFormSchema = z.object({
     .number()
     .positive("El monto total debe ser mayor a cero"),
   fecha: z.string().optional(),
-  tipo_division: z.enum(["equitativo", "montos_exactos"]),
+  tipo_division: z.enum([
+    "equitativo",
+    "montos_exactos",
+    "porcentual",
+    "por_cuotas",
+  ]),
 });
 
 export const gastoSchema = gastoFormSchema.extend({
@@ -96,6 +101,55 @@ export async function crearGasto(data: GastoFormData) {
   const { gastos_pagadores, gastos_consumidores, ...gasto } = validado;
 
   await asegurarParticipacionDelCreador(gasto.evento_id);
+
+  // Validaciones servidor adicionales
+  const sumaPagadores = (gastos_pagadores || []).reduce(
+    (s, p) => s + Number(p.monto_aportado || 0),
+    0,
+  );
+  if (sumaPagadores <= 0) {
+    throw new Error("La suma de aportes de pagadores debe ser mayor a cero.");
+  }
+  if (gasto.monto_total && Math.abs(sumaPagadores - gasto.monto_total) > 1) {
+    throw new Error(
+      `La suma de aportes (${sumaPagadores}) no coincide con el monto total (${gasto.monto_total}).`,
+    );
+  }
+
+  // Validaciones según tipo_division
+  if (gasto.tipo_division === "porcentual") {
+    const sumaPct = (gastos_consumidores || []).reduce(
+      (s, c) => s + Number(c.parte || 0),
+      0,
+    );
+    if (Math.abs(sumaPct - 100) > 0.5) {
+      throw new Error(
+        `La suma de porcentajes debe ser 100 (actual: ${sumaPct}).`,
+      );
+    }
+  }
+
+  if (gasto.tipo_division === "por_cuotas") {
+    const sumaParts = (gastos_consumidores || []).reduce(
+      (s, c) => s + Number(c.parte || 0),
+      0,
+    );
+    if (sumaParts <= 0) {
+      throw new Error("La suma de partes debe ser mayor a cero.");
+    }
+  }
+
+  if (gasto.tipo_division === "montos_exactos") {
+    const sumaMontos = (gastos_consumidores || []).reduce(
+      (s, c) => s + Number(c.parte || 0),
+      0,
+    );
+    if (gasto.monto_total && Math.abs(sumaMontos - gasto.monto_total) > 1) {
+      throw new Error(
+        `La suma de montos exactos (${sumaMontos}) no coincide con el monto total (${gasto.monto_total}).`,
+      );
+    }
+  }
 
   const { data: nuevoGasto, error: errorGasto } = await supabase
     .from("gastos")
@@ -184,11 +238,11 @@ export const getGastosByEvento = async (eventoId: string) => {
   if (error) throw error;
 
   return data;
-}
+};
 
 export const borrarGasto = async (gastoId: string) => {
   const gastoIdValido = z.string().uuid().parse(gastoId);
-  const {data, error} = await supabase
+  const { data, error } = await supabase
     .from("gastos")
     .delete()
     .select(`*, gastos_pagadores(*), gastos_consumidores(*)`)
@@ -197,7 +251,7 @@ export const borrarGasto = async (gastoId: string) => {
 
   if (error) throw error;
   return data;
-}
+};
 
 //Discutir con el grupo si es necesario Actualizar los gastos
 //Igualmente pondre la funcion para no tener que hacerlo en el futuro
@@ -262,7 +316,6 @@ export async function actualizarGasto(fastoId: string, data: GastoFormData){
 }
 */
 
-
 /*
 export const getGastosByEvento = async (eventoId: string) => {
   const { data, error } = await supabase
@@ -295,7 +348,8 @@ export const createGasto = async (gasto: {
 export const getActividadReciente = async (limit = 8) => {
   const { data, error } = await supabase
     .from("gastos")
-    .select(`
+    .select(
+      `
       id,
       evento_id,
       descripcion,
@@ -306,7 +360,8 @@ export const getActividadReciente = async (limit = 8) => {
         monto_aportado,
         contactos(nombre)
       )
-    `)
+    `,
+    )
     .order("fecha", { ascending: false })
     .limit(limit);
   if (error) throw error;
@@ -314,11 +369,12 @@ export const getActividadReciente = async (limit = 8) => {
 };
 
 export const getTotalGastos = async () => {
-  const { data, error } = await supabase
-    .from("gastos")
-    .select("monto_total");
+  const { data, error } = await supabase.from("gastos").select("monto_total");
   if (error) throw error;
-  return (data ?? []).reduce((acc: number, g: any) => acc + (g.monto_total ?? 0), 0);
+  return (data ?? []).reduce(
+    (acc: number, g: any) => acc + (g.monto_total ?? 0),
+    0,
+  );
 };
 
 export const getGastosConPagador = async (eventoId: string) => {
