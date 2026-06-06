@@ -69,7 +69,7 @@ export default function EventoDetalleScreen() {
   const participantesPorId = useMemo(() => {
     const mapa = new Map<string, string>();
     for (const participante of participantes) {
-      const nombre = participante.contactos?.nombre ?? "Participante";
+      const nombre = participante.nombre ?? "Participante";
       mapa.set(participante.contacto_id, nombre);
     }
     return mapa;
