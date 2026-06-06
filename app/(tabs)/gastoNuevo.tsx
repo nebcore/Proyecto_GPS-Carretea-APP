@@ -87,6 +87,35 @@ export default function GastoNuevoScreen() {
       return;
     }
 
+    // Validaciones cliente para nuevos modos de división
+    if (tipoDivision === "porcentual") {
+      const totalPct = Object.values(montosExactos).reduce(
+        (s, v) => s + (Number(v) || 0),
+        0,
+      );
+      if (Math.abs(totalPct - 100) > 0.5) {
+        Alert.alert(
+          "Porcentajes incorrectos",
+          `La suma de porcentajes debe ser 100 (actual: ${totalPct}).`,
+        );
+        return;
+      }
+    }
+
+    if (tipoDivision === "por_cuotas") {
+      const totalParts = Object.values(montosExactos).reduce(
+        (s, v) => s + (Number(v) || 0),
+        0,
+      );
+      if (totalParts <= 0) {
+        Alert.alert(
+          "Partes inválidas",
+          "Debes asignar al menos una parte entre los participantes.",
+        );
+        return;
+      }
+    }
+
     try {
       setGuardando(true);
 

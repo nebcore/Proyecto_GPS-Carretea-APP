@@ -3,24 +3,24 @@ import { router } from "expo-router";
 import { useState } from "react";
 import { Controller, Resolver, useForm } from "react-hook-form";
 import {
-    Alert,
-    Button,
-    Platform,
-    Pressable,
-    ScrollView,
-    Text,
-    TextInput,
-    View,
+  Alert,
+  Button,
+  Platform,
+  Pressable,
+  ScrollView,
+  Text,
+  TextInput,
+  View,
 } from "react-native";
 
 import { zodResolver } from "@hookform/resolvers/zod";
 import DateTimePicker from "@react-native-community/datetimepicker";
 
 import {
-    crearGasto,
-    GastoFormData,
-    gastoFormSchema,
-    GastoFormValues,
+  crearGasto,
+  GastoFormData,
+  gastoFormSchema,
+  GastoFormValues,
 } from "../lib/api/gastos";
 import { CalculoDivision, TipoDivision } from "../lib/api/gastos_logic";
 
@@ -135,6 +135,37 @@ export function FormGasto({ eventoId, participantes }: Props) {
       const consumidoresIds = participantes.map(
         (participante) => participante.contacto_id,
       );
+
+      // Validaciones cliente para porcentual y por_cuotas
+      if (tipoDivision === "porcentual") {
+        const totalPct = Object.values(montosExactos).reduce(
+          (s, v) => s + (Number(v) || 0),
+          0,
+        );
+        if (Math.abs(totalPct - 100) > 0.5) {
+          Alert.alert(
+            "Porcentajes incorrectos",
+            `La suma de porcentajes debe ser 100 (actual: ${totalPct}).`,
+          );
+          setGuardando(false);
+          return;
+        }
+      }
+
+      if (tipoDivision === "por_cuotas") {
+        const totalParts = Object.values(montosExactos).reduce(
+          (s, v) => s + (Number(v) || 0),
+          0,
+        );
+        if (totalParts <= 0) {
+          Alert.alert(
+            "Partes inválidas",
+            "Debes asignar al menos una parte entre los participantes.",
+          );
+          setGuardando(false);
+          return;
+        }
+      }
 
       const consumidoresCalculados = CalculoDivision({
         monto_total: data.monto_total,
