@@ -2,7 +2,7 @@ import Feather from "@expo/vector-icons/Feather";
 import { zodResolver } from "@hookform/resolvers/zod";
 import DateTimePicker from "@react-native-community/datetimepicker";
 import { router, useLocalSearchParams } from "expo-router";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Controller, useForm } from "react-hook-form";
 import {
   ActivityIndicator,
@@ -33,6 +33,9 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 
 export default function GastoNuevoScreen() {
   const { eventoId } = useLocalSearchParams<{ eventoId: string }>();
+  const eventoIdString = Array.isArray(eventoId)
+    ? eventoId[0]
+    : (eventoId ?? "");
   const insets = useSafeAreaInsets();
   const queryClient = useQueryClient();
 
@@ -52,9 +55,9 @@ export default function GastoNuevoScreen() {
   const [guardando, setGuardando] = useState(false);
 
   const { data: participantes = [], isLoading } = useQuery({
-    queryKey: ["participantes", eventoId],
-    queryFn: () => obtenerParticipantesEvento(eventoId),
-    enabled: Boolean(eventoId),
+    queryKey: ["participantes", eventoIdString],
+    queryFn: () => obtenerParticipantesEvento(eventoIdString),
+    enabled: Boolean(eventoIdString),
     select: (data) =>
       data.map((item: any) => ({
         contacto_id: item.contacto_id,
@@ -70,13 +73,19 @@ export default function GastoNuevoScreen() {
   } = useForm<GastoFormInput, unknown, GastoFormValues>({
     resolver: zodResolver(gastoFormSchema),
     defaultValues: {
-      evento_id: eventoId,
+      evento_id: eventoIdString,
       descripcion: "",
       monto_total: undefined,
       fecha: new Date().toISOString(),
       tipo_division: "equitativo",
     },
   });
+
+  useEffect(() => {
+    if (eventoIdString) {
+      setValue("evento_id", eventoIdString);
+    }
+  }, [eventoIdString, setValue]);
 
   const formatearFecha = (iso?: string) => {
     if (!iso) return "Hoy";
@@ -140,6 +149,14 @@ export default function GastoNuevoScreen() {
     try {
       setGuardando(true);
 
+      if (!eventoIdString) {
+        Alert.alert(
+          "Evento no válido",
+          "No se recibió el evento actual para guardar el gasto.",
+        );
+        return;
+      }
+
       // Consumidores seleccionados: usar selección si existe, sino todos
       const consumidoresIdsFromSelection = Object.keys(
         selectedConsumers,
@@ -171,6 +188,7 @@ export default function GastoNuevoScreen() {
 
       const gastoFinal: GastoFormData = {
         ...data,
+        evento_id: eventoIdString,
         tipo_division: tipoDivision,
         gastos_pagadores: gastosPagadoresArr,
         gastos_consumidores: consumidoresCalculados,
@@ -179,9 +197,9 @@ export default function GastoNuevoScreen() {
       await crearGasto(gastoFinal);
       await Promise.all([
         queryClient.invalidateQueries({
-          queryKey: ["gastos-detalle", eventoId],
+          queryKey: ["gastos-detalle", eventoIdString],
         }),
-        queryClient.invalidateQueries({ queryKey: ["gastos", eventoId] }),
+        queryClient.invalidateQueries({ queryKey: ["gastos", eventoIdString] }),
         queryClient.invalidateQueries({ queryKey: ["total-gastos"] }),
         queryClient.invalidateQueries({ queryKey: ["actividad-reciente"] }),
       ]);

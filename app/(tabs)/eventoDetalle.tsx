@@ -6,7 +6,7 @@ import {
 import Feather from "@expo/vector-icons/Feather";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { router, useLocalSearchParams } from "expo-router";
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import {
   ActivityIndicator,
   Alert,
@@ -65,6 +65,15 @@ export default function EventoDetalleScreen() {
     });
 
   const { balances, deudas } = useBalancesEvento(eventoId);
+
+  const participantesPorId = useMemo(() => {
+    const mapa = new Map<string, string>();
+    for (const participante of participantes) {
+      const nombre = participante.contactos?.nombre ?? "Participante";
+      mapa.set(participante.contacto_id, nombre);
+    }
+    return mapa;
+  }, [participantes]);
 
   const borrarGastoMutation = useMutation({
     mutationFn: borrarGasto,
@@ -186,9 +195,17 @@ export default function EventoDetalleScreen() {
           </View>
           <View style={styles.headerRight}>
             <Text style={styles.totalMonto}>{formatearMonto(montoTotal)}</Text>
-            <Text style={styles.totalLabel}>total</Text>
+            <Text style={styles.totalLabel}>Total gastado</Text>
           </View>
         </GlassCard>
+
+        <TouchableOpacity
+          style={styles.addExpenseButton}
+          onPress={() => router.push(`/(tabs)/gastoNuevo?eventoId=${eventoId}`)}
+        >
+          <Feather name="plus" size={18} color="#000000" />
+          <Text style={styles.addExpenseButtonText}>Agregar gasto</Text>
+        </TouchableOpacity>
 
         {/* TABS */}
         <View style={styles.tabBar}>
@@ -279,8 +296,9 @@ export default function EventoDetalleScreen() {
                   <View key={i} style={styles.gastoCard}>
                     <View style={styles.cardInfo}>
                       <Text style={styles.cardTitulo}>
-                        {d.deudorId} <Text style={styles.flecha}>→</Text>{" "}
-                        {d.acreedorId}
+                        {participantesPorId.get(d.deudorId) ?? d.deudorId}{" "}
+                        <Text style={styles.flecha}>→</Text>{" "}
+                        {participantesPorId.get(d.acreedorId) ?? d.acreedorId}
                       </Text>
                     </View>
                     <Text style={[styles.gastoMonto, styles.deudaMonto]}>
@@ -299,9 +317,11 @@ export default function EventoDetalleScreen() {
                   }
 
                   const d = deudas[0];
+                  const acreedorNombre =
+                    participantesPorId.get(d.acreedorId) ?? d.acreedorId;
                   Alert.alert(
                     "Reportar pago",
-                    `Reportar pago a ${d.acreedorId} por ${formatearMonto(d.monto)}?`,
+                    `Reportar pago a ${acreedorNombre} por ${formatearMonto(d.monto)}?`,
                     [
                       { text: "Cancelar", style: "cancel" },
                       {
@@ -332,9 +352,12 @@ export default function EventoDetalleScreen() {
                       );
                       return;
                     }
+                    const acreedorNombre =
+                      participantesPorId.get(reporte.acreedor_id) ??
+                      reporte.acreedor_id;
                     Alert.alert(
                       "Confirmar pago",
-                      `Confirmar pago de ${formatearMonto(reporte.monto)} reportado a ${reporte.acreedor_id}?`,
+                      `Confirmar pago de ${formatearMonto(reporte.monto)} reportado a ${acreedorNombre}?`,
                       [
                         { text: "Cancelar", style: "cancel" },
                         {
@@ -482,6 +505,21 @@ const styles = StyleSheet.create({
     color: "#AAAAAA",
     fontSize: 12,
     marginTop: 2,
+  },
+  addExpenseButton: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 8,
+    backgroundColor: "#FFFFFF",
+    borderRadius: 16,
+    paddingVertical: 14,
+    marginBottom: 16,
+  },
+  addExpenseButtonText: {
+    color: "#000000",
+    fontSize: 15,
+    fontWeight: "700",
   },
 
   // --- TABS ---
