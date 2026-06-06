@@ -43,6 +43,9 @@ export function FormGasto({ eventoId, participantes }: Props) {
   const [montosPagadores, setMontosPagadores] = useState<
     Record<string, number>
   >({});
+  const [selectedConsumers, setSelectedConsumers] = useState<
+    Record<string, boolean>
+  >({});
   const [montosExactos, setMontosExactos] = useState<Record<string, number>>(
     {},
   );
@@ -135,9 +138,21 @@ export function FormGasto({ eventoId, participantes }: Props) {
   async function onSubmit(data: GastoFormValues) {
     try {
       setGuardando(true);
-      const consumidoresIds = participantes.map(
-        (participante) => participante.contacto_id,
-      );
+      const consumidoresIdsFromSelection = Object.keys(
+        selectedConsumers,
+      ).filter((k) => selectedConsumers[k]);
+      const consumidoresIds = consumidoresIdsFromSelection.length
+        ? consumidoresIdsFromSelection
+        : participantes.map((participante) => participante.contacto_id);
+
+      if (consumidoresIds.length === 0) {
+        Alert.alert(
+          "Consumidores vacíos",
+          "Selecciona al menos un consumidor.",
+        );
+        setGuardando(false);
+        return;
+      }
 
       // Validaciones cliente para porcentual y por_cuotas
       if (tipoDivision === "porcentual") {
@@ -391,6 +406,42 @@ export function FormGasto({ eventoId, participantes }: Props) {
           </View>
         ))}
       </View>
+
+      <Text style={{ marginTop: 16 }}>Consumidores</Text>
+      <View
+        style={{ flexDirection: "row", flexWrap: "wrap", gap: 8, marginTop: 8 }}
+      >
+        {participantes.map((participante) => {
+          const seleccionado =
+            selectedConsumers[participante.contacto_id] ?? true;
+          return (
+            <Pressable
+              key={participante.contacto_id}
+              onPress={() =>
+                setSelectedConsumers((prev) => ({
+                  ...prev,
+                  [participante.contacto_id]: !(
+                    prev[participante.contacto_id] ?? true
+                  ),
+                }))
+              }
+              style={{
+                paddingVertical: 8,
+                paddingHorizontal: 12,
+                borderRadius: 20,
+                backgroundColor: seleccionado ? "#FFFFFF" : "rgba(0,0,0,0.08)",
+              }}
+            >
+              <Text style={{ color: seleccionado ? "#000" : "#666" }}>
+                {participante.nombre}
+              </Text>
+            </Pressable>
+          );
+        })}
+      </View>
+      <Text style={{ color: "#9CA3AF", fontSize: 12, marginTop: 8 }}>
+        Si no seleccionas ninguno se usarán todos los participantes
+      </Text>
 
       <Text>Tipo de división</Text>
 

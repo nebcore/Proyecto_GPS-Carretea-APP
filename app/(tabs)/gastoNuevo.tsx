@@ -41,6 +41,9 @@ export default function GastoNuevoScreen() {
   const [montosPagadores, setMontosPagadores] = useState<
     Record<string, number>
   >({});
+  const [selectedConsumers, setSelectedConsumers] = useState<
+    Record<string, boolean>
+  >({});
   const [montosExactos, setMontosExactos] = useState<Record<string, number>>(
     {},
   );
@@ -137,7 +140,21 @@ export default function GastoNuevoScreen() {
     try {
       setGuardando(true);
 
-      const consumidoresIds = participantes.map((p: any) => p.contacto_id);
+      // Consumidores seleccionados: usar selección si existe, sino todos
+      const consumidoresIdsFromSelection = Object.keys(
+        selectedConsumers,
+      ).filter((k) => selectedConsumers[k]);
+      const consumidoresIds = consumidoresIdsFromSelection.length
+        ? consumidoresIdsFromSelection
+        : participantes.map((p: any) => p.contacto_id);
+
+      if (consumidoresIds.length === 0) {
+        Alert.alert(
+          "Consumidores vacíos",
+          "Selecciona al menos un consumidor.",
+        );
+        return;
+      }
       const consumidoresCalculados = CalculoDivision({
         monto_total: data.monto_total,
         consumidoresID: consumidoresIds,
@@ -319,6 +336,40 @@ export default function GastoNuevoScreen() {
             </View>
           ))}
         </GlassCard>
+
+        {/* CONSUMIDORES */}
+        <Text style={styles.label}>Consumidores</Text>
+        <View style={styles.chipsRow}>
+          {participantes.map((p: any) => {
+            const seleccionado = selectedConsumers[p.contacto_id] ?? true;
+            return (
+              <TouchableOpacity
+                key={p.contacto_id}
+                style={[styles.chip, seleccionado && styles.chipActivo]}
+                onPress={() =>
+                  setSelectedConsumers((prev) => ({
+                    ...prev,
+                    [p.contacto_id]: !(prev[p.contacto_id] ?? true),
+                  }))
+                }
+              >
+                <Text
+                  style={[
+                    styles.chipText,
+                    seleccionado && styles.chipTextActivo,
+                  ]}
+                >
+                  {p.nombre}
+                </Text>
+              </TouchableOpacity>
+            );
+          })}
+        </View>
+        <Text
+          style={{ color: "rgba(255,255,255,0.5)", fontSize: 12, marginTop: 8 }}
+        >
+          Si no seleccionas ninguno se usarán todos los participantes
+        </Text>
 
         {/* TIPO DE DIVISIÓN */}
         <Text style={styles.label}>División</Text>

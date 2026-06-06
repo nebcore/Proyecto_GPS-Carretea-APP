@@ -102,6 +102,55 @@ export async function crearGasto(data: GastoFormData) {
 
   await asegurarParticipacionDelCreador(gasto.evento_id);
 
+  // Validaciones servidor adicionales
+  const sumaPagadores = (gastos_pagadores || []).reduce(
+    (s, p) => s + Number(p.monto_aportado || 0),
+    0,
+  );
+  if (sumaPagadores <= 0) {
+    throw new Error("La suma de aportes de pagadores debe ser mayor a cero.");
+  }
+  if (gasto.monto_total && Math.abs(sumaPagadores - gasto.monto_total) > 1) {
+    throw new Error(
+      `La suma de aportes (${sumaPagadores}) no coincide con el monto total (${gasto.monto_total}).`,
+    );
+  }
+
+  // Validaciones según tipo_division
+  if (gasto.tipo_division === "porcentual") {
+    const sumaPct = (gastos_consumidores || []).reduce(
+      (s, c) => s + Number(c.parte || 0),
+      0,
+    );
+    if (Math.abs(sumaPct - 100) > 0.5) {
+      throw new Error(
+        `La suma de porcentajes debe ser 100 (actual: ${sumaPct}).`,
+      );
+    }
+  }
+
+  if (gasto.tipo_division === "por_cuotas") {
+    const sumaParts = (gastos_consumidores || []).reduce(
+      (s, c) => s + Number(c.parte || 0),
+      0,
+    );
+    if (sumaParts <= 0) {
+      throw new Error("La suma de partes debe ser mayor a cero.");
+    }
+  }
+
+  if (gasto.tipo_division === "montos_exactos") {
+    const sumaMontos = (gastos_consumidores || []).reduce(
+      (s, c) => s + Number(c.parte || 0),
+      0,
+    );
+    if (gasto.monto_total && Math.abs(sumaMontos - gasto.monto_total) > 1) {
+      throw new Error(
+        `La suma de montos exactos (${sumaMontos}) no coincide con el monto total (${gasto.monto_total}).`,
+      );
+    }
+  }
+
   const { data: nuevoGasto, error: errorGasto } = await supabase
     .from("gastos")
     .insert({
