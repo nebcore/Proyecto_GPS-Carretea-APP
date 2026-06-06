@@ -66,11 +66,20 @@ export default function EventoDetalleScreen() {
 
   const { balances, deudas } = useBalancesEvento(eventoId);
 
+  const obtenerNombreContacto = (contacto: any, fallback = "Participante") => {
+    if (!contacto) return fallback;
+
+    if (Array.isArray(contacto)) {
+      return contacto[0]?.nombre ?? fallback;
+    }
+
+    return contacto.nombre ?? fallback;
+  };
+
   const participantesPorId = useMemo(() => {
     const mapa = new Map<string, string>();
     for (const participante of participantes as any[]) {
-      const nombre =
-        participante["contactos"]?.[0]?.["nombre"] ?? "Participante";
+      const nombre = obtenerNombreContacto(participante["contactos"]);
       mapa.set(participante["contacto_id"], nombre);
     }
     return mapa;
@@ -199,14 +208,6 @@ export default function EventoDetalleScreen() {
             <Text style={styles.totalLabel}>Total gastado</Text>
           </View>
         </GlassCard>
-
-        <TouchableOpacity
-          style={styles.addExpenseButton}
-          onPress={() => router.push(`/(tabs)/gastoNuevo?eventoId=${eventoId}`)}
-        >
-          <Feather name="plus" size={18} color="#000000" />
-          <Text style={styles.addExpenseButtonText}>Agregar gasto</Text>
-        </TouchableOpacity>
 
         {/* TABS */}
         <View style={styles.tabBar}>
@@ -394,10 +395,7 @@ export default function EventoDetalleScreen() {
                     (b) => b.contactoId === p.contacto_id,
                   );
                   const monto = balance?.balance ?? 0;
-                  const contactos = p.contactos as
-                    | { nombre?: string }[]
-                    | undefined;
-                  const nombre = contactos?.[0]?.nombre ?? "Participante";
+                  const nombre = obtenerNombreContacto(p.contactos);
                   return (
                     <View key={p.contacto_id} style={styles.gastoCard}>
                       <View style={styles.avatar}>
@@ -509,21 +507,6 @@ const styles = StyleSheet.create({
     color: "#AAAAAA",
     fontSize: 12,
     marginTop: 2,
-  },
-  addExpenseButton: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "center",
-    gap: 8,
-    backgroundColor: "#FFFFFF",
-    borderRadius: 16,
-    paddingVertical: 14,
-    marginBottom: 16,
-  },
-  addExpenseButtonText: {
-    color: "#000000",
-    fontSize: 15,
-    fontWeight: "700",
   },
 
   // --- TABS ---
