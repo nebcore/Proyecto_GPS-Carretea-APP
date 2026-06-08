@@ -3,6 +3,7 @@ import {
   obtenerPagosEvento,
   reportarPago,
 } from "@/lib/api/pagos";
+import { crearEventoCalendar } from '@/services/googleCalendar';
 import Feather from "@expo/vector-icons/Feather";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { router, useLocalSearchParams } from "expo-router";
@@ -10,16 +11,18 @@ import { useMemo, useState } from "react";
 import {
   ActivityIndicator,
   Alert,
+  Modal,
   ScrollView,
   StyleSheet,
   Text,
+  TextInput,
   TouchableOpacity,
   View,
 } from "react-native";
 
 import GlassCard from "@/components/ui/GlassCard";
 import Header from "@/components/ui/Header";
-import { getEvento } from "@/lib/api/eventos";
+import { deleteEvento, getEvento, updateEvento } from "@/lib/api/eventos";
 import {
   borrarGasto,
   getGastosConPagador,
@@ -43,6 +46,10 @@ type Tab = "gastos" | "balances" | "participantes";
 export default function EventoDetalleScreen() {
   const { eventoId } = useLocalSearchParams<{ eventoId: string }>();
   const [tabActivo, setTabActivo] = useState<Tab>("gastos");
+  const [modalEditarVisible, setModalEditarVisible] = useState(false);
+  const [editTitulo, setEditTitulo] = useState('');
+  const [editDescripcion, setEditDescripcion] = useState('');
+  const [editUbicacion, setEditUbicacion] = useState('');
   const queryClient = useQueryClient();
 
   const { data: evento, isLoading: loadingEvento } = useQuery({
@@ -68,11 +75,7 @@ export default function EventoDetalleScreen() {
 
   const obtenerNombreContacto = (contacto: any, fallback = "Participante") => {
     if (!contacto) return fallback;
-
-    if (Array.isArray(contacto)) {
-      return contacto[0]?.nombre ?? fallback;
-    }
-
+    if (Array.isArray(contacto)) return contacto[0]?.nombre ?? fallback;
     return contacto.nombre ?? fallback;
   };
 
@@ -98,6 +101,38 @@ export default function EventoDetalleScreen() {
     },
   });
 
+  const editarEventoMutation = useMutation({
+    mutationFn: (datos: any) => updateEvento(eventoId, datos),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['evento', eventoId] });
+      queryClient.invalidateQueries({ queryKey: ['eventos'] });
+      setModalEditarVisible(false);
+      Alert.alert('¡Listo!', 'Evento actualizado.');
+    },
+    onError: () => Alert.alert('Error', 'No se pudo actualizar el evento.'),
+  });
+
+  const eliminarEventoMutation = useMutation({
+    mutationFn: () => deleteEvento(eventoId),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['eventos'] });
+      router.back();
+      Alert.alert('Eliminado', 'El evento fue borrado.');
+    },
+    onError: () => Alert.alert('Error', 'No se pudo eliminar el evento.'),
+  });
+
+  const confirmarEliminar = () => {
+    Alert.alert('¿Eliminar evento?', 'Esta acción no se puede deshacer.', [
+      { text: 'Cancelar', style: 'cancel' },
+      {
+        text: 'Eliminar',
+        style: 'destructive',
+        onPress: () => eliminarEventoMutation.mutate(),
+      },
+    ]);
+  };
+
   const reportarPagoMutation = useMutation({
     mutationFn: ({ eventoId, acreedorId, monto }: any) =>
       reportarPago(eventoId, acreedorId, monto),
@@ -110,12 +145,28 @@ export default function EventoDetalleScreen() {
       Alert.alert("Pago reportado", "El pago fue reportado correctamente.");
     },
     onError: (error: any) => {
-      Alert.alert(
-        "No se pudo reportar",
-        error?.message ?? "Intenta nuevamente.",
-      );
+      Alert.alert("No se pudo reportar", error?.message ?? "Intenta nuevamente.");
     },
   });
+
+  const agregarACalendar = async () => {
+    try {
+      const accessToken = '';
+
+      const resultado = await crearEventoCalendar(accessToken, {
+        titulo: evento?.titulo ?? 'Evento de prueba',
+        descripcion: evento?.descripcion ?? '',
+        fechaInicio: evento?.fecha_evento,
+        fechaFin: evento?.fecha_evento,
+      });
+
+      console.log('Resultado:', resultado);
+      Alert.alert('¡Listo!', 'Evento agregado a Google Calendar.');
+    } catch (error) {
+      console.log('Error:', error);
+      Alert.alert('Error', 'No se pudo agregar a Google Calendar.');
+    }
+  };
 
   const confirmarPagoMutation = useMutation({
     mutationFn: (pagoId: string) => confirmarPago(pagoId),
@@ -128,10 +179,7 @@ export default function EventoDetalleScreen() {
       Alert.alert("Pago confirmado", "El pago ha sido confirmado.");
     },
     onError: (error: any) => {
-      Alert.alert(
-        "No se pudo confirmar",
-        error?.message ?? "Intenta nuevamente.",
-      );
+      Alert.alert("No se pudo confirmar", error?.message ?? "Intenta nuevamente.");
     },
   });
 
@@ -171,14 +219,8 @@ export default function EventoDetalleScreen() {
               <Text style={styles.eventoTitulo} numberOfLines={1}>
                 {evento?.titulo}
               </Text>
-              <TouchableOpacity>
-                <Feather
-                  name="edit-3"
-                  size={16}
-                  color="rgba(255,255,255,0.5)"
-                />
-              </TouchableOpacity>
             </View>
+
             {evento?.descripcion ? (
               <Text style={styles.eventoDesc} numberOfLines={2}>
                 {evento.descripcion}
@@ -186,11 +228,7 @@ export default function EventoDetalleScreen() {
             ) : null}
             <View style={styles.infoPills}>
               <View style={styles.pill}>
-                <Feather
-                  name="calendar"
-                  size={11}
-                  color="rgba(255,255,255,0.5)"
-                />
+                <Feather name="calendar" size={11} color="rgba(255,255,255,0.5)" />
                 <Text style={styles.pillText}>
                   {formatearFecha(evento?.fecha_evento)}
                 </Text>
@@ -202,11 +240,30 @@ export default function EventoDetalleScreen() {
                 </Text>
               </View>
             </View>
+            <TouchableOpacity style={styles.calendarBtn} onPress={agregarACalendar}>
+              <Feather name="calendar" size={13} color="#FFFFFF" />
+              <Text style={styles.calendarBtnText}>Agregar a Google Calendar</Text>
+            </TouchableOpacity>
           </View>
           <View style={styles.headerRight}>
-            <Text style={styles.totalMonto}>{formatearMonto(montoTotal)}</Text>
-            <Text style={styles.totalLabel}>Total gastado</Text>
-          </View>
+              <View style={styles.iconosRow}>
+                <TouchableOpacity onPress={() => {
+                  setEditTitulo(evento?.titulo ?? '');
+                  setEditDescripcion(evento?.descripcion ?? '');
+                  setEditUbicacion(evento?.ubicacion ?? '');
+                  setModalEditarVisible(true);
+                }}>
+                  <Feather name="edit-3" size={16} color="rgba(255,255,255,0.5)" />
+                </TouchableOpacity>
+                <TouchableOpacity onPress={confirmarEliminar}>
+                  <Feather name="trash-2" size={16} color="rgba(255,82,82,0.7)" />
+                </TouchableOpacity>
+              </View>
+                <View style={{ alignItems: 'flex-end', flex: 1, justifyContent: 'center' }}>
+                  <Text style={styles.totalMonto}>{formatearMonto(montoTotal)}</Text>
+                  <Text style={styles.totalLabel}>Total gastado</Text>
+                </View>
+            </View>
         </GlassCard>
 
         {/* TABS */}
@@ -217,12 +274,7 @@ export default function EventoDetalleScreen() {
               style={[styles.tab, tabActivo === tab && styles.tabActivo]}
               onPress={() => setTabActivo(tab)}
             >
-              <Text
-                style={[
-                  styles.tabText,
-                  tabActivo === tab && styles.tabTextActivo,
-                ]}
-              >
+              <Text style={[styles.tabText, tabActivo === tab && styles.tabTextActivo]}>
                 {tab.charAt(0).toUpperCase() + tab.slice(1)}
               </Text>
             </TouchableOpacity>
@@ -241,13 +293,10 @@ export default function EventoDetalleScreen() {
               {loadingGastos ? (
                 <ActivityIndicator color="#FFFFFF" style={{ marginTop: 20 }} />
               ) : gastos.length === 0 ? (
-                <Text style={styles.emptyText}>
-                  Aún no hay gastos registrados.
-                </Text>
+                <Text style={styles.emptyText}>Aún no hay gastos registrados.</Text>
               ) : (
                 gastos.map((g: any) => {
-                  const pagador =
-                    g.gastos_pagadores?.[0]?.contactos?.nombre ?? "?";
+                  const pagador = g.gastos_pagadores?.[0]?.contactos?.nombre ?? "?";
                   return (
                     <TouchableOpacity key={g.id} style={styles.gastoCard}>
                       <View style={styles.avatar}>
@@ -259,24 +308,14 @@ export default function EventoDetalleScreen() {
                         <Text style={styles.cardTitulo}>{g.descripcion}</Text>
                         <Text style={styles.cardSub}>Pagado por {pagador}</Text>
                         <View style={styles.fechaRow}>
-                          <Feather
-                            name="calendar"
-                            size={11}
-                            color="rgba(255,255,255,0.3)"
-                          />
-                          <Text style={styles.cardFecha}>
-                            {formatearFecha(g.fecha)}
-                          </Text>
+                          <Feather name="calendar" size={11} color="rgba(255,255,255,0.3)" />
+                          <Text style={styles.cardFecha}>{formatearFecha(g.fecha)}</Text>
                         </View>
                       </View>
-                      <Text style={styles.gastoMonto}>
-                        {formatearMonto(g.monto_total)}
-                      </Text>
+                      <Text style={styles.gastoMonto}>{formatearMonto(g.monto_total)}</Text>
                       <TouchableOpacity
                         style={styles.deleteButton}
-                        onPress={() =>
-                          confirmarBorradoGasto(g.id, g.descripcion)
-                        }
+                        onPress={() => confirmarBorradoGasto(g.id, g.descripcion)}
                         disabled={borrarGastoMutation.isPending}
                       >
                         <Feather name="trash-2" size={17} color="#FF6B6B" />
@@ -309,7 +348,6 @@ export default function EventoDetalleScreen() {
                   </View>
                 ))
               )}
-
               <TouchableOpacity
                 style={[styles.botonSecundario, { marginTop: 12 }]}
                 onPress={() => {
@@ -317,10 +355,8 @@ export default function EventoDetalleScreen() {
                     Alert.alert("Sin deudas", "No hay deudas para reportar.");
                     return;
                   }
-
                   const d = deudas[0];
-                  const acreedorNombre =
-                    participantesPorId.get(d.acreedorId) ?? d.acreedorId;
+                  const acreedorNombre = participantesPorId.get(d.acreedorId) ?? d.acreedorId;
                   Alert.alert(
                     "Reportar pago",
                     `Reportar pago a ${acreedorNombre} por ${formatearMonto(d.monto)}?`,
@@ -328,12 +364,7 @@ export default function EventoDetalleScreen() {
                       { text: "Cancelar", style: "cancel" },
                       {
                         text: "Reportar",
-                        onPress: () =>
-                          reportarPagoMutation.mutate({
-                            eventoId,
-                            acreedorId: d.acreedorId,
-                            monto: d.monto,
-                          }),
+                        onPress: () => reportarPagoMutation.mutate({ eventoId, acreedorId: d.acreedorId, monto: d.monto }),
                       },
                     ],
                   );
@@ -348,32 +379,20 @@ export default function EventoDetalleScreen() {
                     const pagos: any[] = await obtenerPagosEvento(eventoId);
                     const reporte = pagos.find((p) => p.estado === "reportado");
                     if (!reporte) {
-                      Alert.alert(
-                        "No hay reportes",
-                        "No hay pagos reportados para confirmar.",
-                      );
+                      Alert.alert("No hay reportes", "No hay pagos reportados para confirmar.");
                       return;
                     }
-                    const acreedorNombre =
-                      participantesPorId.get(reporte.acreedor_id) ??
-                      reporte.acreedor_id;
+                    const acreedorNombre = participantesPorId.get(reporte.acreedor_id) ?? reporte.acreedor_id;
                     Alert.alert(
                       "Confirmar pago",
                       `Confirmar pago de ${formatearMonto(reporte.monto)} reportado a ${acreedorNombre}?`,
                       [
                         { text: "Cancelar", style: "cancel" },
-                        {
-                          text: "Confirmar",
-                          onPress: () =>
-                            confirmarPagoMutation.mutate(reporte.id),
-                        },
+                        { text: "Confirmar", onPress: () => confirmarPagoMutation.mutate(reporte.id) },
                       ],
                     );
                   } catch (err: any) {
-                    Alert.alert(
-                      "Error",
-                      err?.message ?? "No se pudo consultar pagos.",
-                    );
+                    Alert.alert("Error", err?.message ?? "No se pudo consultar pagos.");
                   }
                 }}
               >
@@ -391,9 +410,7 @@ export default function EventoDetalleScreen() {
                 <Text style={styles.emptyText}>Sin participantes.</Text>
               ) : (
                 participantes.map((p: any) => {
-                  const balance = balances.find(
-                    (b) => b.contactoId === p.contacto_id,
-                  );
+                  const balance = balances.find((b) => b.contactoId === p.contacto_id);
                   const monto = balance?.balance ?? 0;
                   const nombre = obtenerNombreContacto(p.contactos);
                   return (
@@ -405,16 +422,9 @@ export default function EventoDetalleScreen() {
                       </View>
                       <View style={styles.cardInfo}>
                         <Text style={styles.cardTitulo}>{nombre}</Text>
-                        <Text style={styles.cardSub}>
-                          {monto >= 0 ? "Recibe" : "Debe"}
-                        </Text>
+                        <Text style={styles.cardSub}>{monto >= 0 ? "Recibe" : "Debe"}</Text>
                       </View>
-                      <Text
-                        style={[
-                          styles.gastoMonto,
-                          monto >= 0 ? styles.positivo : styles.negativo,
-                        ]}
-                      >
+                      <Text style={[styles.gastoMonto, monto >= 0 ? styles.positivo : styles.negativo]}>
                         {monto >= 0 ? "+" : ""}
                         {formatearMonto(monto)}
                       </Text>
@@ -432,14 +442,65 @@ export default function EventoDetalleScreen() {
         <View style={styles.fabWrapper}>
           <TouchableOpacity
             style={styles.mainFab}
-            onPress={() =>
-              router.push(`/(tabs)/gastoNuevo?eventoId=${eventoId}`)
-            }
+            onPress={() => router.push(`/(tabs)/gastoNuevo?eventoId=${eventoId}`)}
           >
             <Feather name="plus" size={28} color="#000000" />
           </TouchableOpacity>
         </View>
       )}
+
+      {/* MODAL EDITAR EVENTO */}
+      <Modal visible={modalEditarVisible} transparent animationType="slide">
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalCard}>
+            <Text style={styles.modalTitle}>Editar evento</Text>
+
+            <TextInput
+              style={styles.input}
+              value={editTitulo}
+              onChangeText={setEditTitulo}
+              placeholder="Título"
+              placeholderTextColor="#666"
+            />
+            <TextInput
+              style={styles.input}
+              value={editDescripcion}
+              onChangeText={setEditDescripcion}
+              placeholder="Descripción"
+              placeholderTextColor="#666"
+            />
+            <TextInput
+              style={styles.input}
+              value={editUbicacion}
+              onChangeText={setEditUbicacion}
+              placeholder="Ubicación"
+              placeholderTextColor="#666"
+            />
+
+            <TouchableOpacity
+              style={styles.actionBtn}
+              onPress={() => editarEventoMutation.mutate({
+                titulo: editTitulo,
+                descripcion: editDescripcion,
+                ubicacion: editUbicacion,
+              })}
+              disabled={editarEventoMutation.isPending}
+            >
+              {editarEventoMutation.isPending
+                ? <ActivityIndicator color="#fff" />
+                : <Text style={styles.actionBtnText}>Guardar cambios</Text>
+              }
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              style={styles.cancelBtn}
+              onPress={() => setModalEditarVisible(false)}
+            >
+              <Text style={styles.cancelBtnText}>Cancelar</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
     </View>
   );
 }
@@ -458,56 +519,20 @@ const styles = StyleSheet.create({
     justifyContent: "space-between",
     minHeight: 110,
   },
-  headerLeft: {
-    flex: 1,
-    paddingRight: 12,
-    justifyContent: "center",
-  },
-  titleRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 8,
-    marginBottom: 4,
-  },
-  eventoTitulo: {
-    color: "#FFFFFF",
-    fontSize: 20,
-    fontWeight: "bold",
-    flex: 1,
-  },
-  eventoDesc: {
-    color: "#AAAAAA",
-    fontSize: 13,
-    marginBottom: 10,
-  },
-  infoPills: {
-    flexDirection: "row",
+  headerLeft: { flex: 1, paddingRight: 12, justifyContent: "center" },
+  titleRow: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", marginBottom: 4 },  iconosRow: {
+    flexDirection: 'row',
     gap: 12,
-    flexWrap: "wrap",
+    alignItems: 'center',
   },
-  pill: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 4,
-  },
-  pillText: {
-    color: "rgba(255,255,255,0.5)",
-    fontSize: 12,
-  },
-  headerRight: {
-    justifyContent: "center",
-    alignItems: "flex-end",
-  },
-  totalMonto: {
-    color: "#FFFFFF",
-    fontSize: 20,
-    fontWeight: "bold",
-  },
-  totalLabel: {
-    color: "#AAAAAA",
-    fontSize: 12,
-    marginTop: 2,
-  },
+  eventoTitulo: { color: "#FFFFFF", fontSize: 20, fontWeight: "bold", flex: 1 },
+  eventoDesc: { color: "#AAAAAA", fontSize: 13, marginBottom: 10 },
+  infoPills: { flexDirection: "row", gap: 12, flexWrap: "wrap" },
+  pill: { flexDirection: "row", alignItems: "center", gap: 4 },
+  pillText: { color: "rgba(255,255,255,0.5)", fontSize: 12 },
+  headerRight: { justifyContent: "space-between", alignItems: "flex-end" },
+  totalMonto: { color: "#FFFFFF", fontSize: 20, fontWeight: "bold" },
+  totalLabel: { color: "#AAAAAA", fontSize: 12, marginTop: 2 },
 
   // --- TABS ---
   tabBar: {
@@ -517,12 +542,7 @@ const styles = StyleSheet.create({
     marginBottom: 16,
     padding: 4,
   },
-  tab: {
-    flex: 1,
-    paddingVertical: 8,
-    borderRadius: 18,
-    alignItems: "center",
-  },
+  tab: { flex: 1, paddingVertical: 8, borderRadius: 18, alignItems: "center" },
   tabActivo: { backgroundColor: "rgba(255,255,255,0.15)" },
   tabText: { color: "rgba(255,255,255,0.5)", fontSize: 14 },
   tabTextActivo: { color: "#FFFFFF", fontWeight: "bold" },
@@ -530,13 +550,9 @@ const styles = StyleSheet.create({
   // --- CONTENIDO ---
   contenido: { flex: 1 },
   scrollPadding: { paddingBottom: 100 },
-  emptyText: {
-    color: "rgba(255,255,255,0.4)",
-    textAlign: "center",
-    marginTop: 20,
-  },
+  emptyText: { color: "rgba(255,255,255,0.4)", textAlign: "center", marginTop: 20 },
 
-  // --- CARDS GASTOS / PARTICIPANTES ---
+  // --- CARDS ---
   gastoCard: {
     flexDirection: "row",
     alignItems: "center",
@@ -556,30 +572,13 @@ const styles = StyleSheet.create({
     alignItems: "center",
     marginRight: 14,
   },
-  avatarText: {
-    color: "#FFFFFF",
-    fontSize: 16,
-    fontWeight: "bold",
-  },
+  avatarText: { color: "#FFFFFF", fontSize: 16, fontWeight: "bold" },
   cardInfo: { flex: 1 },
   cardTitulo: { color: "#FFFFFF", fontSize: 15, fontWeight: "500" },
-  cardSub: {
-    color: "#888888",
-    fontSize: 12,
-    marginTop: 2,
-  },
-  fechaRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 4,
-    marginTop: 5,
-  },
+  cardSub: { color: "#888888", fontSize: 12, marginTop: 2 },
+  fechaRow: { flexDirection: "row", alignItems: "center", gap: 4, marginTop: 5 },
   cardFecha: { color: "rgba(255,255,255,0.3)", fontSize: 11 },
-  gastoMonto: {
-    color: "#4CAF50",
-    fontSize: 15,
-    fontWeight: "bold",
-  },
+  gastoMonto: { color: "#4CAF50", fontSize: 15, fontWeight: "bold" },
   deleteButton: {
     width: 36,
     height: 36,
@@ -596,7 +595,7 @@ const styles = StyleSheet.create({
   positivo: { color: "#4CAF50" },
   negativo: { color: "#FF5252" },
 
-  // --- BOTÓN SECUNDARIO (balances) ---
+  // --- BOTÓN SECUNDARIO ---
   botonSecundario: {
     backgroundColor: "rgba(255,255,255,0.1)",
     borderRadius: 15,
@@ -606,18 +605,10 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: "rgba(255,255,255,0.08)",
   },
-  botonSecundarioText: {
-    color: "#FFFFFF",
-    fontWeight: "bold",
-    fontSize: 15,
-  },
+  botonSecundarioText: { color: "#FFFFFF", fontWeight: "bold", fontSize: 15 },
 
   // --- FAB ---
-  fabWrapper: {
-    position: "absolute",
-    bottom: 30,
-    right: 20,
-  },
+  fabWrapper: { position: "absolute", bottom: 30, right: 20 },
   mainFab: {
     width: 64,
     height: 64,
@@ -631,4 +622,66 @@ const styles = StyleSheet.create({
     shadowRadius: 5,
     elevation: 8,
   },
+
+  // --- CALENDAR BTN ---
+  calendarBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    marginTop: 10,
+    backgroundColor: 'rgba(66, 133, 244, 0.25)',
+    borderRadius: 10,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    alignSelf: 'flex-start',
+    borderWidth: 1,
+    borderColor: 'rgba(66, 133, 244, 0.4)',
+  },
+  calendarBtnText: { color: '#FFFFFF', fontSize: 12, fontWeight: '600' },
+
+  // --- MODAL EDITAR ---
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.6)',
+    justifyContent: 'flex-end',
+  },
+  modalCard: {
+    backgroundColor: 'rgba(25,25,25,0.97)',
+    borderTopLeftRadius: 28,
+    borderTopRightRadius: 28,
+    padding: 24,
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.08)',
+  },
+  modalTitle: { color: '#FFFFFF', fontSize: 22, fontWeight: 'bold', marginBottom: 20 },
+  input: {
+    backgroundColor: 'rgba(255,255,255,0.07)',
+    borderRadius: 12,
+    padding: 14,
+    color: '#FFFFFF',
+    fontSize: 15,
+    marginBottom: 12,
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.1)',
+  },
+  actionBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: 'rgba(255,255,255,0.08)',
+    padding: 14,
+    borderRadius: 12,
+    marginTop: 10,
+  },
+  actionBtnText: { color: '#FFFFFF', fontWeight: 'bold', fontSize: 15 },
+  cancelBtn: {
+    padding: 14,
+    borderRadius: 12,
+    alignItems: 'center',
+    backgroundColor: 'rgba(255,255,255,0.05)',
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.1)',
+    marginTop: 10,
+  },
+  cancelBtnText: { color: '#AAAAAA', fontWeight: 'bold' },
 });
