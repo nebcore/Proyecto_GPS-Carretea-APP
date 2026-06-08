@@ -139,3 +139,23 @@ export const getEvento = async (eventoId: string) => {
   if (error) throw error;
   return data;
 };
+
+export const updateEvento = async (
+  eventoId: string,
+  datos: {
+    titulo?: string;
+    descripcion?: string;
+    ubicacion?: string;
+    fecha_evento?: string;
+  }
+) => {
+  const { data, error } = await supabase
+    .from('eventos')
+    .update(datos)
+    .eq('id', eventoId)
+    .select()
+    .single();
+
+  if (error) throw error;
+  return data;
+};

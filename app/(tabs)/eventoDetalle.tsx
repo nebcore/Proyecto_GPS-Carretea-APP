@@ -1,29 +1,10 @@
-import {
-    confirmarPago,
-    devolverPagoAPendiente,
-    obtenerPagosEvento,
-    obtenerPagosReportadosEvento,
-    reportarPago,
-} from "@/lib/api/pagos";
-import Feather from "@expo/vector-icons/Feather";
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import * as ImagePicker from "expo-image-picker";
-import { router, useLocalSearchParams } from "expo-router";
-import { useMemo, useState } from "react";
-import {
-    ActivityIndicator,
-    Alert,
-    Image,
-    Modal,
-    ScrollView,
-    StyleSheet,
-    Text,
-    TouchableOpacity,
-    View,
-} from "react-native";
-
 import GlassCard from "@/components/ui/GlassCard";
-import { actualizarEstadoEvento, getEvento } from "@/lib/api/eventos";
+import {
+  actualizarEstadoEvento,
+  deleteEvento,
+  getEvento,
+  updateEvento,
+} from "@/lib/api/eventos";
 import {
   agregarComprobanteGasto,
   borrarGasto,
@@ -31,9 +12,34 @@ import {
   obtenerComprobantesGasto,
   obtenerParticipantesEvento,
 } from "@/lib/api/gastos";
+import {
+  confirmarPago,
+  devolverPagoAPendiente,
+  obtenerPagosEvento,
+  obtenerPagosReportadosEvento,
+  reportarPago,
+} from "@/lib/api/pagos";
 import type { Deuda } from "@/lib/balances";
 import { useBalancesEvento } from "@/lib/realtime/useBalancesEvento";
 import { supabase } from "@/lib/supabase";
+import { crearEventoCalendar } from "@/services/googleCalendar";
+import Feather from "@expo/vector-icons/Feather";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import * as ImagePicker from "expo-image-picker";
+import { router, useLocalSearchParams } from "expo-router";
+import { useMemo, useState } from "react";
+import {
+  ActivityIndicator,
+  Alert,
+  Image,
+  Modal,
+  ScrollView,
+  StyleSheet,
+  Text,
+  TextInput,
+  TouchableOpacity,
+  View,
+} from "react-native";
 
 const formatearFecha = (fechaString: string) => {
   if (!fechaString) return "";
@@ -75,6 +81,10 @@ export default function EventoDetalleScreen() {
     useState(false);
   const [gastoSeleccionado, setGastoSeleccionado] = useState<any | null>(null);
   const [avisoPago, setAvisoPago] = useState<AvisoPago | null>(null);
+  const [modalEditarVisible, setModalEditarVisible] = useState(false);
+  const [editTitulo, setEditTitulo] = useState("");
+  const [editDescripcion, setEditDescripcion] = useState("");
+  const [editUbicacion, setEditUbicacion] = useState("");
   const queryClient = useQueryClient();
 
   const { data: evento, isLoading: loadingEvento } = useQuery({
@@ -120,11 +130,7 @@ export default function EventoDetalleScreen() {
 
   const obtenerNombreContacto = (contacto: any, fallback = "Participante") => {
     if (!contacto) return fallback;
-
-    if (Array.isArray(contacto)) {
-      return contacto[0]?.nombre ?? fallback;
-    }
-
+    if (Array.isArray(contacto)) return contacto[0]?.nombre ?? fallback;
     return contacto.nombre ?? fallback;
   };
 
@@ -497,6 +503,38 @@ export default function EventoDetalleScreen() {
     },
   });
 
+  const editarEventoMutation = useMutation({
+    mutationFn: (datos: any) => updateEvento(eventoId, datos),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["evento", eventoId] });
+      queryClient.invalidateQueries({ queryKey: ["eventos"] });
+      setModalEditarVisible(false);
+      Alert.alert("¡Listo!", "Evento actualizado.");
+    },
+    onError: () => Alert.alert("Error", "No se pudo actualizar el evento."),
+  });
+
+  const eliminarEventoMutation = useMutation({
+    mutationFn: () => deleteEvento(eventoId),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["eventos"] });
+      router.back();
+      Alert.alert("Eliminado", "El evento fue borrado.");
+    },
+    onError: () => Alert.alert("Error", "No se pudo eliminar el evento."),
+  });
+
+  const confirmarEliminar = () => {
+    Alert.alert("¿Eliminar evento?", "Esta acción no se puede deshacer.", [
+      { text: "Cancelar", style: "cancel" },
+      {
+        text: "Eliminar",
+        style: "destructive",
+        onPress: () => eliminarEventoMutation.mutate(),
+      },
+    ]);
+  };
+
   const reportarPagoMutation = useMutation({
     mutationFn: ({ eventoId, deudorId, acreedorId, monto, comprobante }: any) =>
       reportarPago(eventoId, deudorId, acreedorId, monto, comprobante),
@@ -543,6 +581,25 @@ export default function EventoDetalleScreen() {
       );
     },
   });
+
+  const agregarACalendar = async () => {
+    try {
+      const accessToken = "";
+
+      const resultado = await crearEventoCalendar(accessToken, {
+        titulo: evento?.titulo ?? "Evento de prueba",
+        descripcion: evento?.descripcion ?? "",
+        fechaInicio: evento?.fecha_evento,
+        fechaFin: evento?.fecha_evento,
+      });
+
+      console.log("Resultado:", resultado);
+      Alert.alert("¡Listo!", "Evento agregado a Google Calendar.");
+    } catch (error) {
+      console.log("Error:", error);
+      Alert.alert("Error", "No se pudo agregar a Google Calendar.");
+    }
+  };
 
   const confirmarPagoMutation = useMutation({
     mutationFn: (pagoId: string) => confirmarPago(pagoId),
@@ -655,6 +712,7 @@ export default function EventoDetalleScreen() {
                 />
               </TouchableOpacity>
             </View>
+
             {evento?.descripcion ? (
               <Text style={styles.eventoDesc} numberOfLines={2}>
                 {evento.descripcion}
@@ -684,7 +742,11 @@ export default function EventoDetalleScreen() {
                   disabled={actualizarEstadoMutation.isPending}
                 >
                   <Feather
-                    name={evento?.estado === "finalizado" ? "rotate-ccw" : "check-circle"}
+                    name={
+                      evento?.estado === "finalizado"
+                        ? "rotate-ccw"
+                        : "check-circle"
+                    }
                     size={11}
                     color="rgba(255,255,255,0.5)"
                   />
@@ -696,10 +758,48 @@ export default function EventoDetalleScreen() {
                 </TouchableOpacity>
               ) : null}
             </View>
+            <TouchableOpacity
+              style={styles.calendarBtn}
+              onPress={agregarACalendar}
+            >
+              <Feather name="calendar" size={13} color="#FFFFFF" />
+              <Text style={styles.calendarBtnText}>
+                Agregar a Google Calendar
+              </Text>
+            </TouchableOpacity>
           </View>
           <View style={styles.headerRight}>
-            <Text style={styles.totalMonto}>{formatearMonto(montoTotal)}</Text>
-            <Text style={styles.totalLabel}>Total gastado</Text>
+            <View style={styles.iconosRow}>
+              <TouchableOpacity
+                onPress={() => {
+                  setEditTitulo(evento?.titulo ?? "");
+                  setEditDescripcion(evento?.descripcion ?? "");
+                  setEditUbicacion(evento?.ubicacion ?? "");
+                  setModalEditarVisible(true);
+                }}
+              >
+                <Feather
+                  name="edit-3"
+                  size={16}
+                  color="rgba(255,255,255,0.5)"
+                />
+              </TouchableOpacity>
+              <TouchableOpacity onPress={confirmarEliminar}>
+                <Feather name="trash-2" size={16} color="rgba(255,82,82,0.7)" />
+              </TouchableOpacity>
+            </View>
+            <View
+              style={{
+                alignItems: "flex-end",
+                flex: 1,
+                justifyContent: "center",
+              }}
+            >
+              <Text style={styles.totalMonto}>
+                {formatearMonto(montoTotal)}
+              </Text>
+              <Text style={styles.totalLabel}>Total gastado</Text>
+            </View>
           </View>
         </GlassCard>
 
@@ -1101,6 +1201,61 @@ export default function EventoDetalleScreen() {
           </View>
         </View>
       </Modal>
+      {/* MODAL EDITAR EVENTO */}
+      <Modal visible={modalEditarVisible} transparent animationType="slide">
+        <View style={styles.modalOverlayEditar}>
+          <View style={styles.modalCardEditar}>
+            <Text style={styles.modalTitle}>Editar evento</Text>
+
+            <TextInput
+              style={styles.input}
+              value={editTitulo}
+              onChangeText={setEditTitulo}
+              placeholder="Título"
+              placeholderTextColor="#666"
+            />
+            <TextInput
+              style={styles.input}
+              value={editDescripcion}
+              onChangeText={setEditDescripcion}
+              placeholder="Descripción"
+              placeholderTextColor="#666"
+            />
+            <TextInput
+              style={styles.input}
+              value={editUbicacion}
+              onChangeText={setEditUbicacion}
+              placeholder="Ubicación"
+              placeholderTextColor="#666"
+            />
+
+            <TouchableOpacity
+              style={styles.actionBtn}
+              onPress={() =>
+                editarEventoMutation.mutate({
+                  titulo: editTitulo,
+                  descripcion: editDescripcion,
+                  ubicacion: editUbicacion,
+                })
+              }
+              disabled={editarEventoMutation.isPending}
+            >
+              {editarEventoMutation.isPending ? (
+                <ActivityIndicator color="#fff" />
+              ) : (
+                <Text style={styles.actionBtnText}>Guardar cambios</Text>
+              )}
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              style={styles.cancelBtn}
+              onPress={() => setModalEditarVisible(false)}
+            >
+              <Text style={styles.cancelBtnText}>Cancelar</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
 
       <Modal
         visible={modalConfirmacionVisible}
@@ -1321,10 +1476,17 @@ export default function EventoDetalleScreen() {
             </View>
 
             {cargandoBoletas ? (
-              <ActivityIndicator color="#FFFFFF" style={{ marginVertical: 28 }} />
+              <ActivityIndicator
+                color="#FFFFFF"
+                style={{ marginVertical: 28 }}
+              />
             ) : boletasGasto.length === 0 ? (
               <View style={styles.comprobanteVacio}>
-                <Feather name="image" size={24} color="rgba(255,255,255,0.45)" />
+                <Feather
+                  name="image"
+                  size={24}
+                  color="rgba(255,255,255,0.45)"
+                />
                 <Text style={styles.emptyText}>
                   Este gasto todavía no tiene boletas.
                 </Text>
@@ -1426,31 +1588,18 @@ const styles = StyleSheet.create({
   infoPills: {
     flexDirection: "row",
     gap: 12,
-    flexWrap: "wrap",
+    alignItems: "center",
   },
-  pill: {
+  pill: { flexDirection: "row", alignItems: "center", gap: 4 },
+  pillText: { color: "rgba(255,255,255,0.5)", fontSize: 12 },
+  headerRight: { justifyContent: "space-between", alignItems: "flex-end" },
+  iconosRow: {
     flexDirection: "row",
     alignItems: "center",
-    gap: 4,
+    gap: 12,
   },
-  pillText: {
-    color: "rgba(255,255,255,0.5)",
-    fontSize: 12,
-  },
-  headerRight: {
-    justifyContent: "center",
-    alignItems: "flex-end",
-  },
-  totalMonto: {
-    color: "#FFFFFF",
-    fontSize: 20,
-    fontWeight: "bold",
-  },
-  totalLabel: {
-    color: "#AAAAAA",
-    fontSize: 12,
-    marginTop: 2,
-  },
+  totalMonto: { color: "#FFFFFF", fontSize: 20, fontWeight: "bold" },
+  totalLabel: { color: "#AAAAAA", fontSize: 12, marginTop: 2 },
 
   // --- TABS ---
   tabBar: {
@@ -1460,12 +1609,7 @@ const styles = StyleSheet.create({
     marginBottom: 16,
     padding: 4,
   },
-  tab: {
-    flex: 1,
-    paddingVertical: 8,
-    borderRadius: 18,
-    alignItems: "center",
-  },
+  tab: { flex: 1, paddingVertical: 8, borderRadius: 18, alignItems: "center" },
   tabActivo: { backgroundColor: "rgba(255,255,255,0.15)" },
   tabText: { color: "rgba(255,255,255,0.5)", fontSize: 14 },
   tabTextActivo: { color: "#FFFFFF", fontWeight: "bold" },
@@ -1502,7 +1646,7 @@ const styles = StyleSheet.create({
     marginVertical: 4,
   },
 
-  // --- CARDS GASTOS / PARTICIPANTES ---
+  // --- CARDS ---
   gastoCard: {
     flexDirection: "row",
     alignItems: "center",
@@ -1522,18 +1666,10 @@ const styles = StyleSheet.create({
     alignItems: "center",
     marginRight: 14,
   },
-  avatarText: {
-    color: "#FFFFFF",
-    fontSize: 16,
-    fontWeight: "bold",
-  },
+  avatarText: { color: "#FFFFFF", fontSize: 16, fontWeight: "bold" },
   cardInfo: { flex: 1 },
   cardTitulo: { color: "#FFFFFF", fontSize: 15, fontWeight: "500" },
-  cardSub: {
-    color: "#888888",
-    fontSize: 12,
-    marginTop: 2,
-  },
+  cardSub: { color: "#888888", fontSize: 12, marginTop: 2 },
   fechaRow: {
     flexDirection: "row",
     alignItems: "center",
@@ -1541,11 +1677,7 @@ const styles = StyleSheet.create({
     marginTop: 5,
   },
   cardFecha: { color: "rgba(255,255,255,0.3)", fontSize: 11 },
-  gastoMonto: {
-    color: "#4CAF50",
-    fontSize: 15,
-    fontWeight: "bold",
-  },
+  gastoMonto: { color: "#4CAF50", fontSize: 15, fontWeight: "bold" },
   deleteButton: {
     width: 36,
     height: 36,
@@ -1562,7 +1694,7 @@ const styles = StyleSheet.create({
   positivo: { color: "#4CAF50" },
   negativo: { color: "#FF5252" },
 
-  // --- BOTÓN SECUNDARIO (balances) ---
+  // --- BOTÓN SECUNDARIO ---
   botonSecundario: {
     backgroundColor: "rgba(255,255,255,0.1)",
     borderRadius: 15,
@@ -1898,11 +2030,7 @@ const styles = StyleSheet.create({
   },
 
   // --- FAB ---
-  fabWrapper: {
-    position: "absolute",
-    bottom: 30,
-    right: 20,
-  },
+  fabWrapper: { position: "absolute", bottom: 30, right: 20 },
   mainFab: {
     width: 64,
     height: 64,
@@ -1916,4 +2044,71 @@ const styles = StyleSheet.create({
     shadowRadius: 5,
     elevation: 8,
   },
+
+  // --- CALENDAR BTN ---
+  calendarBtn: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+    marginTop: 10,
+    backgroundColor: "rgba(66, 133, 244, 0.25)",
+    borderRadius: 10,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    alignSelf: "flex-start",
+    borderWidth: 1,
+    borderColor: "rgba(66, 133, 244, 0.4)",
+  },
+  calendarBtnText: { color: "#FFFFFF", fontSize: 12, fontWeight: "600" },
+
+  // --- MODAL EDITAR ---
+  modalOverlayEditar: {
+    flex: 1,
+    backgroundColor: "rgba(0,0,0,0.6)",
+    justifyContent: "flex-end",
+  },
+  modalCardEditar: {
+    backgroundColor: "rgba(25,25,25,0.97)",
+    borderTopLeftRadius: 28,
+    borderTopRightRadius: 28,
+    padding: 24,
+    borderWidth: 1,
+    borderColor: "rgba(255,255,255,0.08)",
+  },
+  modalTitle: {
+    color: "#FFFFFF",
+    fontSize: 22,
+    fontWeight: "bold",
+    marginBottom: 20,
+  },
+  input: {
+    backgroundColor: "rgba(255,255,255,0.07)",
+    borderRadius: 12,
+    padding: 14,
+    color: "#FFFFFF",
+    fontSize: 15,
+    marginBottom: 12,
+    borderWidth: 1,
+    borderColor: "rgba(255,255,255,0.1)",
+  },
+  actionBtn: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: "rgba(255,255,255,0.08)",
+    padding: 14,
+    borderRadius: 12,
+    marginTop: 10,
+  },
+  actionBtnText: { color: "#FFFFFF", fontWeight: "bold", fontSize: 15 },
+  cancelBtn: {
+    padding: 14,
+    borderRadius: 12,
+    alignItems: "center",
+    backgroundColor: "rgba(255,255,255,0.05)",
+    borderWidth: 1,
+    borderColor: "rgba(255,255,255,0.1)",
+    marginTop: 10,
+  },
+  cancelBtnText: { color: "#AAAAAA", fontWeight: "bold" },
 });
