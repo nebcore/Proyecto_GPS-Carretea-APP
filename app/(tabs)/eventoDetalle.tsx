@@ -19,6 +19,7 @@ import {
   obtenerPagosReportadosEvento,
   reportarPago,
 } from "@/lib/api/pagos";
+import { obtenerGoogleToken } from "@/lib/api/usuarios";
 import type { Deuda } from "@/lib/balances";
 import { useBalancesEvento } from "@/lib/realtime/useBalancesEvento";
 import { supabase } from "@/lib/supabase";
@@ -40,7 +41,6 @@ import {
   TouchableOpacity,
   View,
 } from "react-native";
-
 const formatearFecha = (fechaString: string) => {
   if (!fechaString) return "";
   return new Date(fechaString).toLocaleDateString("es-CL", {
@@ -584,7 +584,15 @@ export default function EventoDetalleScreen() {
 
   const agregarACalendar = async () => {
     try {
-      const accessToken = "";
+      const accessToken = await obtenerGoogleToken();
+
+      if (!accessToken) {
+        Alert.alert(
+          "Conecta Google",
+          "Ve a tu perfil y conecta Google Calendar primero.",
+        );
+        return;
+      }
 
       const resultado = await crearEventoCalendar(accessToken, {
         titulo: evento?.titulo ?? "Evento de prueba",

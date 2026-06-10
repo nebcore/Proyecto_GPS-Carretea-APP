@@ -9,9 +9,12 @@ import {
   upsertDatosBancarios,
   verificarCodigoEmail,
 } from "@/lib/api/auth";
+import { guardarGoogleToken } from "@/lib/api/usuarios";
+import { supabase } from "@/lib/supabase";
 import Feather from "@expo/vector-icons/Feather";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { router } from "expo-router";
+import * as WebBrowser from "expo-web-browser";
 import { useEffect, useRef, useState } from "react";
 import {
   ActivityIndicator,
@@ -41,6 +44,7 @@ const formatearTelefono = (text: string) => {
   return result;
 };
 
+WebBrowser.maybeCompleteAuthSession();
 export default function PerfilScreen() {
   const insets = useSafeAreaInsets();
   const { width } = useWindowDimensions();
@@ -142,7 +146,8 @@ export default function PerfilScreen() {
       setEditandoBanco(false);
       Alert.alert("Guardado", "Datos bancarios actualizados.");
     },
-    onError: () => Alert.alert("Error", "No se pudieron guardar los datos bancarios."),
+    onError: () =>
+      Alert.alert("Error", "No se pudieron guardar los datos bancarios."),
   });
 
   const iniciarEdicionBanco = () => {
@@ -154,7 +159,12 @@ export default function PerfilScreen() {
   };
 
   const handleGuardarBanco = () => {
-    if (!banco.trim() || !tipoCuenta.trim() || !numeroCuenta.trim() || !rut.trim()) {
+    if (
+      !banco.trim() ||
+      !tipoCuenta.trim() ||
+      !numeroCuenta.trim() ||
+      !rut.trim()
+    ) {
       Alert.alert("Error", "Todos los campos bancarios son obligatorios.");
       return;
     }
@@ -187,6 +197,43 @@ export default function PerfilScreen() {
         },
       },
     ]);
+  };
+
+  const handleConectarGoogle = async () => {
+    try {
+      const redirectUrl = "carretea://";
+
+      const { data, error } = await supabase.auth.signInWithOAuth({
+        provider: "google",
+        options: {
+          scopes: "https://www.googleapis.com/auth/calendar",
+          redirectTo: redirectUrl,
+          skipBrowserRedirect: true,
+        },
+      });
+
+      if (error) throw error;
+
+      const result = await WebBrowser.openAuthSessionAsync(
+        data.url,
+        redirectUrl,
+      );
+
+      if (result.type === "success" && result.url) {
+        const params = new URLSearchParams(result.url.split("#")[1]);
+        const accessToken = params.get("access_token");
+        const refreshToken = params.get("refresh_token");
+        const providerToken = params.get("provider_token");
+
+        if (providerToken) {
+          await guardarGoogleToken(providerToken);
+          Alert.alert("¡Listo!", "Google Calendar conectado correctamente.");
+        }
+      }
+    } catch (error: any) {
+      console.log("Error:", error);
+      Alert.alert("Error", error.message);
+    }
   };
 
   return (
@@ -336,15 +383,44 @@ export default function PerfilScreen() {
               {editandoBanco ? (
                 <>
                   {[
-                    { label: "Banco", value: banco, setter: setBanco, placeholder: "Ej: Banco Estado", icon: "credit-card" as const },
-                    { label: "Tipo de cuenta", value: tipoCuenta, setter: setTipoCuenta, placeholder: "Ej: Cuenta Vista", icon: "list" as const },
-                    { label: "Número de cuenta", value: numeroCuenta, setter: setNumeroCuenta, placeholder: "Ej: 12345678", icon: "hash" as const, keyboard: "numeric" as const },
-                    { label: "RUT", value: rut, setter: setRut, placeholder: "Ej: 12.345.678-9", icon: "user" as const },
+                    {
+                      label: "Banco",
+                      value: banco,
+                      setter: setBanco,
+                      placeholder: "Ej: Banco Estado",
+                      icon: "credit-card" as const,
+                    },
+                    {
+                      label: "Tipo de cuenta",
+                      value: tipoCuenta,
+                      setter: setTipoCuenta,
+                      placeholder: "Ej: Cuenta Vista",
+                      icon: "list" as const,
+                    },
+                    {
+                      label: "Número de cuenta",
+                      value: numeroCuenta,
+                      setter: setNumeroCuenta,
+                      placeholder: "Ej: 12345678",
+                      icon: "hash" as const,
+                      keyboard: "numeric" as const,
+                    },
+                    {
+                      label: "RUT",
+                      value: rut,
+                      setter: setRut,
+                      placeholder: "Ej: 12.345.678-9",
+                      icon: "user" as const,
+                    },
                   ].map((campo, i, arr) => (
                     <View key={campo.label}>
                       <View style={styles.campo}>
                         <View style={styles.campoIcon}>
-                          <Feather name={campo.icon} size={16} color="#AAAAAA" />
+                          <Feather
+                            name={campo.icon}
+                            size={16}
+                            color="#AAAAAA"
+                          />
                         </View>
                         <View style={styles.campoBody}>
                           <Text style={styles.campoLabel}>{campo.label}</Text>
@@ -388,15 +464,35 @@ export default function PerfilScreen() {
               ) : datosBancarios ? (
                 <>
                   {[
-                    { label: "Banco", valor: datosBancarios.banco, icon: "credit-card" as const },
-                    { label: "Tipo de cuenta", valor: datosBancarios.tipo_cuenta, icon: "list" as const },
-                    { label: "Número de cuenta", valor: datosBancarios.numero_cuenta, icon: "hash" as const },
-                    { label: "RUT", valor: datosBancarios.rut, icon: "user" as const },
+                    {
+                      label: "Banco",
+                      valor: datosBancarios.banco,
+                      icon: "credit-card" as const,
+                    },
+                    {
+                      label: "Tipo de cuenta",
+                      valor: datosBancarios.tipo_cuenta,
+                      icon: "list" as const,
+                    },
+                    {
+                      label: "Número de cuenta",
+                      valor: datosBancarios.numero_cuenta,
+                      icon: "hash" as const,
+                    },
+                    {
+                      label: "RUT",
+                      valor: datosBancarios.rut,
+                      icon: "user" as const,
+                    },
                   ].map((campo, i, arr) => (
                     <View key={campo.label}>
                       <View style={styles.campo}>
                         <View style={styles.campoIcon}>
-                          <Feather name={campo.icon} size={16} color="#AAAAAA" />
+                          <Feather
+                            name={campo.icon}
+                            size={16}
+                            color="#AAAAAA"
+                          />
                         </View>
                         <View style={styles.campoBody}>
                           <Text style={styles.campoLabel}>{campo.label}</Text>
@@ -733,4 +829,17 @@ const styles = StyleSheet.create({
     fontSize: 14,
     marginTop: 8,
   },
+  botonText: { color: "#FF5252", fontWeight: "bold", fontSize: 15 },
+  botonGoogle: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+    backgroundColor: "rgba(66,133,244,0.1)",
+    borderWidth: 1,
+    borderColor: "rgba(66,133,244,0.3)",
+    borderRadius: 14,
+    paddingVertical: 14,
+    paddingHorizontal: 24,
+  },
+  botonGoogleText: { color: "#4285F4", fontWeight: "bold", fontSize: 15 },
 });
