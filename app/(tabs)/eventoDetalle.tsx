@@ -3,7 +3,7 @@ import {
   obtenerPagosEvento,
   reportarPago,
 } from "@/lib/api/pagos";
-import { crearEventoCalendar } from '@/services/googleCalendar';
+import { crearEventoCalendar, eliminarEventoCalendar } from '@/services/googleCalendar';
 import Feather from "@expo/vector-icons/Feather";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { router, useLocalSearchParams } from "expo-router";
@@ -30,6 +30,7 @@ import {
 } from "@/lib/api/gastos";
 import { obtenerGoogleToken } from "@/lib/api/usuarios";
 import { useBalancesEvento } from "@/lib/realtime/useBalancesEvento";
+import { supabase } from "@/lib/supabase";
 
 const formatearFecha = (fechaString: string) => {
   if (!fechaString) return "";
@@ -114,14 +115,26 @@ export default function EventoDetalleScreen() {
   });
 
   const eliminarEventoMutation = useMutation({
-    mutationFn: () => deleteEvento(eventoId),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['eventos'] });
-      router.back();
-      Alert.alert('Eliminado', 'El evento fue borrado.');
-    },
-    onError: () => Alert.alert('Error', 'No se pudo eliminar el evento.'),
-  });
+  mutationFn: async () => {
+    console.log('google_event_id:', evento?.google_event_id);
+    console.log('evento completo:', evento);
+    // Eliminar de Google Calendar si tiene google_event_id
+    if (evento?.google_event_id) {
+      const accessToken = await obtenerGoogleToken();
+      console.log('accessToken:', accessToken);
+      if (accessToken) {
+        await eliminarEventoCalendar(accessToken, evento.google_event_id);
+      }
+    }
+    return deleteEvento(eventoId);
+  },
+  onSuccess: () => {
+    queryClient.invalidateQueries({ queryKey: ['eventos'] });
+    router.back();
+    Alert.alert('Eliminado', 'El evento fue borrado.');
+  },
+  onError: () => Alert.alert('Error', 'No se pudo eliminar el evento.'),
+});
 
   const confirmarEliminar = () => {
     Alert.alert('¿Eliminar evento?', 'Esta acción no se puede deshacer.', [
@@ -166,7 +179,17 @@ export default function EventoDetalleScreen() {
       fechaFin: evento?.fecha_evento,
     });
 
-    console.log('Resultado:', resultado);
+    if (resultado?.id) {
+  const { error } = await supabase
+    .from('eventos')
+    .update({ google_event_id: resultado.id })
+    .eq('id', eventoId);
+  
+  if (!error) {
+    queryClient.invalidateQueries({ queryKey: ['evento', eventoId] });
+  }
+}
+
     Alert.alert('¡Listo!', 'Evento agregado a Google Calendar.');
   } catch (error) {
     console.log('Error:', error);
