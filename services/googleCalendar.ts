@@ -28,5 +28,20 @@ export const crearEventoCalendar = async (
 
   const data = await response.json();
   console.log('Respuesta Calendar API:', data);
-  return data;
+  return data; // retorna el objeto con el id del evento
+};
+
+export const eliminarEventoCalendar = async (
+  accessToken: string,
+  googleEventId: string
+): Promise<void> => {
+  await fetch(
+    `https://www.googleapis.com/calendar/v3/calendars/primary/events/${googleEventId}`,
+    {
+      method: 'DELETE',
+      headers: {
+        Authorization: `Bearer ${accessToken}`,
+      },
+    }
+  );
 };
