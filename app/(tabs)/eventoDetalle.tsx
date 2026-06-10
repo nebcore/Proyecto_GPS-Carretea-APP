@@ -28,6 +28,7 @@ import {
   getGastosConPagador,
   obtenerParticipantesEvento,
 } from "@/lib/api/gastos";
+import { obtenerGoogleToken } from "@/lib/api/usuarios";
 import { useBalancesEvento } from "@/lib/realtime/useBalancesEvento";
 
 const formatearFecha = (fechaString: string) => {
@@ -150,23 +151,28 @@ export default function EventoDetalleScreen() {
   });
 
   const agregarACalendar = async () => {
-    try {
-      const accessToken = '';
+  try {
+    const accessToken = await obtenerGoogleToken();
 
-      const resultado = await crearEventoCalendar(accessToken, {
-        titulo: evento?.titulo ?? 'Evento de prueba',
-        descripcion: evento?.descripcion ?? '',
-        fechaInicio: evento?.fecha_evento,
-        fechaFin: evento?.fecha_evento,
-      });
-
-      console.log('Resultado:', resultado);
-      Alert.alert('¡Listo!', 'Evento agregado a Google Calendar.');
-    } catch (error) {
-      console.log('Error:', error);
-      Alert.alert('Error', 'No se pudo agregar a Google Calendar.');
+    if (!accessToken) {
+      Alert.alert('Conecta Google', 'Ve a tu perfil y conecta Google Calendar primero.');
+      return;
     }
-  };
+
+    const resultado = await crearEventoCalendar(accessToken, {
+      titulo: evento?.titulo ?? 'Evento de prueba',
+      descripcion: evento?.descripcion ?? '',
+      fechaInicio: evento?.fecha_evento,
+      fechaFin: evento?.fecha_evento,
+    });
+
+    console.log('Resultado:', resultado);
+    Alert.alert('¡Listo!', 'Evento agregado a Google Calendar.');
+  } catch (error) {
+    console.log('Error:', error);
+    Alert.alert('Error', 'No se pudo agregar a Google Calendar.');
+  }
+};
 
   const confirmarPagoMutation = useMutation({
     mutationFn: (pagoId: string) => confirmarPago(pagoId),
