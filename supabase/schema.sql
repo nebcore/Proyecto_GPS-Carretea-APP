@@ -103,10 +103,16 @@ create table pagos (
 
 create table comprobantes (
     id uuid primary key default gen_random_uuid(),
-    gasto_id uuid not null references gastos(id) on delete cascade,
+    gasto_id uuid references gastos(id) on delete cascade,
+    pago_id uuid references pagos(id) on delete cascade,
     storage_path text not null,
     mime_type text not null,
-    creado_en timestamptz default now()
+    creado_en timestamptz default now(),
+    constraint comprobantes_origen_unico_check check (
+        (gasto_id is not null and pago_id is null)
+        or
+        (gasto_id is null and pago_id is not null)
+    )
 );
 
 create table log_auditoria (
@@ -276,14 +282,51 @@ create policy "gastos: participantes gestionan" on gastos
     )
     );
 
--- comprobantes: participantes del evento del gasto pueden leer
+-- comprobantes: participantes del evento del gasto o pago pueden leer
 create policy "comprobantes: participantes leen" on comprobantes
     for select using (
-    exists (
-        select 1 from gastos g
-        join participantes_evento pe on pe.evento_id = g.evento_id
-        join contactos c on c.id = pe.contacto_id
-        where g.id = gasto_id and c.referencia_usuario_id = auth.uid()
+    (
+        gasto_id is not null
+        and exists (
+            select 1 from gastos g
+            join participantes_evento pe on pe.evento_id = g.evento_id
+            join contactos c on c.id = pe.contacto_id
+            where g.id = gasto_id and c.referencia_usuario_id = auth.uid()
+        )
+    )
+    or
+    (
+        pago_id is not null
+        and exists (
+            select 1 from pagos p
+            join participantes_evento pe on pe.evento_id = p.evento_id
+            join contactos c on c.id = pe.contacto_id
+            where p.id = pago_id and c.referencia_usuario_id = auth.uid()
+        )
+    )
+    );
+
+create policy "comprobantes: participantes crean" on comprobantes
+    for insert with check (
+    (
+        gasto_id is not null
+        and pago_id is null
+        and exists (
+            select 1 from gastos g
+            join participantes_evento pe on pe.evento_id = g.evento_id
+            join contactos c on c.id = pe.contacto_id
+            where g.id = gasto_id and c.referencia_usuario_id = auth.uid()
+        )
+    )
+    or
+    (
+        pago_id is not null
+        and gasto_id is null
+        and exists (
+            select 1 from pagos p
+            join contactos deudor on deudor.id = p.deudor_id
+            where p.id = pago_id and deudor.referencia_usuario_id = auth.uid()
+        )
     )
     );
 
