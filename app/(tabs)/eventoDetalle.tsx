@@ -3,7 +3,7 @@ import {
   obtenerPagosEvento,
   reportarPago,
 } from "@/lib/api/pagos";
-import { crearEventoCalendar, eliminarEventoCalendar } from '@/services/googleCalendar';
+import { actualizarEventoCalendar, crearEventoCalendar, eliminarEventoCalendar } from '@/services/googleCalendar';
 import Feather from "@expo/vector-icons/Feather";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { router, useLocalSearchParams } from "expo-router";
@@ -104,15 +104,29 @@ export default function EventoDetalleScreen() {
   });
 
   const editarEventoMutation = useMutation({
-    mutationFn: (datos: any) => updateEvento(eventoId, datos),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['evento', eventoId] });
-      queryClient.invalidateQueries({ queryKey: ['eventos'] });
-      setModalEditarVisible(false);
-      Alert.alert('¡Listo!', 'Evento actualizado.');
-    },
-    onError: () => Alert.alert('Error', 'No se pudo actualizar el evento.'),
-  });
+  mutationFn: async (datos: any) => {
+    // Actualizar en Google Calendar si tiene google_event_id
+    if (evento?.google_event_id) {
+      const accessToken = await obtenerGoogleToken();
+      if (accessToken) {
+        await actualizarEventoCalendar(accessToken, evento.google_event_id, {
+          titulo: datos.titulo,
+          descripcion: datos.descripcion,
+          fechaInicio: evento?.fecha_evento,
+          fechaFin: evento?.fecha_evento,
+        });
+      }
+    }
+    return updateEvento(eventoId, datos);
+  },
+  onSuccess: () => {
+    queryClient.invalidateQueries({ queryKey: ['evento', eventoId] });
+    queryClient.invalidateQueries({ queryKey: ['eventos'] });
+    setModalEditarVisible(false);
+    Alert.alert('¡Listo!', 'Evento actualizado.');
+  },
+  onError: () => Alert.alert('Error', 'No se pudo actualizar el evento.'),
+});
 
   const eliminarEventoMutation = useMutation({
   mutationFn: async () => {

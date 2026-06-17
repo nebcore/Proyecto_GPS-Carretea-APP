@@ -1,5 +1,8 @@
 "use no memo";
 import Header from "@/components/ui/Header";
+import { obtenerGoogleToken } from "@/lib/api/usuarios";
+import { supabase } from "@/lib/supabase";
+import { crearEventoCalendar } from "@/services/googleCalendar";
 import Feather from "@expo/vector-icons/Feather";
 import DateTimePicker from "@react-native-community/datetimepicker";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
@@ -57,6 +60,7 @@ export default function NuevoEventoScreen() {
 
   const [modalNuevoPartVisible, setModalNuevoPartVisible] = useState(false);
   const [nuevoPartNombre, setNuevoPartNombre] = useState("");
+  const [agregarAlCalendar, setAgregarAlCalendar] = useState(false);
   const [nuevoPartNumero, setNuevoPartNumero] = useState("");
   const [nuevoPartGrupos, setNuevoPartGrupos] = useState<any[]>([]);
   const [mostrarSelectorGruposNuevo, setMostrarSelectorGruposNuevo] =
@@ -72,36 +76,59 @@ export default function NuevoEventoScreen() {
     queryFn: getGrupos,
   });
 
-  const crearEventoMutation = useMutation({
-    mutationFn: async () => {
-      const idsFinales: string[] = [];
-      for (const part of participantesSeleccionados) {
-        if (part.id.startsWith("temp_")) {
-          const contacto = await createContactoConGrupos(
-            part.nombre,
-            part.telefono || "",
-            [],
-          );
-          idsFinales.push(contacto.id);
-        } else {
-          idsFinales.push(part.id);
-        }
+ const crearEventoMutation = useMutation({
+  mutationFn: async () => {
+    const idsFinales: string[] = [];
+    for (const part of participantesSeleccionados) {
+      if (part.id.startsWith("temp_")) {
+        const contacto = await createContactoConGrupos(
+          part.nombre,
+          part.telefono || "",
+          [],
+        );
+        idsFinales.push(contacto.id);
+      } else {
+        idsFinales.push(part.id);
       }
-      return createEventoConParticipantes(
-        nombre.trim(),
-        descripcion.trim(),
-        ubicacion.trim(),
-        fecha.toISOString(),
-        idsFinales,
-      );
-    },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["eventos"] });
-      router.back();
-    },
-    onError: () =>
-      Alert.alert("Error", "No se pudo guardar el evento. Intenta de nuevo."),
-  });
+    }
+    return createEventoConParticipantes(
+      nombre.trim(),
+      descripcion.trim(),
+      ubicacion.trim(),
+      fecha.toISOString(),
+      idsFinales,
+    );
+  },
+  onSuccess: async (nuevoEvento) => {
+    if (agregarAlCalendar) {
+      try {
+        const accessToken = await obtenerGoogleToken();
+        if (accessToken) {
+          const resultado = await crearEventoCalendar(accessToken, {
+            titulo: nombre.trim(),
+            descripcion: descripcion.trim(),
+            fechaInicio: fecha.toISOString(),
+            fechaFin: fecha.toISOString(),
+          });
+          if (resultado?.id) {
+            await supabase
+              .from('eventos')
+              .update({ google_event_id: resultado.id })
+              .eq('id', nuevoEvento.id);
+          }
+        } else {
+          Alert.alert('Conecta Google', 'Ve a tu perfil y conecta Google Calendar primero.');
+        }
+      } catch (e) {
+        console.log('Error al agregar a Calendar:', e);
+      }
+    }
+    queryClient.invalidateQueries({ queryKey: ["eventos"] });
+    router.back();
+  },
+  onError: () =>
+    Alert.alert("Error", "No se pudo guardar el evento. Intenta de nuevo."),
+});
 
   const contactosFiltrados =
     grupoSeleccionado.id === "todos"
@@ -411,6 +438,17 @@ export default function NuevoEventoScreen() {
                 </View>
               </View>
             </View>
+            {/* AGREGAR A GOOGLE CALENDAR */}
+              <TouchableOpacity
+                style={[styles.calendarToggle, agregarAlCalendar && styles.calendarToggleActivo]}
+                onPress={() => setAgregarAlCalendar(!agregarAlCalendar)}
+              >
+                <Feather name="calendar" size={16} color={agregarAlCalendar ? "#4285F4" : "#AAAAAA"} />
+                <Text style={[styles.calendarToggleText, agregarAlCalendar && { color: "#4285F4" }]}>
+                  ¿Agregar a Google Calendar?
+                </Text>
+                <Feather name={agregarAlCalendar ? "check-circle" : "circle"} size={16} color={agregarAlCalendar ? "#4285F4" : "#AAAAAA"} />
+              </TouchableOpacity>
 
             {/* DESCRIPCIÓN */}
             <View style={styles.inputGroup}>
@@ -1001,4 +1039,25 @@ const styles = StyleSheet.create({
     justifyContent: "center",
   },
   btnAgendaText: { color: "#000000", fontSize: 14, fontWeight: "bold" },
+  calendarToggle: {
+  flexDirection: 'row',
+  alignItems: 'center',
+  gap: 10,
+  backgroundColor: 'rgba(255,255,255,0.05)',
+  borderRadius: 12,
+  padding: 14,
+  marginBottom: 12,
+  borderWidth: 1,
+  borderColor: 'rgba(255,255,255,0.1)',
+},
+calendarToggleActivo: {
+  backgroundColor: 'rgba(66,133,244,0.1)',
+  borderColor: 'rgba(66,133,244,0.4)',
+},
+calendarToggleText: {
+  flex: 1,
+  color: '#AAAAAA',
+  fontSize: 14,
+  fontWeight: '600',
+},
 });
