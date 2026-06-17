@@ -45,3 +45,28 @@ export const eliminarEventoCalendar = async (
     }
   );
 };
+
+export const actualizarEventoCalendar = async (
+  accessToken: string,
+  googleEventId: string,
+  evento: Evento
+): Promise<any> => {
+  const response = await fetch(
+    `https://www.googleapis.com/calendar/v3/calendars/primary/events/${googleEventId}`,
+    {
+      method: 'PATCH',
+      headers: {
+        Authorization: `Bearer ${accessToken}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        summary: evento.titulo,
+        description: evento.descripcion,
+      }),
+    }
+  );
+
+  const data = await response.json();
+  console.log('Evento actualizado en Calendar:', data);
+  return data;
+};

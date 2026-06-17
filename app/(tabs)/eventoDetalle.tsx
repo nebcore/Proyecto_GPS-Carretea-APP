@@ -24,6 +24,7 @@ import type { Deuda } from "@/lib/balances";
 import { useBalancesEvento } from "@/lib/realtime/useBalancesEvento";
 import { supabase } from "@/lib/supabase";
 import {
+  actualizarEventoCalendar,
   crearEventoCalendar,
   eliminarEventoCalendar,
 } from "@/services/googleCalendar";
@@ -507,7 +508,21 @@ export default function EventoDetalleScreen() {
   });
 
   const editarEventoMutation = useMutation({
-    mutationFn: (datos: any) => updateEvento(eventoId, datos),
+    mutationFn: async (datos: any) => {
+      // Actualizar en Google Calendar si tiene google_event_id
+      if (evento?.google_event_id) {
+        const accessToken = await obtenerGoogleToken();
+        if (accessToken) {
+          await actualizarEventoCalendar(accessToken, evento.google_event_id, {
+            titulo: datos.titulo,
+            descripcion: datos.descripcion,
+            fechaInicio: evento?.fecha_evento,
+            fechaFin: evento?.fecha_evento,
+          });
+        }
+      }
+      return updateEvento(eventoId, datos);
+    },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["evento", eventoId] });
       queryClient.invalidateQueries({ queryKey: ["eventos"] });

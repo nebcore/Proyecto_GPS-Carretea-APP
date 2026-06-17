@@ -1,4 +1,7 @@
 "use no memo";
+import { obtenerGoogleToken } from "@/lib/api/usuarios";
+import { supabase } from "@/lib/supabase";
+import { crearEventoCalendar } from "@/services/googleCalendar";
 import Feather from "@expo/vector-icons/Feather";
 import DateTimePicker from "@react-native-community/datetimepicker";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
@@ -57,6 +60,7 @@ export default function NuevoEventoScreen() {
 
   const [modalNuevoPartVisible, setModalNuevoPartVisible] = useState(false);
   const [nuevoPartNombre, setNuevoPartNombre] = useState("");
+  const [agregarAlCalendar, setAgregarAlCalendar] = useState(false);
   const [nuevoPartNumero, setNuevoPartNumero] = useState("");
   const [nuevoPartGrupos, setNuevoPartGrupos] = useState<any[]>([]);
   const [mostrarSelectorGruposNuevo, setMostrarSelectorGruposNuevo] =
@@ -95,7 +99,33 @@ export default function NuevoEventoScreen() {
         idsFinales,
       );
     },
-    onSuccess: () => {
+    onSuccess: async (nuevoEvento) => {
+      if (agregarAlCalendar) {
+        try {
+          const accessToken = await obtenerGoogleToken();
+          if (accessToken) {
+            const resultado = await crearEventoCalendar(accessToken, {
+              titulo: nombre.trim(),
+              descripcion: descripcion.trim(),
+              fechaInicio: fecha.toISOString(),
+              fechaFin: fecha.toISOString(),
+            });
+            if (resultado?.id) {
+              await supabase
+                .from("eventos")
+                .update({ google_event_id: resultado.id })
+                .eq("id", nuevoEvento.id);
+            }
+          } else {
+            Alert.alert(
+              "Conecta Google",
+              "Ve a tu perfil y conecta Google Calendar primero.",
+            );
+          }
+        } catch (e) {
+          console.log("Error al agregar a Calendar:", e);
+        }
+      }
       queryClient.invalidateQueries({ queryKey: ["eventos"] });
       router.back();
     },
@@ -202,256 +232,279 @@ export default function NuevoEventoScreen() {
   return (
     <View style={styles.root}>
       <PantallaConTeclado style={styles.container}>
-          <View style={styles.formCard}>
-            {/* ENCABEZADO */}
-            <View style={styles.headerForm}>
-              <View style={styles.headerTextContainer}>
-                <Text style={styles.title}>Nuevo Evento</Text>
-                <Text style={styles.subtitle}>
-                  Parámetros necesarios del evento
-                </Text>
-              </View>
-              <View style={styles.iconCircle}>
-                <Feather name="edit-3" size={24} color="#FFFFFF" />
-              </View>
-            </View>
-
-            {/* NOMBRE */}
-            <View style={styles.inputGroup}>
-              <Text style={styles.label}>Nombre de Evento</Text>
-              <View style={styles.inputContainer}>
-                <Feather
-                  name="map-pin"
-                  size={20}
-                  color="#AAAAAA"
-                  style={styles.inputIcon}
-                />
-                <TextInput
-                  style={styles.input}
-                  placeholder="Ej: Asado del viernes, Salida a la Tropi…"
-                  placeholderTextColor="#666666"
-                  value={nombre}
-                  onChangeText={setNombre}
-                  maxLength={50}
-                />
-              </View>
-            </View>
-
-            {/* FECHA Y HORA */}
-            <View style={styles.inputGroup}>
-              <Text style={styles.label}>Fecha y Hora</Text>
-              <View style={styles.dateRow}>
-                <TouchableOpacity
-                  style={styles.dateBtn}
-                  onPress={() => {
-                    setModoFecha("date");
-                    setShowDatePicker(true);
-                  }}
-                >
-                  <Feather name="calendar" size={16} color="#AAAAAA" />
-                  <Text style={styles.dateBtnText}>
-                    {fecha.toLocaleDateString("es-CL")}
-                  </Text>
-                </TouchableOpacity>
-                <TouchableOpacity
-                  style={styles.dateBtn}
-                  onPress={() => {
-                    setModoFecha("time");
-                    setShowDatePicker(true);
-                  }}
-                >
-                  <Feather name="clock" size={16} color="#AAAAAA" />
-                  <Text style={styles.dateBtnText}>
-                    {fecha.toLocaleTimeString("es-CL", {
-                      hour: "2-digit",
-                      minute: "2-digit",
-                    })}
-                  </Text>
-                </TouchableOpacity>
-              </View>
-              {showDatePicker && (
-                <DateTimePicker
-                  value={fecha}
-                  mode={modoFecha}
-                  is24Hour
-                  display="default"
-                  onChange={(_, selected) => {
-                    setShowDatePicker(Platform.OS === "ios");
-                    if (selected) setFecha(selected);
-                  }}
-                />
-              )}
-            </View>
-
-            {/* UBICACIÓN */}
-            <View style={styles.inputGroup}>
-              <Text style={styles.label}>Ubicación (Opcional)</Text>
-              <View style={styles.inputContainer}>
-                <Feather
-                  name="navigation"
-                  size={20}
-                  color="#AAAAAA"
-                  style={styles.inputIcon}
-                />
-                <TextInput
-                  style={styles.input}
-                  placeholder="Ej: Mi casa, La plaza…"
-                  placeholderTextColor="#666666"
-                  value={ubicacion}
-                  onChangeText={setUbicacion}
-                  maxLength={100}
-                />
-              </View>
-            </View>
-
-            {/* PARTICIPANTES */}
-            <View style={styles.inputGroup}>
-              <Text style={styles.label}>
-                Participantes ({participantesSeleccionados.length})
+        <View style={styles.formCard}>
+          {/* ENCABEZADO */}
+          <View style={styles.headerForm}>
+            <View style={styles.headerTextContainer}>
+              <Text style={styles.title}>Nuevo Evento</Text>
+              <Text style={styles.subtitle}>
+                Parámetros necesarios del evento
               </Text>
-              <View style={styles.integrantesContainer}>
-                <View style={styles.columnaIzquierda}>
-                  <View style={styles.grupoRow}>
-                    <TouchableOpacity
-                      style={styles.dropdownGrupo}
-                      onPress={() => setModalGruposVisible(true)}
-                    >
-                      <Text style={styles.dropdownText} numberOfLines={1}>
-                        {grupoSeleccionado.nombre}
-                      </Text>
-                      <Feather name="chevron-down" size={18} color="#AAAAAA" />
-                    </TouchableOpacity>
-                    <TouchableOpacity
-                      style={styles.botonAdd}
-                      onPress={abrirModalNuevoParticipante}
-                    >
-                      <Feather name="plus" size={18} color="#FFFFFF" />
-                    </TouchableOpacity>
-                  </View>
-                  <ScrollView
-                    horizontal
-                    showsHorizontalScrollIndicator={false}
-                    contentContainerStyle={styles.circulosScroll}
-                  >
-                    {participantesDisplay.length === 0 ? (
-                      <Text style={styles.emptyContactsText}>
-                        No hay contactos en esta lista.
-                      </Text>
-                    ) : (
-                      participantesDisplay.map((item) => (
-                        <TouchableOpacity
-                          key={item.id}
-                          style={styles.participanteItem}
-                          onPress={() => toggleParticipante(item)}
-                        >
-                          <View
-                            style={[
-                              styles.circuloAvatar,
-                              item.seleccionado && styles.circuloSeleccionado,
-                              item.id.startsWith("temp_") &&
-                                styles.circuloTemporal,
-                            ]}
-                          >
-                            {item.seleccionado && (
-                              <View style={styles.checkBadge}>
-                                <Feather
-                                  name="check"
-                                  size={10}
-                                  color="#000000"
-                                />
-                              </View>
-                            )}
-                          </View>
-                          <Text style={styles.nombreAvatar} numberOfLines={1}>
-                            {item.nombre}
-                          </Text>
-                        </TouchableOpacity>
-                      ))
-                    )}
-                  </ScrollView>
-                </View>
-
-                <View style={styles.divisorVertical} />
-
-                <View style={styles.columnaDerecha}>
-                  <ScrollView showsVerticalScrollIndicator={false}>
-                    {participantesSeleccionados.length === 0 ? (
-                      <Text style={styles.emptyText}>Ninguno</Text>
-                    ) : (
-                      participantesSeleccionados.map((item) => (
-                        <View key={item.id} style={styles.rowSeleccionado}>
-                          <View style={styles.rowInfo}>
-                            <View
-                              style={[
-                                styles.circuloPequeno,
-                                item.id.startsWith("temp_") && {
-                                  borderColor: "#4CAF50",
-                                },
-                              ]}
-                            />
-                            <Text style={styles.nombreLista} numberOfLines={1}>
-                              {item.nombre}
-                            </Text>
-                          </View>
-                          <TouchableOpacity
-                            style={styles.btnCerrarX}
-                            onPress={() => toggleParticipante(item)}
-                          >
-                            <Feather name="x" size={16} color="#AAAAAA" />
-                          </TouchableOpacity>
-                        </View>
-                      ))
-                    )}
-                  </ScrollView>
-                </View>
-              </View>
             </View>
-
-            {/* DESCRIPCIÓN */}
-            <View style={styles.inputGroup}>
-              <Text style={styles.label}>Descripción (Opcional)</Text>
-              <View style={styles.inputContainerDesc}>
-                <Feather
-                  name="align-left"
-                  size={20}
-                  color="#AAAAAA"
-                  style={styles.iconTop}
-                />
-                <TextInput
-                  style={styles.textArea}
-                  placeholder="Detalles adicionales sobre el evento…"
-                  placeholderTextColor="#666666"
-                  value={descripcion}
-                  onChangeText={setDescripcion}
-                  multiline
-                  maxLength={200}
-                />
-              </View>
-            </View>
-
-            {/* BOTONES */}
-            <View style={styles.actionButtonsContainer}>
-              <TouchableOpacity
-                style={[
-                  styles.submitButton,
-                  (crearEventoMutation.isPending || nombre.trim() === "") && {
-                    opacity: 0.5,
-                  },
-                ]}
-                onPress={handleCrearEvento}
-                disabled={crearEventoMutation.isPending || nombre.trim() === ""}
-              >
-                <Text style={styles.submitButtonText}>Crear Evento</Text>
-                <Feather name="arrow-right" size={20} color="#000000" />
-              </TouchableOpacity>
-              <TouchableOpacity
-                style={styles.secondaryButton}
-                onPress={() => router.back()}
-              >
-                <Feather name="x" size={20} color="#000000" />
-              </TouchableOpacity>
+            <View style={styles.iconCircle}>
+              <Feather name="edit-3" size={24} color="#FFFFFF" />
             </View>
           </View>
+
+          {/* NOMBRE */}
+          <View style={styles.inputGroup}>
+            <Text style={styles.label}>Nombre de Evento</Text>
+            <View style={styles.inputContainer}>
+              <Feather
+                name="map-pin"
+                size={20}
+                color="#AAAAAA"
+                style={styles.inputIcon}
+              />
+              <TextInput
+                style={styles.input}
+                placeholder="Ej: Asado del viernes, Salida a la Tropi…"
+                placeholderTextColor="#666666"
+                value={nombre}
+                onChangeText={setNombre}
+                maxLength={50}
+              />
+            </View>
+          </View>
+
+          {/* FECHA Y HORA */}
+          <View style={styles.inputGroup}>
+            <Text style={styles.label}>Fecha y Hora</Text>
+            <View style={styles.dateRow}>
+              <TouchableOpacity
+                style={styles.dateBtn}
+                onPress={() => {
+                  setModoFecha("date");
+                  setShowDatePicker(true);
+                }}
+              >
+                <Feather name="calendar" size={16} color="#AAAAAA" />
+                <Text style={styles.dateBtnText}>
+                  {fecha.toLocaleDateString("es-CL")}
+                </Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={styles.dateBtn}
+                onPress={() => {
+                  setModoFecha("time");
+                  setShowDatePicker(true);
+                }}
+              >
+                <Feather name="clock" size={16} color="#AAAAAA" />
+                <Text style={styles.dateBtnText}>
+                  {fecha.toLocaleTimeString("es-CL", {
+                    hour: "2-digit",
+                    minute: "2-digit",
+                  })}
+                </Text>
+              </TouchableOpacity>
+            </View>
+            {showDatePicker && (
+              <DateTimePicker
+                value={fecha}
+                mode={modoFecha}
+                is24Hour
+                display="default"
+                onChange={(_, selected) => {
+                  setShowDatePicker(Platform.OS === "ios");
+                  if (selected) setFecha(selected);
+                }}
+              />
+            )}
+          </View>
+
+          {/* UBICACIÓN */}
+          <View style={styles.inputGroup}>
+            <Text style={styles.label}>Ubicación (Opcional)</Text>
+            <View style={styles.inputContainer}>
+              <Feather
+                name="navigation"
+                size={20}
+                color="#AAAAAA"
+                style={styles.inputIcon}
+              />
+              <TextInput
+                style={styles.input}
+                placeholder="Ej: Mi casa, La plaza…"
+                placeholderTextColor="#666666"
+                value={ubicacion}
+                onChangeText={setUbicacion}
+                maxLength={100}
+              />
+            </View>
+          </View>
+
+          {/* PARTICIPANTES */}
+          <View style={styles.inputGroup}>
+            <Text style={styles.label}>
+              Participantes ({participantesSeleccionados.length})
+            </Text>
+            <View style={styles.integrantesContainer}>
+              <View style={styles.columnaIzquierda}>
+                <View style={styles.grupoRow}>
+                  <TouchableOpacity
+                    style={styles.dropdownGrupo}
+                    onPress={() => setModalGruposVisible(true)}
+                  >
+                    <Text style={styles.dropdownText} numberOfLines={1}>
+                      {grupoSeleccionado.nombre}
+                    </Text>
+                    <Feather name="chevron-down" size={18} color="#AAAAAA" />
+                  </TouchableOpacity>
+                  <TouchableOpacity
+                    style={styles.botonAdd}
+                    onPress={abrirModalNuevoParticipante}
+                  >
+                    <Feather name="plus" size={18} color="#FFFFFF" />
+                  </TouchableOpacity>
+                </View>
+                <ScrollView
+                  horizontal
+                  showsHorizontalScrollIndicator={false}
+                  contentContainerStyle={styles.circulosScroll}
+                >
+                  {participantesDisplay.length === 0 ? (
+                    <Text style={styles.emptyContactsText}>
+                      No hay contactos en esta lista.
+                    </Text>
+                  ) : (
+                    participantesDisplay.map((item) => (
+                      <TouchableOpacity
+                        key={item.id}
+                        style={styles.participanteItem}
+                        onPress={() => toggleParticipante(item)}
+                      >
+                        <View
+                          style={[
+                            styles.circuloAvatar,
+                            item.seleccionado && styles.circuloSeleccionado,
+                            item.id.startsWith("temp_") &&
+                              styles.circuloTemporal,
+                          ]}
+                        >
+                          {item.seleccionado && (
+                            <View style={styles.checkBadge}>
+                              <Feather name="check" size={10} color="#000000" />
+                            </View>
+                          )}
+                        </View>
+                        <Text style={styles.nombreAvatar} numberOfLines={1}>
+                          {item.nombre}
+                        </Text>
+                      </TouchableOpacity>
+                    ))
+                  )}
+                </ScrollView>
+              </View>
+
+              <View style={styles.divisorVertical} />
+
+              <View style={styles.columnaDerecha}>
+                <ScrollView showsVerticalScrollIndicator={false}>
+                  {participantesSeleccionados.length === 0 ? (
+                    <Text style={styles.emptyText}>Ninguno</Text>
+                  ) : (
+                    participantesSeleccionados.map((item) => (
+                      <View key={item.id} style={styles.rowSeleccionado}>
+                        <View style={styles.rowInfo}>
+                          <View
+                            style={[
+                              styles.circuloPequeno,
+                              item.id.startsWith("temp_") && {
+                                borderColor: "#4CAF50",
+                              },
+                            ]}
+                          />
+                          <Text style={styles.nombreLista} numberOfLines={1}>
+                            {item.nombre}
+                          </Text>
+                        </View>
+                        <TouchableOpacity
+                          style={styles.btnCerrarX}
+                          onPress={() => toggleParticipante(item)}
+                        >
+                          <Feather name="x" size={16} color="#AAAAAA" />
+                        </TouchableOpacity>
+                      </View>
+                    ))
+                  )}
+                </ScrollView>
+              </View>
+            </View>
+          </View>
+          {/* AGREGAR A GOOGLE CALENDAR */}
+          <TouchableOpacity
+            style={[
+              styles.calendarToggle,
+              agregarAlCalendar && styles.calendarToggleActivo,
+            ]}
+            onPress={() => setAgregarAlCalendar(!agregarAlCalendar)}
+          >
+            <Feather
+              name="calendar"
+              size={16}
+              color={agregarAlCalendar ? "#4285F4" : "#AAAAAA"}
+            />
+            <Text
+              style={[
+                styles.calendarToggleText,
+                agregarAlCalendar && { color: "#4285F4" },
+              ]}
+            >
+              ¿Agregar a Google Calendar?
+            </Text>
+            <Feather
+              name={agregarAlCalendar ? "check-circle" : "circle"}
+              size={16}
+              color={agregarAlCalendar ? "#4285F4" : "#AAAAAA"}
+            />
+          </TouchableOpacity>
+
+          {/* DESCRIPCIÓN */}
+          <View style={styles.inputGroup}>
+            <Text style={styles.label}>Descripción (Opcional)</Text>
+            <View style={styles.inputContainerDesc}>
+              <Feather
+                name="align-left"
+                size={20}
+                color="#AAAAAA"
+                style={styles.iconTop}
+              />
+              <TextInput
+                style={styles.textArea}
+                placeholder="Detalles adicionales sobre el evento…"
+                placeholderTextColor="#666666"
+                value={descripcion}
+                onChangeText={setDescripcion}
+                multiline
+                maxLength={200}
+              />
+            </View>
+          </View>
+
+          {/* BOTONES */}
+          <View style={styles.actionButtonsContainer}>
+            <TouchableOpacity
+              style={[
+                styles.submitButton,
+                (crearEventoMutation.isPending || nombre.trim() === "") && {
+                  opacity: 0.5,
+                },
+              ]}
+              onPress={handleCrearEvento}
+              disabled={crearEventoMutation.isPending || nombre.trim() === ""}
+            >
+              <Text style={styles.submitButtonText}>Crear Evento</Text>
+              <Feather name="arrow-right" size={20} color="#000000" />
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={styles.secondaryButton}
+              onPress={() => router.back()}
+            >
+              <Feather name="x" size={20} color="#000000" />
+            </TouchableOpacity>
+          </View>
+        </View>
       </PantallaConTeclado>
 
       {/* MODAL GRUPOS FILTRO */}
@@ -995,4 +1048,25 @@ const styles = StyleSheet.create({
     justifyContent: "center",
   },
   btnAgendaText: { color: "#000000", fontSize: 14, fontWeight: "bold" },
+  calendarToggle: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 10,
+    backgroundColor: "rgba(255,255,255,0.05)",
+    borderRadius: 12,
+    padding: 14,
+    marginBottom: 12,
+    borderWidth: 1,
+    borderColor: "rgba(255,255,255,0.1)",
+  },
+  calendarToggleActivo: {
+    backgroundColor: "rgba(66,133,244,0.1)",
+    borderColor: "rgba(66,133,244,0.4)",
+  },
+  calendarToggleText: {
+    flex: 1,
+    color: "#AAAAAA",
+    fontSize: 14,
+    fontWeight: "600",
+  },
 });
