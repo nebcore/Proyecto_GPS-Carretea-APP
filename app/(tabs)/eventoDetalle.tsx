@@ -1,6 +1,7 @@
 import {
   confirmarPago,
   devolverPagoAPendiente,
+  obtenerPagosEvento,
   obtenerPagosReportadosEvento,
   reportarPago,
 } from "@/lib/api/pagos";
@@ -82,6 +83,12 @@ export default function EventoDetalleScreen() {
 
   const { balances, deudas } = useBalancesEvento(eventoId);
 
+  const { data: pagosEvento = [], isLoading: loadingPagosEvento } = useQuery({
+    queryKey: ["pagos", eventoId],
+    queryFn: () => obtenerPagosEvento(eventoId),
+    enabled: Boolean(eventoId),
+  });
+
   const { data: usuarioActualId } = useQuery({
     queryKey: ["usuario-actual-id"],
     queryFn: async () => {
@@ -130,12 +137,32 @@ export default function EventoDetalleScreen() {
     return mapa;
   }, [participantes]);
 
+  const pagosNoPendientesPorDeuda = useMemo(() => {
+    const claves = new Set<string>();
+
+    for (const pago of pagosEvento as any[]) {
+      if (pago.estado === "pendiente") continue;
+
+      claves.add(
+        `${pago.deudor_id}-${pago.acreedor_id}-${Number(pago.monto).toFixed(2)}`,
+      );
+    }
+
+    return claves;
+  }, [pagosEvento]);
+
   const deudasDelUsuario = useMemo(
     () =>
-      deudas.filter(
-        (deuda) => usuariosPorContactoId.get(deuda.deudorId) === usuarioActualId,
-      ),
-    [deudas, usuarioActualId, usuariosPorContactoId],
+      deudas.filter((deuda) => {
+        const esDeudaDelUsuario =
+          usuariosPorContactoId.get(deuda.deudorId) === usuarioActualId;
+        const claveDeuda = `${deuda.deudorId}-${deuda.acreedorId}-${Number(
+          deuda.monto,
+        ).toFixed(2)}`;
+
+        return esDeudaDelUsuario && !pagosNoPendientesPorDeuda.has(claveDeuda);
+      }),
+    [deudas, pagosNoPendientesPorDeuda, usuarioActualId, usuariosPorContactoId],
   );
 
   const cerrarModalReporte = () => {
@@ -150,10 +177,15 @@ export default function EventoDetalleScreen() {
       return;
     }
 
+    if (loadingPagosEvento) {
+      Alert.alert("Un momento", "Estamos revisando tus pagos pendientes.");
+      return;
+    }
+
     if (deudasDelUsuario.length === 0) {
       Alert.alert(
         "Sin deudas",
-        "No encontramos deudas asociadas a tu usuario en este evento.",
+        "No tienes pagos pendientes por reportar en este evento.",
       );
       return;
     }
@@ -270,6 +302,7 @@ export default function EventoDetalleScreen() {
       queryClient.invalidateQueries({ queryKey: ["total-gastos"] });
       queryClient.invalidateQueries({ queryKey: ["actividad-reciente"] });
       queryClient.invalidateQueries({ queryKey: ["balances", eventoId] });
+      queryClient.invalidateQueries({ queryKey: ["pagos", eventoId] });
       cerrarModalReporte();
       Alert.alert("Pago reportado", "El pago fue reportado correctamente.");
     },
@@ -289,6 +322,7 @@ export default function EventoDetalleScreen() {
       queryClient.invalidateQueries({ queryKey: ["total-gastos"] });
       queryClient.invalidateQueries({ queryKey: ["actividad-reciente"] });
       queryClient.invalidateQueries({ queryKey: ["balances", eventoId] });
+      queryClient.invalidateQueries({ queryKey: ["pagos", eventoId] });
       cerrarModalConfirmacion();
       Alert.alert("Pago confirmado", "El pago ha sido confirmado.");
     },
@@ -308,6 +342,7 @@ export default function EventoDetalleScreen() {
       queryClient.invalidateQueries({ queryKey: ["total-gastos"] });
       queryClient.invalidateQueries({ queryKey: ["actividad-reciente"] });
       queryClient.invalidateQueries({ queryKey: ["balances", eventoId] });
+      queryClient.invalidateQueries({ queryKey: ["pagos", eventoId] });
       cerrarModalConfirmacion();
       Alert.alert("Pago devuelto", "El pago volvió al estado pendiente.");
     },
