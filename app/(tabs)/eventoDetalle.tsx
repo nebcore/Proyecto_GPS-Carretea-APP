@@ -5,11 +5,14 @@ import {
 } from "@/lib/api/pagos";
 import Feather from "@expo/vector-icons/Feather";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import * as ImagePicker from "expo-image-picker";
 import { router, useLocalSearchParams } from "expo-router";
 import { useMemo, useState } from "react";
 import {
   ActivityIndicator,
   Alert,
+  Image,
+  Modal,
   ScrollView,
   StyleSheet,
   Text,
@@ -26,6 +29,7 @@ import {
   obtenerParticipantesEvento,
 } from "@/lib/api/gastos";
 import { useBalancesEvento } from "@/lib/realtime/useBalancesEvento";
+import type { Deuda } from "@/lib/balances";
 
 const formatearFecha = (fechaString: string) => {
   if (!fechaString) return "";
@@ -43,6 +47,12 @@ type Tab = "gastos" | "balances" | "participantes";
 export default function EventoDetalleScreen() {
   const { eventoId } = useLocalSearchParams<{ eventoId: string }>();
   const [tabActivo, setTabActivo] = useState<Tab>("gastos");
+  const [modalReporteVisible, setModalReporteVisible] = useState(false);
+  const [deudaSeleccionada, setDeudaSeleccionada] = useState<Deuda | null>(
+    null,
+  );
+  const [comprobante, setComprobante] =
+    useState<ImagePicker.ImagePickerAsset | null>(null);
   const queryClient = useQueryClient();
 
   const { data: evento, isLoading: loadingEvento } = useQuery({
@@ -85,6 +95,72 @@ export default function EventoDetalleScreen() {
     return mapa;
   }, [participantes]);
 
+  const cerrarModalReporte = () => {
+    setModalReporteVisible(false);
+    setDeudaSeleccionada(null);
+    setComprobante(null);
+  };
+
+  const abrirModalReporte = () => {
+    if (deudas.length === 0) {
+      Alert.alert("Sin deudas", "No hay deudas pendientes en este evento.");
+      return;
+    }
+
+    setDeudaSeleccionada(deudas[0]);
+    setComprobante(null);
+    setModalReporteVisible(true);
+  };
+
+  const seleccionarComprobante = async () => {
+    const permisos = await ImagePicker.requestMediaLibraryPermissionsAsync();
+
+    if (!permisos.granted) {
+      Alert.alert(
+        "Permiso necesario",
+        "Necesitamos acceso a tus fotos para adjuntar el comprobante.",
+      );
+      return;
+    }
+
+    const resultado = await ImagePicker.launchImageLibraryAsync({
+      mediaTypes: ["images"],
+      allowsEditing: false,
+      quality: 0.85,
+    });
+
+    if (!resultado.canceled) {
+      setComprobante(resultado.assets[0]);
+    }
+  };
+
+  const enviarReportePago = () => {
+    if (!deudaSeleccionada) {
+      Alert.alert("Selecciona una deuda", "Elige que deuda quieres reportar.");
+      return;
+    }
+
+    if (!comprobante) {
+      Alert.alert(
+        "Falta comprobante",
+        "Agrega una imagen del comprobante antes de reportar.",
+      );
+      return;
+    }
+
+    reportarPagoMutation.mutate({
+      eventoId,
+      deudorId: deudaSeleccionada.deudorId,
+      acreedorId: deudaSeleccionada.acreedorId,
+      monto: deudaSeleccionada.monto,
+      comprobante: {
+        uri: comprobante.uri,
+        mimeType: comprobante.mimeType,
+        fileName: comprobante.fileName,
+      },
+    });
+  };
+
   const borrarGastoMutation = useMutation({
     mutationFn: borrarGasto,
     onSuccess: () => {
@@ -99,14 +175,15 @@ export default function EventoDetalleScreen() {
   });
 
   const reportarPagoMutation = useMutation({
-    mutationFn: ({ eventoId, acreedorId, monto }: any) =>
-      reportarPago(eventoId, acreedorId, monto),
+    mutationFn: ({ eventoId, deudorId, acreedorId, monto, comprobante }: any) =>
+      reportarPago(eventoId, deudorId, acreedorId, monto, comprobante),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["gastos-detalle", eventoId] });
       queryClient.invalidateQueries({ queryKey: ["gastos", eventoId] });
       queryClient.invalidateQueries({ queryKey: ["total-gastos"] });
       queryClient.invalidateQueries({ queryKey: ["actividad-reciente"] });
       queryClient.invalidateQueries({ queryKey: ["balances", eventoId] });
+      cerrarModalReporte();
       Alert.alert("Pago reportado", "El pago fue reportado correctamente.");
     },
     onError: (error: any) => {
@@ -312,32 +389,8 @@ export default function EventoDetalleScreen() {
 
               <TouchableOpacity
                 style={[styles.botonSecundario, { marginTop: 12 }]}
-                onPress={() => {
-                  if (!deudas || deudas.length === 0) {
-                    Alert.alert("Sin deudas", "No hay deudas para reportar.");
-                    return;
-                  }
-
-                  const d = deudas[0];
-                  const acreedorNombre =
-                    participantesPorId.get(d.acreedorId) ?? d.acreedorId;
-                  Alert.alert(
-                    "Reportar pago",
-                    `Reportar pago a ${acreedorNombre} por ${formatearMonto(d.monto)}?`,
-                    [
-                      { text: "Cancelar", style: "cancel" },
-                      {
-                        text: "Reportar",
-                        onPress: () =>
-                          reportarPagoMutation.mutate({
-                            eventoId,
-                            acreedorId: d.acreedorId,
-                            monto: d.monto,
-                          }),
-                      },
-                    ],
-                  );
-                }}
+                onPress={abrirModalReporte}
+                disabled={reportarPagoMutation.isPending}
               >
                 <Text style={styles.botonSecundarioText}>Reportar pago</Text>
               </TouchableOpacity>
@@ -440,6 +493,111 @@ export default function EventoDetalleScreen() {
           </TouchableOpacity>
         </View>
       )}
+
+      <Modal
+        visible={modalReporteVisible}
+        transparent
+        animationType="slide"
+        onRequestClose={cerrarModalReporte}
+      >
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalCard}>
+            <View style={styles.modalHeader}>
+              <Text style={styles.modalTitulo}>Reportar pago</Text>
+              <TouchableOpacity
+                style={styles.modalClose}
+                onPress={cerrarModalReporte}
+                disabled={reportarPagoMutation.isPending}
+              >
+                <Feather name="x" size={20} color="#FFFFFF" />
+              </TouchableOpacity>
+            </View>
+
+            <Text style={styles.modalLabel}>Balance del evento</Text>
+            <ScrollView style={styles.deudasSelector}>
+              {deudas.map((deuda, index) => {
+                const seleccionada =
+                  deudaSeleccionada?.deudorId === deuda.deudorId &&
+                  deudaSeleccionada?.acreedorId === deuda.acreedorId &&
+                  deudaSeleccionada?.monto === deuda.monto;
+                const deudorNombre =
+                  participantesPorId.get(deuda.deudorId) ?? deuda.deudorId;
+                const acreedorNombre =
+                  participantesPorId.get(deuda.acreedorId) ?? deuda.acreedorId;
+
+                return (
+                  <TouchableOpacity
+                    key={`${deuda.deudorId}-${deuda.acreedorId}-${index}`}
+                    style={[
+                      styles.deudaOption,
+                      seleccionada && styles.deudaOptionActiva,
+                    ]}
+                    onPress={() => setDeudaSeleccionada(deuda)}
+                    disabled={reportarPagoMutation.isPending}
+                  >
+                    <View style={styles.deudaOptionInfo}>
+                      <Text style={styles.deudaOptionTitle}>
+                        {deudorNombre}
+                      </Text>
+                      <Text style={styles.deudaOptionSub}>
+                        Paga a {acreedorNombre}
+                      </Text>
+                      <Text style={styles.deudaOptionMonto}>
+                        {formatearMonto(deuda.monto)}
+                      </Text>
+                    </View>
+                    {seleccionada ? (
+                      <Feather name="check-circle" size={20} color="#4CAF50" />
+                    ) : null}
+                  </TouchableOpacity>
+                );
+              })}
+            </ScrollView>
+
+            <Text style={styles.modalLabel}>Comprobante</Text>
+            <TouchableOpacity
+              style={styles.comprobanteBox}
+              onPress={seleccionarComprobante}
+              disabled={reportarPagoMutation.isPending}
+            >
+              {comprobante ? (
+                <>
+                  <Image
+                    source={{ uri: comprobante.uri }}
+                    style={styles.comprobantePreview}
+                  />
+                  <View style={styles.comprobanteOverlay}>
+                    <Feather name="image" size={16} color="#FFFFFF" />
+                    <Text style={styles.comprobanteOverlayText}>Cambiar</Text>
+                  </View>
+                </>
+              ) : (
+                <>
+                  <Feather name="upload" size={22} color="#FFFFFF" />
+                  <Text style={styles.comprobanteText}>
+                    Seleccionar imagen
+                  </Text>
+                </>
+              )}
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              style={[
+                styles.botonReportarFinal,
+                reportarPagoMutation.isPending && styles.botonDeshabilitado,
+              ]}
+              onPress={enviarReportePago}
+              disabled={reportarPagoMutation.isPending}
+            >
+              {reportarPagoMutation.isPending ? (
+                <ActivityIndicator color="#000000" />
+              ) : (
+                <Text style={styles.botonReportarFinalText}>Reportar</Text>
+              )}
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
     </View>
   );
 }
@@ -610,6 +768,139 @@ const styles = StyleSheet.create({
     color: "#FFFFFF",
     fontWeight: "bold",
     fontSize: 15,
+  },
+  modalOverlay: {
+    flex: 1,
+    justifyContent: "flex-end",
+    backgroundColor: "rgba(0,0,0,0.65)",
+  },
+  modalCard: {
+    maxHeight: "88%",
+    backgroundColor: "#181818",
+    borderTopLeftRadius: 22,
+    borderTopRightRadius: 22,
+    padding: 20,
+    borderWidth: 1,
+    borderColor: "rgba(255,255,255,0.1)",
+  },
+  modalHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    marginBottom: 18,
+  },
+  modalTitulo: {
+    color: "#FFFFFF",
+    fontSize: 20,
+    fontWeight: "bold",
+  },
+  modalClose: {
+    width: 38,
+    height: 38,
+    borderRadius: 19,
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: "rgba(255,255,255,0.12)",
+  },
+  modalLabel: {
+    color: "rgba(255,255,255,0.65)",
+    fontSize: 13,
+    fontWeight: "600",
+    marginBottom: 8,
+  },
+  deudasSelector: {
+    maxHeight: 210,
+    marginBottom: 18,
+  },
+  deudaOption: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    minHeight: 64,
+    padding: 14,
+    marginBottom: 10,
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: "rgba(255,255,255,0.08)",
+    backgroundColor: "rgba(255,255,255,0.07)",
+  },
+  deudaOptionActiva: {
+    borderColor: "rgba(76,175,80,0.75)",
+    backgroundColor: "rgba(76,175,80,0.12)",
+  },
+  deudaOptionInfo: {
+    flex: 1,
+    paddingRight: 12,
+  },
+  deudaOptionTitle: {
+    color: "#FFFFFF",
+    fontSize: 15,
+    fontWeight: "600",
+  },
+  deudaOptionSub: {
+    color: "rgba(255,255,255,0.55)",
+    fontSize: 12,
+    marginTop: 3,
+  },
+  deudaOptionMonto: {
+    color: "#FF6B6B",
+    fontSize: 15,
+    fontWeight: "bold",
+    marginTop: 4,
+  },
+  comprobanteBox: {
+    height: 170,
+    borderRadius: 16,
+    overflow: "hidden",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 8,
+    borderWidth: 1,
+    borderStyle: "dashed",
+    borderColor: "rgba(255,255,255,0.22)",
+    backgroundColor: "rgba(255,255,255,0.07)",
+    marginBottom: 18,
+  },
+  comprobantePreview: {
+    width: "100%",
+    height: "100%",
+  },
+  comprobanteOverlay: {
+    position: "absolute",
+    right: 12,
+    bottom: 12,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: 14,
+    backgroundColor: "rgba(0,0,0,0.65)",
+  },
+  comprobanteOverlayText: {
+    color: "#FFFFFF",
+    fontSize: 12,
+    fontWeight: "700",
+  },
+  comprobanteText: {
+    color: "#FFFFFF",
+    fontSize: 15,
+    fontWeight: "600",
+  },
+  botonReportarFinal: {
+    minHeight: 52,
+    borderRadius: 16,
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: "#FFFFFF",
+  },
+  botonReportarFinalText: {
+    color: "#000000",
+    fontSize: 16,
+    fontWeight: "bold",
+  },
+  botonDeshabilitado: {
+    opacity: 0.65,
   },
 
   // --- FAB ---
