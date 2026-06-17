@@ -1,34 +1,87 @@
-import { Tabs } from 'expo-router';
-import React from 'react';
-
-import { HapticTab } from '@/components/haptic-tab';
-import { IconSymbol } from '@/components/ui/icon-symbol';
-import { Colors } from '@/constants/theme';
-import { useColorScheme } from '@/hooks/use-color-scheme';
+import { HapticTab } from "@/components/haptic-tab";
+import Feather from "@expo/vector-icons/Feather";
+import { Tabs } from "expo-router";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 export default function TabLayout() {
-  const colorScheme = useColorScheme();
+  const insets = useSafeAreaInsets();
 
   return (
     <Tabs
       screenOptions={{
-        tabBarActiveTintColor: Colors[colorScheme ?? 'light'].tint,
         headerShown: false,
         tabBarButton: HapticTab,
-      }}>
+        tabBarActiveTintColor: "#FFFFFF",
+        tabBarInactiveTintColor: "rgba(255,255,255,0.4)",
+        tabBarStyle: {
+          backgroundColor: "rgba(18, 18, 18, 0.8)",
+          borderTopWidth: 1,
+          borderTopColor: "rgba(255, 255, 255, 0.1)",
+          height: 54 + insets.bottom,
+          paddingBottom: insets.bottom,
+        },
+        tabBarLabelStyle: {
+          fontSize: 11,
+        },
+      }}
+    >
       <Tabs.Screen
         name="index"
         options={{
-          title: 'Home',
-          tabBarIcon: ({ color }) => <IconSymbol size={28} name="house.fill" color={color} />,
+          title: "Inicio",
+          tabBarIcon: ({ color }) => (
+            <Feather name="home" size={22} color={color} />
+          ),
         }}
       />
       <Tabs.Screen
-        name="explore"
+        name="eventos"
         options={{
-          title: 'Explore',
-          tabBarIcon: ({ color }) => <IconSymbol size={28} name="paperplane.fill" color={color} />,
+          title: "Eventos",
+          tabBarIcon: ({ color }) => (
+            <Feather name="calendar" size={22} color={color} />
+          ),
         }}
+      />
+      <Tabs.Screen
+        name="agenda"
+        options={{
+          title: "Agenda",
+          tabBarIcon: ({ color }) => (
+            <Feather name="book" size={22} color={color} />
+          ),
+        }}
+      />
+      <Tabs.Screen
+        name="perfil"
+        options={{
+          title: "Perfil",
+          tabBarIcon: ({ color }) => (
+            <Feather name="user" size={22} color={color} />
+          ),
+        }}
+      />
+      <Tabs.Screen
+        name="saldos"
+        options={{
+          title: "Más",
+          tabBarIcon: ({ color }) => (
+            <Feather name="more-horizontal" size={22} color={color} />
+          ),
+          href: null,
+        }}
+      />
+      <Tabs.Screen
+        name="eventoDetalle"
+        options={{ href: null }}
+      />
+      <Tabs.Screen
+        name="gastoNuevo"
+        options={{ href: null }}
+      />
+      <Tabs.Screen
+        name="nuevoEvento"
+        options={{ href: null }}
       />
     </Tabs>
   );

@@ -1,0 +1,190 @@
+import { supabase } from "../supabase";
+
+export const getContactos = async () => {
+  const { data, error } = await supabase
+    .from("contactos")
+    .select(
+      `
+      *,
+      contactos_grupos(
+        grupo_id,
+        grupos_contacto(id, nombre)
+      )
+    `,
+    )
+    .order("nombre", { ascending: true });
+  if (error) throw error;
+
+  return data.map((c) => ({
+    ...c,
+    gruposAsignados: (c.contactos_grupos ?? [])
+      .map((cg: any) => cg.grupos_contacto)
+      .filter(Boolean),
+  }));
+};
+
+export const createContacto = async (contacto: {
+  nombre: string;
+  telefono?: string;
+  referencia_usuario_id?: string;
+}) => {
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  const { data, error } = await supabase
+    .from("contactos")
+    .insert({ ...contacto, usuario_id: user!.id })
+    .select()
+    .single();
+  if (error) throw error;
+  return data;
+};
+
+export const createContactoConGrupos = async (
+  nombre: string,
+  telefono: string,
+  gruposIds: string[],
+) => {
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+
+  const { data: usuarioExistente } = telefono
+    ? await supabase
+        .from("usuarios")
+        .select("id")
+        .eq("telefono", telefono)
+        .maybeSingle()
+    : { data: null };
+
+  const { data: contacto, error } = await supabase
+    .from("contactos")
+    .insert({
+      nombre,
+      telefono: telefono || null,
+      usuario_id: user!.id,
+      referencia_usuario_id: usuarioExistente?.id ?? null,
+      es_temporal: !usuarioExistente,
+    })
+    .select()
+    .single();
+  if (error) throw error;
+
+  if (gruposIds.length > 0) {
+    const relaciones = gruposIds.map((grupo_id) => ({
+      contacto_id: contacto.id,
+      grupo_id,
+    }));
+    const { error: errorGrupos } = await supabase
+      .from("contactos_grupos")
+      .insert(relaciones);
+    if (errorGrupos) throw errorGrupos;
+  }
+
+  return contacto;
+};
+
+export const getOrCreateContactoPropio = async () => {
+  const {
+    data: { user },
+    error: authError,
+  } = await supabase.auth.getUser();
+
+  if (authError || !user) {
+    throw new Error("Usuario no autenticado");
+  }
+
+  const { data: contactoExistente, error: errorBusqueda } = await supabase
+    .from("contactos")
+    .select("*")
+    .eq("usuario_id", user.id)
+    .eq("referencia_usuario_id", user.id)
+    .maybeSingle();
+
+  if (errorBusqueda) {
+    throw errorBusqueda;
+  }
+
+  if (contactoExistente) {
+    return contactoExistente;
+  }
+
+  const nombre =
+    user.user_metadata?.nombre ||
+    user.user_metadata?.name ||
+    user.email ||
+    "Yo";
+
+  const { data: contactoCreado, error: errorCreacion } = await supabase
+    .from("contactos")
+    .insert({
+      usuario_id: user.id,
+      referencia_usuario_id: user.id,
+      nombre,
+      es_temporal: false,
+    })
+    .select()
+    .single();
+
+  if (errorCreacion) {
+    throw errorCreacion;
+  }
+
+  return contactoCreado;
+};
+
+export const updateContactoConGrupos = async (
+  contactoId: string,
+  nombre: string,
+  telefono: string,
+  gruposIds: string[],
+) => {
+  const { error } = await supabase
+    .from("contactos")
+    .update({ nombre, telefono: telefono || null })
+    .eq("id", contactoId);
+  if (error) throw error;
+
+  await supabase
+    .from("contactos_grupos")
+    .delete()
+    .eq("contacto_id", contactoId);
+
+  if (gruposIds.length > 0) {
+    const relaciones = gruposIds.map((grupo_id) => ({
+      contacto_id: contactoId,
+      grupo_id,
+    }));
+    const { error: errorGrupos } = await supabase
+      .from("contactos_grupos")
+      .insert(relaciones);
+    if (errorGrupos) throw errorGrupos;
+  }
+};
+
+export const deleteContacto = async (id: string) => {
+  const { error } = await supabase.from("contactos").delete().eq("id", id);
+  if (error) throw error;
+};
+
+export const deleteContactos = async (ids: string[]) => {
+  const { error } = await supabase.from("contactos").delete().in("id", ids);
+  if (error) throw error;
+};
+
+export const getContactosParaInvitar = async () => {
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user) return [];
+
+  const { data, error } = await supabase
+    .from("contactos")
+    .select("*")
+    .eq("usuario_id", user.id)
+    .or(`referencia_usuario_id.is.null,referencia_usuario_id.neq.${user.id}`)
+    .order("nombre", { ascending: true });
+
+  if (error) throw error;
+  return data || [];
+};
