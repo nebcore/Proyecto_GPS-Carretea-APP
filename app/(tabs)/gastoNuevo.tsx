@@ -696,10 +696,12 @@ const styles = StyleSheet.create({
   // --- TOGGLE DIVISIÓN ---
   toggleRow: {
     flexDirection: "row",
+    flexWrap: "wrap",
     gap: 10,
   },
   toggleBtn: {
-    flex: 1,
+    width: "48%",
+    flexGrow: 1,
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "center",

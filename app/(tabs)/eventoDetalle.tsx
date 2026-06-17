@@ -1,15 +1,20 @@
 import {
   confirmarPago,
+  devolverPagoAPendiente,
   obtenerPagosEvento,
+  obtenerPagosReportadosEvento,
   reportarPago,
 } from "@/lib/api/pagos";
 import Feather from "@expo/vector-icons/Feather";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import * as ImagePicker from "expo-image-picker";
 import { router, useLocalSearchParams } from "expo-router";
 import { useMemo, useState } from "react";
 import {
   ActivityIndicator,
   Alert,
+  Image,
+  Modal,
   ScrollView,
   StyleSheet,
   Text,
@@ -26,6 +31,8 @@ import {
   obtenerParticipantesEvento,
 } from "@/lib/api/gastos";
 import { useBalancesEvento } from "@/lib/realtime/useBalancesEvento";
+import { supabase } from "@/lib/supabase";
+import type { Deuda } from "@/lib/balances";
 
 const formatearFecha = (fechaString: string) => {
   if (!fechaString) return "";
@@ -43,6 +50,16 @@ type Tab = "gastos" | "balances" | "participantes";
 export default function EventoDetalleScreen() {
   const { eventoId } = useLocalSearchParams<{ eventoId: string }>();
   const [tabActivo, setTabActivo] = useState<Tab>("gastos");
+  const [modalReporteVisible, setModalReporteVisible] = useState(false);
+  const [modalConfirmacionVisible, setModalConfirmacionVisible] =
+    useState(false);
+  const [deudaSeleccionada, setDeudaSeleccionada] = useState<Deuda | null>(
+    null,
+  );
+  const [comprobante, setComprobante] =
+    useState<ImagePicker.ImagePickerAsset | null>(null);
+  const [pagosReportados, setPagosReportados] = useState<any[]>([]);
+  const [cargandoPagosReportados, setCargandoPagosReportados] = useState(false);
   const queryClient = useQueryClient();
 
   const { data: evento, isLoading: loadingEvento } = useQuery({
@@ -66,6 +83,25 @@ export default function EventoDetalleScreen() {
 
   const { balances, deudas } = useBalancesEvento(eventoId);
 
+  const { data: pagosEvento = [], isLoading: loadingPagosEvento } = useQuery({
+    queryKey: ["pagos", eventoId],
+    queryFn: () => obtenerPagosEvento(eventoId),
+    enabled: Boolean(eventoId),
+  });
+
+  const { data: usuarioActualId } = useQuery({
+    queryKey: ["usuario-actual-id"],
+    queryFn: async () => {
+      const {
+        data: { user },
+        error,
+      } = await supabase.auth.getUser();
+
+      if (error) throw error;
+      return user?.id ?? null;
+    },
+  });
+
   const obtenerNombreContacto = (contacto: any, fallback = "Participante") => {
     if (!contacto) return fallback;
 
@@ -85,6 +121,165 @@ export default function EventoDetalleScreen() {
     return mapa;
   }, [participantes]);
 
+  const usuariosPorContactoId = useMemo(() => {
+    const mapa = new Map<string, string>();
+    for (const participante of participantes as any[]) {
+      const contacto = Array.isArray(participante["contactos"])
+        ? participante["contactos"][0]
+        : participante["contactos"];
+      const usuarioId = contacto?.referencia_usuario_id;
+
+      if (usuarioId) {
+        mapa.set(participante["contacto_id"], usuarioId);
+      }
+    }
+
+    return mapa;
+  }, [participantes]);
+
+  const pagosNoPendientesPorDeuda = useMemo(() => {
+    const claves = new Set<string>();
+
+    for (const pago of pagosEvento as any[]) {
+      if (pago.estado === "pendiente") continue;
+
+      claves.add(
+        `${pago.deudor_id}-${pago.acreedor_id}-${Number(pago.monto).toFixed(2)}`,
+      );
+    }
+
+    return claves;
+  }, [pagosEvento]);
+
+  const deudasDelUsuario = useMemo(
+    () =>
+      deudas.filter((deuda) => {
+        const esDeudaDelUsuario =
+          usuariosPorContactoId.get(deuda.deudorId) === usuarioActualId;
+        const claveDeuda = `${deuda.deudorId}-${deuda.acreedorId}-${Number(
+          deuda.monto,
+        ).toFixed(2)}`;
+
+        return esDeudaDelUsuario && !pagosNoPendientesPorDeuda.has(claveDeuda);
+      }),
+    [deudas, pagosNoPendientesPorDeuda, usuarioActualId, usuariosPorContactoId],
+  );
+
+  const cerrarModalReporte = () => {
+    setModalReporteVisible(false);
+    setDeudaSeleccionada(null);
+    setComprobante(null);
+  };
+
+  const abrirModalReporte = () => {
+    if (!usuarioActualId) {
+      Alert.alert("Un momento", "Aun estamos preparando tus datos.");
+      return;
+    }
+
+    if (loadingPagosEvento) {
+      Alert.alert("Un momento", "Estamos revisando tus pagos pendientes.");
+      return;
+    }
+
+    if (deudasDelUsuario.length === 0) {
+      Alert.alert(
+        "Sin deudas",
+        "No tienes pagos pendientes por reportar en este evento.",
+      );
+      return;
+    }
+
+    setDeudaSeleccionada(deudasDelUsuario[0]);
+    setComprobante(null);
+    setModalReporteVisible(true);
+  };
+
+  const seleccionarComprobante = async () => {
+    const permisos = await ImagePicker.requestMediaLibraryPermissionsAsync();
+
+    if (!permisos.granted) {
+      Alert.alert(
+        "Permiso necesario",
+        "Necesitamos acceso a tus fotos para adjuntar el comprobante.",
+      );
+      return;
+    }
+
+    const resultado = await ImagePicker.launchImageLibraryAsync({
+      mediaTypes: ["images"],
+      allowsEditing: false,
+      quality: 0.85,
+    });
+
+    if (!resultado.canceled) {
+      setComprobante(resultado.assets[0]);
+    }
+  };
+
+  const enviarReportePago = () => {
+    if (!deudaSeleccionada) {
+      Alert.alert("Selecciona una deuda", "Elige que deuda quieres reportar.");
+      return;
+    }
+
+    if (!comprobante) {
+      Alert.alert(
+        "Falta comprobante",
+        "Agrega una imagen del comprobante antes de reportar.",
+      );
+      return;
+    }
+
+    reportarPagoMutation.mutate({
+      eventoId,
+      deudorId: deudaSeleccionada.deudorId,
+      acreedorId: deudaSeleccionada.acreedorId,
+      monto: deudaSeleccionada.monto,
+      comprobante: {
+        uri: comprobante.uri,
+        mimeType: comprobante.mimeType,
+        fileName: comprobante.fileName,
+      },
+    });
+  };
+
+  const cargarPagosReportados = async () => {
+    if (!usuarioActualId) {
+      Alert.alert("Un momento", "Aun estamos preparando tus datos.");
+      return;
+    }
+
+    setCargandoPagosReportados(true);
+
+    try {
+      const pagos = await obtenerPagosReportadosEvento(eventoId);
+      const pagosDelAcreedor = pagos.filter(
+        (pago: any) =>
+          usuariosPorContactoId.get(pago.acreedor_id) === usuarioActualId,
+      );
+
+      setPagosReportados(pagosDelAcreedor);
+      setModalConfirmacionVisible(true);
+
+      if (pagosDelAcreedor.length === 0) {
+        Alert.alert(
+          "No hay reportes",
+          "No hay pagos reportados donde aparezcas como acreedor.",
+        );
+      }
+    } catch (err: any) {
+      Alert.alert("Error", err?.message ?? "No se pudo consultar pagos.");
+    } finally {
+      setCargandoPagosReportados(false);
+    }
+  };
+
+  const cerrarModalConfirmacion = () => {
+    setModalConfirmacionVisible(false);
+    setPagosReportados([]);
+  };
+
   const borrarGastoMutation = useMutation({
     mutationFn: borrarGasto,
     onSuccess: () => {
@@ -99,14 +294,16 @@ export default function EventoDetalleScreen() {
   });
 
   const reportarPagoMutation = useMutation({
-    mutationFn: ({ eventoId, acreedorId, monto }: any) =>
-      reportarPago(eventoId, acreedorId, monto),
+    mutationFn: ({ eventoId, deudorId, acreedorId, monto, comprobante }: any) =>
+      reportarPago(eventoId, deudorId, acreedorId, monto, comprobante),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["gastos-detalle", eventoId] });
       queryClient.invalidateQueries({ queryKey: ["gastos", eventoId] });
       queryClient.invalidateQueries({ queryKey: ["total-gastos"] });
       queryClient.invalidateQueries({ queryKey: ["actividad-reciente"] });
       queryClient.invalidateQueries({ queryKey: ["balances", eventoId] });
+      queryClient.invalidateQueries({ queryKey: ["pagos", eventoId] });
+      cerrarModalReporte();
       Alert.alert("Pago reportado", "El pago fue reportado correctamente.");
     },
     onError: (error: any) => {
@@ -125,11 +322,33 @@ export default function EventoDetalleScreen() {
       queryClient.invalidateQueries({ queryKey: ["total-gastos"] });
       queryClient.invalidateQueries({ queryKey: ["actividad-reciente"] });
       queryClient.invalidateQueries({ queryKey: ["balances", eventoId] });
+      queryClient.invalidateQueries({ queryKey: ["pagos", eventoId] });
+      cerrarModalConfirmacion();
       Alert.alert("Pago confirmado", "El pago ha sido confirmado.");
     },
     onError: (error: any) => {
       Alert.alert(
         "No se pudo confirmar",
+        error?.message ?? "Intenta nuevamente.",
+      );
+    },
+  });
+
+  const devolverPagoMutation = useMutation({
+    mutationFn: (pagoId: string) => devolverPagoAPendiente(pagoId),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["gastos-detalle", eventoId] });
+      queryClient.invalidateQueries({ queryKey: ["gastos", eventoId] });
+      queryClient.invalidateQueries({ queryKey: ["total-gastos"] });
+      queryClient.invalidateQueries({ queryKey: ["actividad-reciente"] });
+      queryClient.invalidateQueries({ queryKey: ["balances", eventoId] });
+      queryClient.invalidateQueries({ queryKey: ["pagos", eventoId] });
+      cerrarModalConfirmacion();
+      Alert.alert("Pago devuelto", "El pago volvió al estado pendiente.");
+    },
+    onError: (error: any) => {
+      Alert.alert(
+        "No se pudo devolver",
         error?.message ?? "Intenta nuevamente.",
       );
     },
@@ -312,72 +531,25 @@ export default function EventoDetalleScreen() {
 
               <TouchableOpacity
                 style={[styles.botonSecundario, { marginTop: 12 }]}
-                onPress={() => {
-                  if (!deudas || deudas.length === 0) {
-                    Alert.alert("Sin deudas", "No hay deudas para reportar.");
-                    return;
-                  }
-
-                  const d = deudas[0];
-                  const acreedorNombre =
-                    participantesPorId.get(d.acreedorId) ?? d.acreedorId;
-                  Alert.alert(
-                    "Reportar pago",
-                    `Reportar pago a ${acreedorNombre} por ${formatearMonto(d.monto)}?`,
-                    [
-                      { text: "Cancelar", style: "cancel" },
-                      {
-                        text: "Reportar",
-                        onPress: () =>
-                          reportarPagoMutation.mutate({
-                            eventoId,
-                            acreedorId: d.acreedorId,
-                            monto: d.monto,
-                          }),
-                      },
-                    ],
-                  );
-                }}
+                onPress={abrirModalReporte}
+                disabled={reportarPagoMutation.isPending}
               >
                 <Text style={styles.botonSecundarioText}>Reportar pago</Text>
               </TouchableOpacity>
               <TouchableOpacity
                 style={[styles.botonSecundario, { marginTop: 12 }]}
-                onPress={async () => {
-                  try {
-                    const pagos: any[] = await obtenerPagosEvento(eventoId);
-                    const reporte = pagos.find((p) => p.estado === "reportado");
-                    if (!reporte) {
-                      Alert.alert(
-                        "No hay reportes",
-                        "No hay pagos reportados para confirmar.",
-                      );
-                      return;
-                    }
-                    const acreedorNombre =
-                      participantesPorId.get(reporte.acreedor_id) ??
-                      reporte.acreedor_id;
-                    Alert.alert(
-                      "Confirmar pago",
-                      `Confirmar pago de ${formatearMonto(reporte.monto)} reportado a ${acreedorNombre}?`,
-                      [
-                        { text: "Cancelar", style: "cancel" },
-                        {
-                          text: "Confirmar",
-                          onPress: () =>
-                            confirmarPagoMutation.mutate(reporte.id),
-                        },
-                      ],
-                    );
-                  } catch (err: any) {
-                    Alert.alert(
-                      "Error",
-                      err?.message ?? "No se pudo consultar pagos.",
-                    );
-                  }
-                }}
+                onPress={cargarPagosReportados}
+                disabled={
+                  cargandoPagosReportados ||
+                  confirmarPagoMutation.isPending ||
+                  devolverPagoMutation.isPending
+                }
               >
-                <Text style={styles.botonSecundarioText}>Confirmar pago</Text>
+                {cargandoPagosReportados ? (
+                  <ActivityIndicator color="#FFFFFF" />
+                ) : (
+                  <Text style={styles.botonSecundarioText}>Confirmar pago</Text>
+                )}
               </TouchableOpacity>
             </>
           )}
@@ -440,6 +612,221 @@ export default function EventoDetalleScreen() {
           </TouchableOpacity>
         </View>
       )}
+
+      <Modal
+        visible={modalReporteVisible}
+        transparent
+        animationType="slide"
+        onRequestClose={cerrarModalReporte}
+      >
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalCard}>
+            <View style={styles.modalHeader}>
+              <Text style={styles.modalTitulo}>Reportar pago</Text>
+              <TouchableOpacity
+                style={styles.modalClose}
+                onPress={cerrarModalReporte}
+                disabled={reportarPagoMutation.isPending}
+              >
+                <Feather name="x" size={20} color="#FFFFFF" />
+              </TouchableOpacity>
+            </View>
+
+            <Text style={styles.modalLabel}>Tus deudas del evento</Text>
+            <ScrollView style={styles.deudasSelector}>
+              {deudasDelUsuario.map((deuda, index) => {
+                const seleccionada =
+                  deudaSeleccionada?.deudorId === deuda.deudorId &&
+                  deudaSeleccionada?.acreedorId === deuda.acreedorId &&
+                  deudaSeleccionada?.monto === deuda.monto;
+                const deudorNombre =
+                  participantesPorId.get(deuda.deudorId) ?? deuda.deudorId;
+                const acreedorNombre =
+                  participantesPorId.get(deuda.acreedorId) ?? deuda.acreedorId;
+
+                return (
+                  <TouchableOpacity
+                    key={`${deuda.deudorId}-${deuda.acreedorId}-${index}`}
+                    style={[
+                      styles.deudaOption,
+                      seleccionada && styles.deudaOptionActiva,
+                    ]}
+                    onPress={() => setDeudaSeleccionada(deuda)}
+                    disabled={reportarPagoMutation.isPending}
+                  >
+                    <View style={styles.deudaOptionInfo}>
+                      <Text style={styles.deudaOptionTitle}>
+                        {deudorNombre}
+                      </Text>
+                      <Text style={styles.deudaOptionSub}>
+                        Paga a {acreedorNombre}
+                      </Text>
+                      <Text style={styles.deudaOptionMonto}>
+                        {formatearMonto(deuda.monto)}
+                      </Text>
+                    </View>
+                    {seleccionada ? (
+                      <Feather name="check-circle" size={20} color="#4CAF50" />
+                    ) : null}
+                  </TouchableOpacity>
+                );
+              })}
+            </ScrollView>
+
+            <Text style={styles.modalLabel}>Comprobante</Text>
+            <TouchableOpacity
+              style={styles.comprobanteBox}
+              onPress={seleccionarComprobante}
+              disabled={reportarPagoMutation.isPending}
+            >
+              {comprobante ? (
+                <>
+                  <Image
+                    source={{ uri: comprobante.uri }}
+                    style={styles.comprobantePreview}
+                  />
+                  <View style={styles.comprobanteOverlay}>
+                    <Feather name="image" size={16} color="#FFFFFF" />
+                    <Text style={styles.comprobanteOverlayText}>Cambiar</Text>
+                  </View>
+                </>
+              ) : (
+                <>
+                  <Feather name="upload" size={22} color="#FFFFFF" />
+                  <Text style={styles.comprobanteText}>
+                    Seleccionar imagen
+                  </Text>
+                </>
+              )}
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              style={[
+                styles.botonReportarFinal,
+                reportarPagoMutation.isPending && styles.botonDeshabilitado,
+              ]}
+              onPress={enviarReportePago}
+              disabled={reportarPagoMutation.isPending}
+            >
+              {reportarPagoMutation.isPending ? (
+                <ActivityIndicator color="#000000" />
+              ) : (
+                <Text style={styles.botonReportarFinalText}>Reportar</Text>
+              )}
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
+
+      <Modal
+        visible={modalConfirmacionVisible}
+        transparent
+        animationType="slide"
+        onRequestClose={cerrarModalConfirmacion}
+      >
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalCard}>
+            <View style={styles.modalHeader}>
+              <Text style={styles.modalTitulo}>Confirmar pagos</Text>
+              <TouchableOpacity
+                style={styles.modalClose}
+                onPress={cerrarModalConfirmacion}
+                disabled={
+                  confirmarPagoMutation.isPending ||
+                  devolverPagoMutation.isPending
+                }
+              >
+                <Feather name="x" size={20} color="#FFFFFF" />
+              </TouchableOpacity>
+            </View>
+
+            <ScrollView style={styles.pagosReportadosLista}>
+              {pagosReportados.length === 0 ? (
+                <Text style={styles.emptyText}>
+                  No hay pagos reportados para revisar.
+                </Text>
+              ) : (
+                pagosReportados.map((pago) => {
+                  const deudorNombre =
+                    participantesPorId.get(pago.deudor_id) ?? pago.deudor_id;
+                  const acreedorNombre =
+                    participantesPorId.get(pago.acreedor_id) ??
+                    pago.acreedor_id;
+                  const accionesDeshabilitadas =
+                    confirmarPagoMutation.isPending ||
+                    devolverPagoMutation.isPending;
+
+                  return (
+                    <View key={pago.id} style={styles.pagoReportadoCard}>
+                      <View style={styles.pagoReportadoHeader}>
+                        <View style={styles.deudaOptionInfo}>
+                          <Text style={styles.deudaOptionTitle}>
+                            {deudorNombre}
+                          </Text>
+                          <Text style={styles.deudaOptionSub}>
+                            Reportó pago a {acreedorNombre}
+                          </Text>
+                        </View>
+                        <Text style={styles.deudaOptionMonto}>
+                          {formatearMonto(pago.monto)}
+                        </Text>
+                      </View>
+
+                      <View style={styles.comprobanteLecturaBox}>
+                        {pago.comprobanteUrl ? (
+                          <Image
+                            source={{ uri: pago.comprobanteUrl }}
+                            style={styles.comprobantePreview}
+                            resizeMode="contain"
+                          />
+                        ) : (
+                          <View style={styles.comprobanteVacio}>
+                            <Feather
+                              name="image"
+                              size={22}
+                              color="rgba(255,255,255,0.45)"
+                            />
+                            <Text style={styles.cardSub}>
+                              Sin comprobante disponible
+                            </Text>
+                          </View>
+                        )}
+                      </View>
+
+                      <View style={styles.accionesPagoRow}>
+                        <TouchableOpacity
+                          style={[
+                            styles.botonPagoPendiente,
+                            accionesDeshabilitadas && styles.botonDeshabilitado,
+                          ]}
+                          onPress={() => devolverPagoMutation.mutate(pago.id)}
+                          disabled={accionesDeshabilitadas}
+                        >
+                          <Text style={styles.botonPagoPendienteText}>
+                            Volver a pendiente
+                          </Text>
+                        </TouchableOpacity>
+                        <TouchableOpacity
+                          style={[
+                            styles.botonPagoSaldado,
+                            accionesDeshabilitadas && styles.botonDeshabilitado,
+                          ]}
+                          onPress={() => confirmarPagoMutation.mutate(pago.id)}
+                          disabled={accionesDeshabilitadas}
+                        >
+                          <Text style={styles.botonPagoSaldadoText}>
+                            Saldado
+                          </Text>
+                        </TouchableOpacity>
+                      </View>
+                    </View>
+                  );
+                })
+              )}
+            </ScrollView>
+          </View>
+        </View>
+      </Modal>
     </View>
   );
 }
@@ -610,6 +997,204 @@ const styles = StyleSheet.create({
     color: "#FFFFFF",
     fontWeight: "bold",
     fontSize: 15,
+  },
+  modalOverlay: {
+    flex: 1,
+    justifyContent: "flex-end",
+    backgroundColor: "rgba(0,0,0,0.65)",
+  },
+  modalCard: {
+    maxHeight: "88%",
+    backgroundColor: "#181818",
+    borderTopLeftRadius: 22,
+    borderTopRightRadius: 22,
+    padding: 20,
+    borderWidth: 1,
+    borderColor: "rgba(255,255,255,0.1)",
+  },
+  modalHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    marginBottom: 18,
+  },
+  modalTitulo: {
+    color: "#FFFFFF",
+    fontSize: 20,
+    fontWeight: "bold",
+  },
+  modalClose: {
+    width: 38,
+    height: 38,
+    borderRadius: 19,
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: "rgba(255,255,255,0.12)",
+  },
+  modalLabel: {
+    color: "rgba(255,255,255,0.65)",
+    fontSize: 13,
+    fontWeight: "600",
+    marginBottom: 8,
+  },
+  deudasSelector: {
+    maxHeight: 210,
+    marginBottom: 18,
+  },
+  deudaOption: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    minHeight: 64,
+    padding: 14,
+    marginBottom: 10,
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: "rgba(255,255,255,0.08)",
+    backgroundColor: "rgba(255,255,255,0.07)",
+  },
+  deudaOptionActiva: {
+    borderColor: "rgba(76,175,80,0.75)",
+    backgroundColor: "rgba(76,175,80,0.12)",
+  },
+  deudaOptionInfo: {
+    flex: 1,
+    paddingRight: 12,
+  },
+  deudaOptionTitle: {
+    color: "#FFFFFF",
+    fontSize: 15,
+    fontWeight: "600",
+  },
+  deudaOptionSub: {
+    color: "rgba(255,255,255,0.55)",
+    fontSize: 12,
+    marginTop: 3,
+  },
+  deudaOptionMonto: {
+    color: "#FF6B6B",
+    fontSize: 15,
+    fontWeight: "bold",
+    marginTop: 4,
+  },
+  comprobanteBox: {
+    height: 170,
+    borderRadius: 16,
+    overflow: "hidden",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 8,
+    borderWidth: 1,
+    borderStyle: "dashed",
+    borderColor: "rgba(255,255,255,0.22)",
+    backgroundColor: "rgba(255,255,255,0.07)",
+    marginBottom: 18,
+  },
+  comprobantePreview: {
+    width: "100%",
+    height: "100%",
+  },
+  comprobanteOverlay: {
+    position: "absolute",
+    right: 12,
+    bottom: 12,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: 14,
+    backgroundColor: "rgba(0,0,0,0.65)",
+  },
+  comprobanteOverlayText: {
+    color: "#FFFFFF",
+    fontSize: 12,
+    fontWeight: "700",
+  },
+  comprobanteText: {
+    color: "#FFFFFF",
+    fontSize: 15,
+    fontWeight: "600",
+  },
+  botonReportarFinal: {
+    minHeight: 52,
+    borderRadius: 16,
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: "#FFFFFF",
+  },
+  botonReportarFinalText: {
+    color: "#000000",
+    fontSize: 16,
+    fontWeight: "bold",
+  },
+  botonDeshabilitado: {
+    opacity: 0.65,
+  },
+  pagosReportadosLista: {
+    maxHeight: 560,
+  },
+  pagoReportadoCard: {
+    padding: 14,
+    marginBottom: 14,
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: "rgba(255,255,255,0.08)",
+    backgroundColor: "rgba(255,255,255,0.07)",
+  },
+  pagoReportadoHeader: {
+    flexDirection: "row",
+    alignItems: "flex-start",
+    justifyContent: "space-between",
+    marginBottom: 12,
+  },
+  comprobanteLecturaBox: {
+    height: 220,
+    borderRadius: 14,
+    overflow: "hidden",
+    backgroundColor: "rgba(0,0,0,0.22)",
+    borderWidth: 1,
+    borderColor: "rgba(255,255,255,0.08)",
+    marginBottom: 12,
+  },
+  comprobanteVacio: {
+    flex: 1,
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 8,
+  },
+  accionesPagoRow: {
+    flexDirection: "row",
+    gap: 10,
+  },
+  botonPagoPendiente: {
+    flex: 1,
+    minHeight: 46,
+    borderRadius: 14,
+    alignItems: "center",
+    justifyContent: "center",
+    borderWidth: 1,
+    borderColor: "rgba(255,107,107,0.45)",
+    backgroundColor: "rgba(255,82,82,0.16)",
+  },
+  botonPagoPendienteText: {
+    color: "#FF8A8A",
+    fontSize: 13,
+    fontWeight: "700",
+    textAlign: "center",
+  },
+  botonPagoSaldado: {
+    flex: 1,
+    minHeight: 46,
+    borderRadius: 14,
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: "#FFFFFF",
+  },
+  botonPagoSaldadoText: {
+    color: "#000000",
+    fontSize: 14,
+    fontWeight: "bold",
   },
 
   // --- FAB ---
