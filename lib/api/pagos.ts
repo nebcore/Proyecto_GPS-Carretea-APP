@@ -19,6 +19,38 @@ export const obtenerPagosEvento = async (eventoId: string) => {
   return data;
 };
 
+export const obtenerPagosReportadosEvento = async (eventoId: string) => {
+  const { data, error } = await supabase
+    .from("pagos")
+    .select("*, comprobantes(*)")
+    .eq("evento_id", eventoId)
+    .eq("estado", "reportado")
+    .order("creado_en", { ascending: false });
+
+  if (error) throw error;
+
+  return Promise.all(
+    (data ?? []).map(async (pago: any) => {
+      const comprobante = pago.comprobantes?.[0] ?? null;
+
+      if (!comprobante?.storage_path) {
+        return { ...pago, comprobanteUrl: null };
+      }
+
+      const { data: signedUrl, error: signedUrlError } = await supabase.storage
+        .from(COMPROBANTES_BUCKET)
+        .createSignedUrl(comprobante.storage_path, 60 * 10);
+
+      if (signedUrlError) throw signedUrlError;
+
+      return {
+        ...pago,
+        comprobanteUrl: signedUrl.signedUrl,
+      };
+    }),
+  );
+};
+
 const obtenerExtension = (comprobante: ComprobantePago) => {
   const nombre = comprobante.fileName ?? comprobante.uri;
   const extension = nombre.split(".").pop()?.split("?")[0]?.toLowerCase();
@@ -103,10 +135,16 @@ export const reportarPago = async (
   return data;
 };
 
-export const confirmarPago = async (pagoId: string) => {
+export const actualizarEstadoPago = async (
+  pagoId: string,
+  estado: "pendiente" | "saldado",
+) => {
   const { data, error } = await supabase
     .from("pagos")
-    .update({ estado: "saldado", confirmado_en: new Date().toISOString() })
+    .update({
+      estado,
+      confirmado_en: estado === "saldado" ? new Date().toISOString() : null,
+    })
     .eq("id", pagoId)
     .select()
     .single();
@@ -114,3 +152,9 @@ export const confirmarPago = async (pagoId: string) => {
   if (error) throw error;
   return data;
 };
+
+export const confirmarPago = async (pagoId: string) =>
+  actualizarEstadoPago(pagoId, "saldado");
+
+export const devolverPagoAPendiente = async (pagoId: string) =>
+  actualizarEstadoPago(pagoId, "pendiente");
