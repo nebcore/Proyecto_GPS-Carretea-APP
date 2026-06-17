@@ -324,13 +324,43 @@ create policy "comprobantes: participantes crean" on comprobantes
         and gasto_id is null
         and exists (
             select 1 from pagos p
-            join contactos deudor on deudor.id = p.deudor_id
-            where p.id = pago_id and deudor.referencia_usuario_id = auth.uid()
+            join participantes_evento pe on pe.evento_id = p.evento_id
+            join contactos c on c.id = pe.contacto_id
+            where p.id = pago_id and c.referencia_usuario_id = auth.uid()
         )
     )
     );
 
 -- log_auditoria: participantes leen; escritura solo vía service role (Edge Functions)
+-- storage: bucket privado para imagenes de comprobantes
+insert into storage.buckets (id, name, public)
+values ('comprobantes', 'comprobantes', false)
+on conflict (id) do nothing;
+
+create policy "comprobantes storage: usuarios autenticados suben"
+on storage.objects
+for insert
+to authenticated
+with check (bucket_id = 'comprobantes');
+
+create policy "comprobantes storage: participantes leen"
+on storage.objects
+for select
+to authenticated
+using (
+  bucket_id = 'comprobantes'
+  and exists (
+    select 1
+    from comprobantes comp
+    left join pagos p on p.id = comp.pago_id
+    left join gastos g on g.id = comp.gasto_id
+    join participantes_evento pe on pe.evento_id = coalesce(p.evento_id, g.evento_id)
+    join contactos c on c.id = pe.contacto_id
+    where comp.storage_path = storage.objects.name
+      and c.referencia_usuario_id = auth.uid()
+  )
+);
+
 create policy "log_auditoria: participantes leen" on log_auditoria
     for select using (
     exists (
