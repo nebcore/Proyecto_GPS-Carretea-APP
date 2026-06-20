@@ -1,21 +1,30 @@
 import { supabase } from "@/lib/supabase";
-import { useLocalSearchParams, useRouter } from "expo-router";
-import { useState } from "react";
+import { useRouter } from "expo-router";
+import { useEffect, useState } from "react";
 import {
-    ActivityIndicator,
-    Alert,
-    StyleSheet,
-    Text,
-    TextInput,
-    TouchableOpacity,
-    View,
+  ActivityIndicator,
+  Alert,
+  StyleSheet,
+  Text,
+  TextInput,
+  TouchableOpacity,
+  View,
 } from "react-native";
 
 export default function VerificarTelefonoScreen() {
   const router = useRouter();
-  const { telefono } = useLocalSearchParams<{ telefono: string }>();
   const [codigo, setCodigo] = useState("");
   const [loading, setLoading] = useState(false);
+  const [telefono, setTelefono] = useState("");
+
+  useEffect(() => {
+    const obtenerTelefono = async () => {
+      const { data: { session } } = await supabase.auth.getSession();
+      const tel = session?.user?.user_metadata?.telefono;
+      setTelefono(tel ?? '');
+    };
+    obtenerTelefono();
+  }, []);
 
   const handleVerificar = async () => {
     if (!codigo || codigo.length < 6) {
@@ -27,11 +36,11 @@ export default function VerificarTelefonoScreen() {
       const { error } = await supabase.auth.verifyOtp({
         phone: telefono,
         token: codigo,
-        type: 'sms',
+        type: 'phone_change',
       });
       if (error) throw error;
       Alert.alert("¡Listo!", "Teléfono verificado correctamente.", [
-        { text: "OK", onPress: () => router.replace("/(auth)/login") },
+        { text: "OK", onPress: () => router.replace("/(tabs)") },
       ]);
     } catch (error: any) {
       Alert.alert("Error", error.message);

@@ -10,6 +10,7 @@ import {
   TouchableOpacity,
   View,
 } from "react-native";
+import { setRegistroEnProceso } from "../_layout";
 
 export default function RegisterScreen() {
   const router = useRouter();
@@ -31,8 +32,7 @@ export default function RegisterScreen() {
   try {
     setLoading(true);
 
-    // Validar duplicados
-   const resultado = await verificarDuplicados(email, telefono);
+    const resultado = await verificarDuplicados(email, telefono);
     if (resultado.email_existe) {
       Alert.alert("Error", "Este correo ya está registrado.");
       return;
@@ -42,20 +42,25 @@ export default function RegisterScreen() {
       return;
     }
 
-    await signUpWithEmail(email, password, nombre, telefono);
-      Alert.alert("¡Listo!", "Te enviamos un código SMS para verificar tu teléfono", [
-      {text: "OK", onPress: () => router.push({
-      pathname: "/(auth)/verificarTelefono",
-      params: { telefono },
-    })},
-    ]);
+    setRegistroEnProceso(true);
+await signUpWithEmail(email, password, nombre, telefono);
+Alert.alert(
+  "¡Código enviado!",
+  "Te hemos enviado un SMS con el código de verificación.",
+  [{ 
+    text: "OK",
+    onPress: () => {
+      setRegistroEnProceso(false);
+      router.push("/(auth)/verificarTelefono");
+    }
+  }]
+);
   } catch (error: any) {
     Alert.alert("Error", error.message);
   } finally {
     setLoading(false);
   }
-};
-
+  };
   return (
     <View style={styles.container}>
       <Text style={styles.title}>Carretea</Text>
