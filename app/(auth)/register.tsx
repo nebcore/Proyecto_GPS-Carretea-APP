@@ -1,4 +1,4 @@
-import { signUpWithEmail } from "@/lib/api/auth";
+import { signUpWithEmail, verificarDuplicados } from "@/lib/api/auth";
 import { useRouter } from "expo-router";
 import { useState } from "react";
 import {
@@ -20,26 +20,41 @@ export default function RegisterScreen() {
   const [telefono, setTelefono] = useState("");
 
   const handleRegister = async () => {
-    if (!nombre || !email || !password || !telefono) {
-      Alert.alert("Error", "Completa todos los campos");
+  if (!nombre || !email || !password || !telefono) {
+    Alert.alert("Error", "Completa todos los campos");
+    return;
+  }
+  if (password.length < 6) {
+    Alert.alert("Error", "La contraseña debe tener al menos 6 caracteres");
+    return;
+  }
+  try {
+    setLoading(true);
+
+    // Validar duplicados
+   const resultado = await verificarDuplicados(email, telefono);
+    if (resultado.email_existe) {
+      Alert.alert("Error", "Este correo ya está registrado.");
       return;
     }
-    if (password.length < 6) {
-      Alert.alert("Error", "La contraseña debe tener al menos 6 caracteres");
+    if (resultado.telefono_existe) {
+      Alert.alert("Error", "Este teléfono ya está registrado.");
       return;
     }
-    try {
-      setLoading(true);
-      await signUpWithEmail(email, password, nombre, telefono);
-      Alert.alert("¡Listo!", "Revisa tu email para confirmar tu cuenta", [
-        { text: "OK", onPress: () => router.push("/(auth)/login") },
-      ]);
-    } catch (error: any) {
-      Alert.alert("Error", error.message);
-    } finally {
-      setLoading(false);
-    }
-  };
+
+    await signUpWithEmail(email, password, nombre, telefono);
+      Alert.alert("¡Listo!", "Te enviamos un código SMS para verificar tu teléfono", [
+      {text: "OK", onPress: () => router.push({
+      pathname: "/(auth)/verificarTelefono",
+      params: { telefono },
+    })},
+    ]);
+  } catch (error: any) {
+    Alert.alert("Error", error.message);
+  } finally {
+    setLoading(false);
+  }
+};
 
   return (
     <View style={styles.container}>
