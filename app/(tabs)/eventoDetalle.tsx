@@ -31,6 +31,7 @@ import {
 import { obtenerGoogleToken } from "@/lib/api/usuarios";
 import { useBalancesEvento } from "@/lib/realtime/useBalancesEvento";
 import { supabase } from "@/lib/supabase";
+import { KeyboardAvoidingView, Platform } from "react-native";
 
 const formatearFecha = (fechaString: string) => {
   if (!fechaString) return "";
@@ -494,55 +495,60 @@ export default function EventoDetalleScreen() {
 
       {/* MODAL EDITAR EVENTO */}
       <Modal visible={modalEditarVisible} transparent animationType="slide">
-        <View style={styles.modalOverlay}>
-          <View style={styles.modalCard}>
-            <Text style={styles.modalTitle}>Editar evento</Text>
+        <KeyboardAvoidingView
+          behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+          style={{ flex: 1 }}
+        >
+          <View style={styles.modalOverlay}>
+            <View style={styles.modalCard}>
+              <Text style={styles.modalTitle}>Editar evento</Text>
 
-            <TextInput
-              style={styles.input}
-              value={editTitulo}
-              onChangeText={setEditTitulo}
-              placeholder="Título"
-              placeholderTextColor="#666"
-            />
-            <TextInput
-              style={styles.input}
-              value={editDescripcion}
-              onChangeText={setEditDescripcion}
-              placeholder="Descripción"
-              placeholderTextColor="#666"
-            />
-            <TextInput
-              style={styles.input}
-              value={editUbicacion}
-              onChangeText={setEditUbicacion}
-              placeholder="Ubicación"
-              placeholderTextColor="#666"
-            />
+              <TextInput
+                style={styles.input}
+                value={editTitulo}
+                onChangeText={setEditTitulo}
+                placeholder="Título"
+                placeholderTextColor="#666"
+              />
+              <TextInput
+                style={styles.input}
+                value={editDescripcion}
+                onChangeText={setEditDescripcion}
+                placeholder="Descripción"
+                placeholderTextColor="#666"
+              />
+              <TextInput
+                style={styles.input}
+                value={editUbicacion}
+                onChangeText={setEditUbicacion}
+                placeholder="Ubicación"
+                placeholderTextColor="#666"
+              />
 
-            <TouchableOpacity
-              style={styles.actionBtn}
-              onPress={() => editarEventoMutation.mutate({
-                titulo: editTitulo,
-                descripcion: editDescripcion,
-                ubicacion: editUbicacion,
-              })}
-              disabled={editarEventoMutation.isPending}
-            >
-              {editarEventoMutation.isPending
-                ? <ActivityIndicator color="#fff" />
-                : <Text style={styles.actionBtnText}>Guardar cambios</Text>
-              }
-            </TouchableOpacity>
+              <TouchableOpacity
+                style={styles.actionBtn}
+                onPress={() => editarEventoMutation.mutate({
+                  titulo: editTitulo,
+                  descripcion: editDescripcion,
+                  ubicacion: editUbicacion,
+                })}
+                disabled={editarEventoMutation.isPending}
+              >
+                {editarEventoMutation.isPending
+                  ? <ActivityIndicator color="#fff" />
+                  : <Text style={styles.actionBtnText}>Guardar cambios</Text>
+                }
+              </TouchableOpacity>
 
-            <TouchableOpacity
-              style={styles.cancelBtn}
-              onPress={() => setModalEditarVisible(false)}
-            >
-              <Text style={styles.cancelBtnText}>Cancelar</Text>
-            </TouchableOpacity>
+              <TouchableOpacity
+                style={styles.cancelBtn}
+                onPress={() => setModalEditarVisible(false)}
+              >
+                <Text style={styles.cancelBtnText}>Cancelar</Text>
+              </TouchableOpacity>
+            </View>
           </View>
-        </View>
+        </KeyboardAvoidingView>
       </Modal>
     </View>
   );
