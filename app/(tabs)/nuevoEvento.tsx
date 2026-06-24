@@ -17,6 +17,7 @@ import {
   View,
 } from "react-native";
 
+import { PantallaConTeclado } from "@/components/ui/PantallaConTeclado";
 import { createContactoConGrupos, getContactos } from "@/lib/api/contactos";
 import { createEventoConParticipantes } from "@/lib/api/eventos";
 import { getGrupos } from "@/lib/api/grupos";
@@ -200,11 +201,7 @@ export default function NuevoEventoScreen() {
 
   return (
     <View style={styles.root}>
-      <KeyboardAvoidingView
-        style={styles.container}
-        behavior={Platform.OS === "ios" ? "padding" : "height"}
-      >
-        <ScrollView showsVerticalScrollIndicator={false}>
+      <PantallaConTeclado style={styles.container}>
           <View style={styles.formCard}>
             {/* ENCABEZADO */}
             <View style={styles.headerForm}>
@@ -455,8 +452,7 @@ export default function NuevoEventoScreen() {
               </TouchableOpacity>
             </View>
           </View>
-        </ScrollView>
-      </KeyboardAvoidingView>
+      </PantallaConTeclado>
 
       {/* MODAL GRUPOS FILTRO */}
       <Modal visible={modalGruposVisible} transparent animationType="fade">
