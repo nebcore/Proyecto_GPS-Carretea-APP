@@ -1,5 +1,4 @@
 "use no memo";
-import Header from "@/components/ui/Header";
 import Feather from "@expo/vector-icons/Feather";
 import DateTimePicker from "@react-native-community/datetimepicker";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
@@ -201,7 +200,6 @@ export default function NuevoEventoScreen() {
 
   return (
     <View style={styles.root}>
-      <Header mostrarVolver onVolver={() => router.back()} />
       <KeyboardAvoidingView
         style={styles.container}
         behavior={Platform.OS === "ios" ? "padding" : "height"}

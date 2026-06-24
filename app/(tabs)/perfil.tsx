@@ -1,5 +1,4 @@
 import GlassCard from "@/components/ui/GlassCard";
-import Header from "@/components/ui/Header";
 import {
   getDatosBancarios,
   getUsuarioPerfil,
@@ -132,7 +131,6 @@ export default function PerfilScreen() {
 
   return (
     <View style={styles.root}>
-      <Header />
       <ScrollView
         contentContainerStyle={[
           styles.container,

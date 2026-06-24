@@ -1,5 +1,4 @@
 import GlassCard from "@/components/ui/GlassCard";
-import Header from "@/components/ui/Header";
 import Feather from "@expo/vector-icons/Feather";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { router } from "expo-router";
@@ -102,7 +101,6 @@ export default function EventosScreen() {
 
   return (
     <View style={styles.root}>
-      <Header />
       <KeyboardAvoidingView
         style={styles.flex}
         behavior={Platform.OS === "ios" ? "padding" : "height"}

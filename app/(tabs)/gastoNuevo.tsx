@@ -19,7 +19,6 @@ import {
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import GlassCard from "@/components/ui/GlassCard";
-import Header from "@/components/ui/Header";
 import {
   crearGasto,
   GastoFormData,
@@ -218,7 +217,6 @@ export default function GastoNuevoScreen() {
   if (isLoading) {
     return (
       <View style={styles.root}>
-        <Header mostrarVolver onVolver={() => router.back()} />
         <View style={styles.center}>
           <ActivityIndicator color="#FFFFFF" />
         </View>
@@ -228,8 +226,6 @@ export default function GastoNuevoScreen() {
 
   return (
     <View style={styles.root}>
-      <Header mostrarVolver onVolver={() => router.back()} />
-
       <ScrollView
         contentContainerStyle={[
           styles.scroll,

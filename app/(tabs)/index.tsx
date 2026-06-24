@@ -1,5 +1,4 @@
 import GlassCard from "@/components/ui/GlassCard";
-import Header from "@/components/ui/Header";
 import { getActividadReciente, getTotalGastos } from "@/lib/api/gastos";
 import { getEventos } from "@/lib/api/eventos";
 import Feather from "@expo/vector-icons/Feather";
@@ -54,7 +53,6 @@ export default function InicioScreen() {
 
   return (
     <View style={styles.root}>
-      <Header />
       <ScrollView
         contentContainerStyle={[
           styles.container,
