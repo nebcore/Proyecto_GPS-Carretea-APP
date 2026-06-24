@@ -23,7 +23,6 @@ import {
 } from "react-native";
 
 import GlassCard from "@/components/ui/GlassCard";
-import Header from "@/components/ui/Header";
 import { getEvento } from "@/lib/api/eventos";
 import {
   borrarGasto,
@@ -380,8 +379,6 @@ export default function EventoDetalleScreen() {
 
   return (
     <View style={styles.root}>
-      <Header mostrarVolver onVolver={() => router.back()} />
-
       <View style={styles.container}>
         {/* TARJETA HEADER DEL EVENTO */}
         <GlassCard style={styles.headerCard}>
