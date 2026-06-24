@@ -16,6 +16,8 @@ import {
 } from "react-native";
 import { GestureHandlerRootView } from "react-native-gesture-handler";
 
+import { PantallaConTeclado } from "@/components/ui/PantallaConTeclado";
+
 import {
     createContactoConGrupos,
     deleteContacto,
@@ -327,11 +329,7 @@ export default function AgendaScreen() {
 
   return (
     <GestureHandlerRootView style={styles.root}>
-      <KeyboardAvoidingView
-        style={styles.container}
-        behavior={Platform.OS === "ios" ? "padding" : "height"}
-      >
-        <ScrollView showsVerticalScrollIndicator={false}>
+      <PantallaConTeclado style={styles.container}>
           <View style={styles.formCard}>
             {/* ENCABEZADO */}
             <View style={styles.headerForm}>
@@ -509,8 +507,7 @@ export default function AgendaScreen() {
               </View>
             </View>
           </View>
-        </ScrollView>
-      </KeyboardAvoidingView>
+      </PantallaConTeclado>
 
       {/* MODAL GRUPOS */}
       <Modal visible={menuGruposVisible} transparent animationType="fade">
