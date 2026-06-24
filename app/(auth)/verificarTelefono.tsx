@@ -1,139 +1,48 @@
+import { PasoBarra } from "@/components/auth/PasoBarra";
+import { PasoVerificarTelefono } from "@/components/auth/PasoVerificarTelefono";
 import { supabase } from "@/lib/supabase";
-import { useRouter } from "expo-router";
+import { useLocalSearchParams, useRouter } from "expo-router";
 import { useEffect, useState } from "react";
-import {
-  ActivityIndicator,
-  Alert,
-  StyleSheet,
-  Text,
-  TextInput,
-  TouchableOpacity,
-  View,
-} from "react-native";
+import { StyleSheet, View } from "react-native";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 
+// Ruta independiente: solo se usa cuando el AuthGate retoma una verificación
+// pendiente (ej. la app se cerró a medio registro). El wizard normal
+// (app/(auth)/register.tsx) resuelve este mismo paso internamente.
 export default function VerificarTelefonoScreen() {
   const router = useRouter();
-  const [codigo, setCodigo] = useState("");
-  const [loading, setLoading] = useState(false);
-  const [telefono, setTelefono] = useState("");
+  const insets = useSafeAreaInsets();
+  const params = useLocalSearchParams<{ telefono?: string }>();
+  const [telefono, setTelefono] = useState(params.telefono ?? "");
 
   useEffect(() => {
+    if (telefono) return;
     const obtenerTelefono = async () => {
-      const { data: { session } } = await supabase.auth.getSession();
-      const tel = session?.user?.user_metadata?.telefono;
-      setTelefono(tel ?? '');
+      const {
+        data: { session },
+      } = await supabase.auth.getSession();
+      const tel = session?.user?.user_metadata?.telefono ?? session?.user?.phone;
+      setTelefono(tel ?? "");
     };
     obtenerTelefono();
-  }, []);
-
-  const handleVerificar = async () => {
-    if (!codigo || codigo.length < 6) {
-      Alert.alert("Error", "Ingresa el código de 6 dígitos.");
-      return;
-    }
-    try {
-      setLoading(true);
-      const { error } = await supabase.auth.verifyOtp({
-        phone: telefono,
-        token: codigo,
-        type: 'phone_change',
-      });
-      if (error) throw error;
-      Alert.alert("¡Listo!", "Teléfono verificado correctamente.", [
-        { text: "OK", onPress: () => router.replace("/(tabs)") },
-      ]);
-    } catch (error: any) {
-      Alert.alert("Error", error.message);
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const reenviarCodigo = async () => {
-    try {
-      const { error } = await supabase.auth.signInWithOtp({ phone: telefono });
-      if (error) throw error;
-      Alert.alert("Código reenviado", "Revisa tus mensajes.");
-    } catch (error: any) {
-      Alert.alert("Error", error.message);
-    }
-  };
+  }, [telefono]);
 
   return (
     <View style={styles.container}>
-      <Text style={styles.title}>Verificar teléfono</Text>
-      <Text style={styles.subtitle}>
-        Ingresa el código que enviamos a {telefono}
-      </Text>
-
-      <TextInput
-        style={styles.input}
-        placeholder="Código de 6 dígitos"
-        placeholderTextColor="#888"
-        value={codigo}
-        onChangeText={setCodigo}
-        keyboardType="number-pad"
-        maxLength={6}
-      />
-
-      <TouchableOpacity
-        style={styles.button}
-        onPress={handleVerificar}
-        disabled={loading}
-      >
-        {loading
-          ? <ActivityIndicator color="#000" />
-          : <Text style={styles.buttonText}>Verificar</Text>
-        }
-      </TouchableOpacity>
-
-      <TouchableOpacity onPress={reenviarCodigo}>
-        <Text style={styles.link}>¿No recibiste el código? Reenviar</Text>
-      </TouchableOpacity>
+      <View style={{ paddingTop: insets.top + 24, paddingHorizontal: 32 }}>
+        <PasoBarra paso={3} total={3} />
+      </View>
+      <View style={styles.content}>
+        <PasoVerificarTelefono
+          telefono={telefono}
+          onVerificado={() => router.replace("/(tabs)")}
+        />
+      </View>
     </View>
   );
 }
 
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: "#000",
-    justifyContent: "center",
-    paddingHorizontal: 32,
-  },
-  title: {
-    color: "#fff",
-    fontSize: 28,
-    fontWeight: "bold",
-    textAlign: "center",
-    marginBottom: 8,
-  },
-  subtitle: {
-    color: "#888",
-    fontSize: 14,
-    textAlign: "center",
-    marginBottom: 40,
-  },
-  input: {
-    backgroundColor: "rgba(255,255,255,0.08)",
-    borderRadius: 12,
-    padding: 16,
-    color: "#fff",
-    fontSize: 24,
-    marginBottom: 16,
-    borderWidth: 1,
-    borderColor: "rgba(255,255,255,0.1)",
-    textAlign: "center",
-    letterSpacing: 8,
-  },
-  button: {
-    backgroundColor: "#fff",
-    borderRadius: 12,
-    padding: 16,
-    alignItems: "center",
-    marginTop: 8,
-    marginBottom: 24,
-  },
-  buttonText: { color: "#000", fontSize: 16, fontWeight: "bold" },
-  link: { color: "#888", textAlign: "center", fontSize: 14 },
+  container: { flex: 1, backgroundColor: "#000" },
+  content: { flex: 1, justifyContent: "center", paddingHorizontal: 32 },
 });
