@@ -1,5 +1,6 @@
 import { PasoBarra } from "@/components/auth/PasoBarra";
 import { PasoVerificarTelefono } from "@/components/auth/PasoVerificarTelefono";
+import { PantallaConTeclado } from "@/components/ui/PantallaConTeclado";
 import { supabase } from "@/lib/supabase";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { useEffect, useState } from "react";
@@ -28,7 +29,7 @@ export default function VerificarTelefonoScreen() {
   }, [telefono]);
 
   return (
-    <View style={styles.container}>
+    <PantallaConTeclado style={styles.container} contentContainerStyle={styles.scroll}>
       <View style={{ paddingTop: insets.top + 24, paddingHorizontal: 32 }}>
         <PasoBarra paso={3} total={3} />
       </View>
@@ -38,11 +39,12 @@ export default function VerificarTelefonoScreen() {
           onVerificado={() => router.replace("/(tabs)")}
         />
       </View>
-    </View>
+    </PantallaConTeclado>
   );
 }
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: "#000" },
+  scroll: { flexGrow: 1 },
   content: { flex: 1, justifyContent: "center", paddingHorizontal: 32 },
 });

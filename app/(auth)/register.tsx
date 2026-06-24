@@ -3,6 +3,7 @@ import { PasoVerificarTelefono } from "@/components/auth/PasoVerificarTelefono";
 import { signUpWithEmail, verificarDuplicados } from "@/lib/api/auth";
 import { esTelefonoValido, normalizarTelefono } from "@/lib/utils/telefono";
 import { useSignupStore } from "@/store/signup";
+import { PantallaConTeclado } from "@/components/ui/PantallaConTeclado";
 import { useRouter } from "expo-router";
 import { useEffect, useRef, useState } from "react";
 import {
@@ -113,7 +114,7 @@ export default function RegisterScreen() {
   };
 
   return (
-    <View style={styles.container}>
+    <PantallaConTeclado style={styles.container} contentContainerStyle={styles.scroll}>
       <View style={{ paddingTop: insets.top + 24, paddingHorizontal: 32 }}>
         <PasoBarra paso={paso} total={3} />
       </View>
@@ -206,7 +207,7 @@ export default function RegisterScreen() {
           </View>
         </Animated.View>
       </View>
-    </View>
+    </PantallaConTeclado>
   );
 }
 
@@ -214,6 +215,9 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: "#000",
+  },
+  scroll: {
+    flexGrow: 1,
   },
   viewport: {
     flex: 1,
