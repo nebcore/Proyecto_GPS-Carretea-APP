@@ -65,6 +65,9 @@ export default function EventoDetalleScreen() {
   const [gastoBoletas, setGastoBoletas] = useState<any | null>(null);
   const [boletasGasto, setBoletasGasto] = useState<any[]>([]);
   const [cargandoBoletas, setCargandoBoletas] = useState(false);
+  const [modalOpcionesGastoVisible, setModalOpcionesGastoVisible] =
+    useState(false);
+  const [gastoSeleccionado, setGastoSeleccionado] = useState<any | null>(null);
   const queryClient = useQueryClient();
 
   const { data: evento, isLoading: loadingEvento } = useQuery({
@@ -180,6 +183,11 @@ export default function EventoDetalleScreen() {
     setModalBoletasVisible(false);
     setGastoBoletas(null);
     setBoletasGasto([]);
+  };
+
+  const cerrarModalOpcionesGasto = () => {
+    setModalOpcionesGastoVisible(false);
+    setGastoSeleccionado(null);
   };
 
   const abrirModalReporte = () => {
@@ -332,21 +340,24 @@ export default function EventoDetalleScreen() {
   };
 
   const abrirOpcionesGasto = (gasto: any) => {
-    Alert.alert(
-      gasto.descripcion,
-      "¿Deseas agregar una boleta o ver las boletas de este gasto?",
-      [
-        { text: "Cancelar", style: "cancel" },
-        {
-          text: "Ver boletas",
-          onPress: () => cargarBoletasGasto(gasto),
-        },
-        {
-          text: "Agregar boleta",
-          onPress: () => seleccionarBoletaGasto(gasto),
-        },
-      ],
-    );
+    setGastoSeleccionado(gasto);
+    setModalOpcionesGastoVisible(true);
+  };
+
+  const verBoletasGastoSeleccionado = () => {
+    if (!gastoSeleccionado) return;
+
+    const gasto = gastoSeleccionado;
+    cerrarModalOpcionesGasto();
+    cargarBoletasGasto(gasto);
+  };
+
+  const agregarBoletaGastoSeleccionado = () => {
+    if (!gastoSeleccionado) return;
+
+    const gasto = gastoSeleccionado;
+    cerrarModalOpcionesGasto();
+    seleccionarBoletaGasto(gasto);
   };
 
   const cerrarModalConfirmacion = () => {
@@ -925,6 +936,88 @@ export default function EventoDetalleScreen() {
       </Modal>
 
       <Modal
+        visible={modalOpcionesGastoVisible}
+        transparent
+        animationType="slide"
+        onRequestClose={cerrarModalOpcionesGasto}
+      >
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalCard}>
+            <View style={styles.opcionesGastoHeader}>
+              <View style={styles.opcionesGastoIcono}>
+                <Feather name="file-text" size={22} color="#FFFFFF" />
+              </View>
+              <View style={styles.deudaOptionInfo}>
+                <Text style={styles.modalTitulo}>Boletas</Text>
+                <Text style={styles.opcionesGastoTitulo} numberOfLines={2}>
+                  {gastoSeleccionado?.descripcion ?? "Gasto"}
+                </Text>
+                {gastoSeleccionado ? (
+                  <Text style={styles.opcionesGastoMonto}>
+                    {formatearMonto(gastoSeleccionado.monto_total)}
+                  </Text>
+                ) : null}
+              </View>
+              <TouchableOpacity
+                style={styles.modalClose}
+                onPress={cerrarModalOpcionesGasto}
+              >
+                <Feather name="x" size={20} color="#FFFFFF" />
+              </TouchableOpacity>
+            </View>
+
+            <TouchableOpacity
+              style={styles.opcionGastoBoton}
+              onPress={agregarBoletaGastoSeleccionado}
+              disabled={agregarBoletaGastoMutation.isPending}
+            >
+              <View style={styles.opcionGastoIconoAccion}>
+                <Feather name="upload" size={20} color="#FFFFFF" />
+              </View>
+              <View style={styles.deudaOptionInfo}>
+                <Text style={styles.opcionGastoTitulo}>Agregar boleta</Text>
+                <Text style={styles.opcionGastoSub}>
+                  Sube una imagen y asóciala a este gasto.
+                </Text>
+              </View>
+              <Feather
+                name="chevron-right"
+                size={20}
+                color="rgba(255,255,255,0.35)"
+              />
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              style={styles.opcionGastoBoton}
+              onPress={verBoletasGastoSeleccionado}
+            >
+              <View style={styles.opcionGastoIconoAccion}>
+                <Feather name="image" size={20} color="#FFFFFF" />
+              </View>
+              <View style={styles.deudaOptionInfo}>
+                <Text style={styles.opcionGastoTitulo}>Ver boletas</Text>
+                <Text style={styles.opcionGastoSub}>
+                  Revisa las imágenes guardadas por el grupo.
+                </Text>
+              </View>
+              <Feather
+                name="chevron-right"
+                size={20}
+                color="rgba(255,255,255,0.35)"
+              />
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              style={styles.opcionesGastoCancelar}
+              onPress={cerrarModalOpcionesGasto}
+            >
+              <Text style={styles.opcionesGastoCancelarText}>Cancelar</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
+
+      <Modal
         visible={modalBoletasVisible}
         transparent
         animationType="slide"
@@ -1298,6 +1391,76 @@ const styles = StyleSheet.create({
   },
   botonDeshabilitado: {
     opacity: 0.65,
+  },
+  opcionesGastoHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+    marginBottom: 18,
+  },
+  opcionesGastoIcono: {
+    width: 48,
+    height: 48,
+    borderRadius: 24,
+    alignItems: "center",
+    justifyContent: "center",
+    marginRight: 12,
+    backgroundColor: "rgba(255,255,255,0.11)",
+    borderWidth: 1,
+    borderColor: "rgba(255,255,255,0.08)",
+  },
+  opcionesGastoTitulo: {
+    color: "rgba(255,255,255,0.68)",
+    fontSize: 13,
+    marginTop: 4,
+  },
+  opcionesGastoMonto: {
+    color: "#4CAF50",
+    fontSize: 14,
+    fontWeight: "700",
+    marginTop: 6,
+  },
+  opcionGastoBoton: {
+    minHeight: 72,
+    borderRadius: 16,
+    padding: 14,
+    marginBottom: 10,
+    flexDirection: "row",
+    alignItems: "center",
+    borderWidth: 1,
+    borderColor: "rgba(255,255,255,0.08)",
+    backgroundColor: "rgba(255,255,255,0.07)",
+  },
+  opcionGastoIconoAccion: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    alignItems: "center",
+    justifyContent: "center",
+    marginRight: 12,
+    backgroundColor: "rgba(255,255,255,0.1)",
+  },
+  opcionGastoTitulo: {
+    color: "#FFFFFF",
+    fontSize: 15,
+    fontWeight: "700",
+  },
+  opcionGastoSub: {
+    color: "rgba(255,255,255,0.5)",
+    fontSize: 12,
+    marginTop: 3,
+  },
+  opcionesGastoCancelar: {
+    minHeight: 48,
+    borderRadius: 15,
+    alignItems: "center",
+    justifyContent: "center",
+    marginTop: 4,
+    backgroundColor: "rgba(255,255,255,0.1)",
+  },
+  opcionesGastoCancelarText: {
+    color: "rgba(255,255,255,0.85)",
+    fontSize: 14,
+    fontWeight: "700",
   },
   pagosReportadosLista: {
     maxHeight: 560,
