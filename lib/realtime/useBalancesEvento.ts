@@ -2,11 +2,12 @@ import { useQuery } from "@tanstack/react-query";
 import { useMemo } from "react";
 
 import { getGastosByEvento } from "@/lib/api/gastos";
+import { obtenerPagosEvento } from "@/lib/api/pagos";
 import {
-    calcularBalances,
-    simplificarDeudas,
-    type BalanceParticipante,
-    type Deuda,
+  calcularBalances,
+  simplificarDeudas,
+  type BalanceParticipante,
+  type Deuda,
 } from "@/lib/balances";
 import { useEventoRealtime } from "./useEventoRealtime";
 
@@ -40,25 +41,44 @@ const extraerParticipaciones = (gastos: GastoConParticipaciones[]) => {
 export const useBalancesEvento = (eventoId: string) => {
   useEventoRealtime(eventoId);
 
-  const query = useQuery({
+  // Consultar todos los gastos del evento
+  const queryGastos = useQuery({
     queryKey: ["gastos", eventoId],
     queryFn: () => getGastosByEvento(eventoId),
     enabled: Boolean(eventoId),
   });
 
+  // Consultar todos los pagos del evento (NUEVO)
+  const queryPagos = useQuery({
+    queryKey: ["pagos", eventoId],
+    queryFn: () => obtenerPagosEvento(eventoId),
+    enabled: Boolean(eventoId),
+  });
+
+  // Recalcular saldos cuando cambien los gastos o los pagos
   const saldos = useMemo<SaldosEvento>(() => {
-    const gastos = (query.data ?? []) as GastoConParticipaciones[];
+    const gastos = (queryGastos.data ?? []) as GastoConParticipaciones[];
+    const pagos = (queryPagos.data ?? []) as any[];
+
     const { pagadores, consumidores } = extraerParticipaciones(gastos);
-    const balances = calcularBalances(pagadores, consumidores);
+
+    // Filtramos para considerar SOLO los pagos que el acreedor ya confirmó (saldados)
+    const pagosSaldados = pagos.filter((p) => p.estado === "saldado");
+
+    // Le pasamos el nuevo parámetro a nuestro motor de cálculo
+    const balances = calcularBalances(pagadores, consumidores, pagosSaldados);
 
     return {
       balances,
       deudas: simplificarDeudas(balances),
     };
-  }, [query.data]);
+  }, [queryGastos.data, queryPagos.data]);
 
+  // Retornamos combinando los estados de carga de ambas consultas
   return {
-    ...query,
-    ...saldos,
+    isLoading: queryGastos.isLoading || queryPagos.isLoading,
+    error: queryGastos.error || queryPagos.error,
+    balances: saldos.balances,
+    deudas: saldos.deudas,
   };
 };
