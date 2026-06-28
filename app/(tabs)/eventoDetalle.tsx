@@ -25,8 +25,10 @@ import {
 import GlassCard from "@/components/ui/GlassCard";
 import { getEvento } from "@/lib/api/eventos";
 import {
+  agregarComprobanteGasto,
   borrarGasto,
   getGastosConPagador,
+  obtenerComprobantesGasto,
   obtenerParticipantesEvento,
 } from "@/lib/api/gastos";
 import { useBalancesEvento } from "@/lib/realtime/useBalancesEvento";
@@ -59,6 +61,10 @@ export default function EventoDetalleScreen() {
     useState<ImagePicker.ImagePickerAsset | null>(null);
   const [pagosReportados, setPagosReportados] = useState<any[]>([]);
   const [cargandoPagosReportados, setCargandoPagosReportados] = useState(false);
+  const [modalBoletasVisible, setModalBoletasVisible] = useState(false);
+  const [gastoBoletas, setGastoBoletas] = useState<any | null>(null);
+  const [boletasGasto, setBoletasGasto] = useState<any[]>([]);
+  const [cargandoBoletas, setCargandoBoletas] = useState(false);
   const queryClient = useQueryClient();
 
   const { data: evento, isLoading: loadingEvento } = useQuery({
@@ -170,6 +176,12 @@ export default function EventoDetalleScreen() {
     setComprobante(null);
   };
 
+  const cerrarModalBoletas = () => {
+    setModalBoletasVisible(false);
+    setGastoBoletas(null);
+    setBoletasGasto([]);
+  };
+
   const abrirModalReporte = () => {
     if (!usuarioActualId) {
       Alert.alert("Un momento", "Aun estamos preparando tus datos.");
@@ -214,6 +226,35 @@ export default function EventoDetalleScreen() {
     if (!resultado.canceled) {
       setComprobante(resultado.assets[0]);
     }
+  };
+
+  const seleccionarBoletaGasto = async (gasto: any) => {
+    const permisos = await ImagePicker.requestMediaLibraryPermissionsAsync();
+
+    if (!permisos.granted) {
+      Alert.alert(
+        "Permiso necesario",
+        "Necesitamos acceso a tus fotos para adjuntar la boleta.",
+      );
+      return;
+    }
+
+    const resultado = await ImagePicker.launchImageLibraryAsync({
+      mediaTypes: ["images"],
+      allowsEditing: false,
+      quality: 0.85,
+    });
+
+    if (resultado.canceled) return;
+
+    agregarBoletaGastoMutation.mutate({
+      gasto,
+      comprobante: {
+        uri: resultado.assets[0].uri,
+        mimeType: resultado.assets[0].mimeType,
+        fileName: resultado.assets[0].fileName,
+      },
+    });
   };
 
   const enviarReportePago = () => {
@@ -274,6 +315,40 @@ export default function EventoDetalleScreen() {
     }
   };
 
+  const cargarBoletasGasto = async (gasto: any) => {
+    setGastoBoletas(gasto);
+    setCargandoBoletas(true);
+    setModalBoletasVisible(true);
+
+    try {
+      const comprobantes = await obtenerComprobantesGasto(gasto.id);
+      setBoletasGasto(comprobantes);
+    } catch (err: any) {
+      Alert.alert("Error", err?.message ?? "No se pudieron cargar boletas.");
+      cerrarModalBoletas();
+    } finally {
+      setCargandoBoletas(false);
+    }
+  };
+
+  const abrirOpcionesGasto = (gasto: any) => {
+    Alert.alert(
+      gasto.descripcion,
+      "¿Deseas agregar una boleta o ver las boletas de este gasto?",
+      [
+        { text: "Cancelar", style: "cancel" },
+        {
+          text: "Ver boletas",
+          onPress: () => cargarBoletasGasto(gasto),
+        },
+        {
+          text: "Agregar boleta",
+          onPress: () => seleccionarBoletaGasto(gasto),
+        },
+      ],
+    );
+  };
+
   const cerrarModalConfirmacion = () => {
     setModalConfirmacionVisible(false);
     setPagosReportados([]);
@@ -308,6 +383,25 @@ export default function EventoDetalleScreen() {
     onError: (error: any) => {
       Alert.alert(
         "No se pudo reportar",
+        error?.message ?? "Intenta nuevamente.",
+      );
+    },
+  });
+
+  const agregarBoletaGastoMutation = useMutation({
+    mutationFn: ({ gasto, comprobante }: any) =>
+      agregarComprobanteGasto(gasto.id, comprobante),
+    onSuccess: async (_data, variables: any) => {
+      queryClient.invalidateQueries({ queryKey: ["gastos-detalle", eventoId] });
+      Alert.alert("Boleta agregada", "La boleta quedó asociada al gasto.");
+
+      if (modalBoletasVisible && gastoBoletas?.id === variables.gasto.id) {
+        await cargarBoletasGasto(variables.gasto);
+      }
+    },
+    onError: (error: any) => {
+      Alert.alert(
+        "No se pudo agregar",
         error?.message ?? "Intenta nuevamente.",
       );
     },
@@ -465,7 +559,12 @@ export default function EventoDetalleScreen() {
                   const pagador =
                     g.gastos_pagadores?.[0]?.contactos?.nombre ?? "?";
                   return (
-                    <TouchableOpacity key={g.id} style={styles.gastoCard}>
+                    <TouchableOpacity
+                      key={g.id}
+                      style={styles.gastoCard}
+                      onPress={() => abrirOpcionesGasto(g)}
+                      disabled={agregarBoletaGastoMutation.isPending}
+                    >
                       <View style={styles.avatar}>
                         <Text style={styles.avatarText}>
                           {pagador.substring(0, 1).toUpperCase()}
@@ -824,6 +923,78 @@ export default function EventoDetalleScreen() {
           </View>
         </View>
       </Modal>
+
+      <Modal
+        visible={modalBoletasVisible}
+        transparent
+        animationType="slide"
+        onRequestClose={cerrarModalBoletas}
+      >
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalCard}>
+            <View style={styles.modalHeader}>
+              <View style={styles.deudaOptionInfo}>
+                <Text style={styles.modalTitulo}>Boletas del gasto</Text>
+                {gastoBoletas ? (
+                  <Text style={styles.deudaOptionSub}>
+                    {gastoBoletas.descripcion}
+                  </Text>
+                ) : null}
+              </View>
+              <TouchableOpacity
+                style={styles.modalClose}
+                onPress={cerrarModalBoletas}
+                disabled={agregarBoletaGastoMutation.isPending}
+              >
+                <Feather name="x" size={20} color="#FFFFFF" />
+              </TouchableOpacity>
+            </View>
+
+            {cargandoBoletas ? (
+              <ActivityIndicator color="#FFFFFF" style={{ marginVertical: 28 }} />
+            ) : boletasGasto.length === 0 ? (
+              <View style={styles.comprobanteVacio}>
+                <Feather name="image" size={24} color="rgba(255,255,255,0.45)" />
+                <Text style={styles.emptyText}>
+                  Este gasto todavía no tiene boletas.
+                </Text>
+              </View>
+            ) : (
+              <ScrollView style={styles.boletasLista}>
+                {boletasGasto.map((boleta) => (
+                  <View key={boleta.id} style={styles.boletaCard}>
+                    <Image
+                      source={{ uri: boleta.url }}
+                      style={styles.comprobantePreview}
+                      resizeMode="contain"
+                    />
+                  </View>
+                ))}
+              </ScrollView>
+            )}
+
+            {gastoBoletas ? (
+              <TouchableOpacity
+                style={[
+                  styles.botonReportarFinal,
+                  agregarBoletaGastoMutation.isPending &&
+                    styles.botonDeshabilitado,
+                ]}
+                onPress={() => seleccionarBoletaGasto(gastoBoletas)}
+                disabled={agregarBoletaGastoMutation.isPending}
+              >
+                {agregarBoletaGastoMutation.isPending ? (
+                  <ActivityIndicator color="#000000" />
+                ) : (
+                  <Text style={styles.botonReportarFinalText}>
+                    Agregar boleta
+                  </Text>
+                )}
+              </TouchableOpacity>
+            ) : null}
+          </View>
+        </View>
+      </Modal>
     </View>
   );
 }
@@ -1130,6 +1301,19 @@ const styles = StyleSheet.create({
   },
   pagosReportadosLista: {
     maxHeight: 560,
+  },
+  boletasLista: {
+    maxHeight: 430,
+    marginBottom: 14,
+  },
+  boletaCard: {
+    height: 260,
+    borderRadius: 14,
+    overflow: "hidden",
+    backgroundColor: "rgba(0,0,0,0.22)",
+    borderWidth: 1,
+    borderColor: "rgba(255,255,255,0.08)",
+    marginBottom: 12,
   },
   pagoReportadoCard: {
     padding: 14,
