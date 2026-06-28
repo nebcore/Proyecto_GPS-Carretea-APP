@@ -47,6 +47,12 @@ const formatearFecha = (fechaString: string) => {
 const formatearMonto = (monto: number) => `$${monto.toLocaleString("es-CL")}`;
 
 type Tab = "gastos" | "balances" | "participantes";
+type AvisoPago = {
+  titulo: string;
+  mensaje: string;
+  icono: any;
+  color: string;
+};
 
 export default function EventoDetalleScreen() {
   const { eventoId } = useLocalSearchParams<{ eventoId: string }>();
@@ -68,6 +74,7 @@ export default function EventoDetalleScreen() {
   const [modalOpcionesGastoVisible, setModalOpcionesGastoVisible] =
     useState(false);
   const [gastoSeleccionado, setGastoSeleccionado] = useState<any | null>(null);
+  const [avisoPago, setAvisoPago] = useState<AvisoPago | null>(null);
   const queryClient = useQueryClient();
 
   const { data: evento, isLoading: loadingEvento } = useQuery({
@@ -190,21 +197,40 @@ export default function EventoDetalleScreen() {
     setGastoSeleccionado(null);
   };
 
+  const mostrarAvisoPago = (
+    titulo: string,
+    mensaje: string,
+    icono: any = "info",
+    color = "#FFFFFF",
+  ) => {
+    setAvisoPago({ titulo, mensaje, icono, color });
+  };
+
   const abrirModalReporte = () => {
     if (!usuarioActualId) {
-      Alert.alert("Un momento", "Aun estamos preparando tus datos.");
+      mostrarAvisoPago(
+        "Un momento",
+        "Aun estamos preparando tus datos.",
+        "clock",
+      );
       return;
     }
 
     if (loadingPagosEvento) {
-      Alert.alert("Un momento", "Estamos revisando tus pagos pendientes.");
+      mostrarAvisoPago(
+        "Un momento",
+        "Estamos revisando tus pagos pendientes.",
+        "loader",
+      );
       return;
     }
 
     if (deudasDelUsuario.length === 0) {
-      Alert.alert(
+      mostrarAvisoPago(
         "Sin deudas",
         "No tienes pagos pendientes por reportar en este evento.",
+        "check-circle",
+        "#4CAF50",
       );
       return;
     }
@@ -218,9 +244,10 @@ export default function EventoDetalleScreen() {
     const permisos = await ImagePicker.requestMediaLibraryPermissionsAsync();
 
     if (!permisos.granted) {
-      Alert.alert(
+      mostrarAvisoPago(
         "Permiso necesario",
         "Necesitamos acceso a tus fotos para adjuntar el comprobante.",
+        "image",
       );
       return;
     }
@@ -267,14 +294,19 @@ export default function EventoDetalleScreen() {
 
   const enviarReportePago = () => {
     if (!deudaSeleccionada) {
-      Alert.alert("Selecciona una deuda", "Elige que deuda quieres reportar.");
+      mostrarAvisoPago(
+        "Selecciona una deuda",
+        "Elige que deuda quieres reportar.",
+        "list",
+      );
       return;
     }
 
     if (!comprobante) {
-      Alert.alert(
+      mostrarAvisoPago(
         "Falta comprobante",
         "Agrega una imagen del comprobante antes de reportar.",
+        "upload",
       );
       return;
     }
@@ -294,7 +326,11 @@ export default function EventoDetalleScreen() {
 
   const cargarPagosReportados = async () => {
     if (!usuarioActualId) {
-      Alert.alert("Un momento", "Aun estamos preparando tus datos.");
+      mostrarAvisoPago(
+        "Un momento",
+        "Aun estamos preparando tus datos.",
+        "clock",
+      );
       return;
     }
 
@@ -307,17 +343,25 @@ export default function EventoDetalleScreen() {
           usuariosPorContactoId.get(pago.acreedor_id) === usuarioActualId,
       );
 
-      setPagosReportados(pagosDelAcreedor);
-      setModalConfirmacionVisible(true);
-
       if (pagosDelAcreedor.length === 0) {
-        Alert.alert(
+        setPagosReportados([]);
+        mostrarAvisoPago(
           "No hay reportes",
           "No hay pagos reportados donde aparezcas como acreedor.",
+          "inbox",
         );
+        return;
       }
+
+      setPagosReportados(pagosDelAcreedor);
+      setModalConfirmacionVisible(true);
     } catch (err: any) {
-      Alert.alert("Error", err?.message ?? "No se pudo consultar pagos.");
+      mostrarAvisoPago(
+        "Error",
+        err?.message ?? "No se pudo consultar pagos.",
+        "alert-circle",
+        "#FF6B6B",
+      );
     } finally {
       setCargandoPagosReportados(false);
     }
@@ -389,12 +433,19 @@ export default function EventoDetalleScreen() {
       queryClient.invalidateQueries({ queryKey: ["balances", eventoId] });
       queryClient.invalidateQueries({ queryKey: ["pagos", eventoId] });
       cerrarModalReporte();
-      Alert.alert("Pago reportado", "El pago fue reportado correctamente.");
+      mostrarAvisoPago(
+        "Pago reportado",
+        "El pago fue reportado correctamente.",
+        "check-circle",
+        "#4CAF50",
+      );
     },
     onError: (error: any) => {
-      Alert.alert(
+      mostrarAvisoPago(
         "No se pudo reportar",
         error?.message ?? "Intenta nuevamente.",
+        "alert-circle",
+        "#FF6B6B",
       );
     },
   });
@@ -428,12 +479,19 @@ export default function EventoDetalleScreen() {
       queryClient.invalidateQueries({ queryKey: ["balances", eventoId] });
       queryClient.invalidateQueries({ queryKey: ["pagos", eventoId] });
       cerrarModalConfirmacion();
-      Alert.alert("Pago confirmado", "El pago ha sido confirmado.");
+      mostrarAvisoPago(
+        "Pago confirmado",
+        "El pago ha sido confirmado.",
+        "check-circle",
+        "#4CAF50",
+      );
     },
     onError: (error: any) => {
-      Alert.alert(
+      mostrarAvisoPago(
         "No se pudo confirmar",
         error?.message ?? "Intenta nuevamente.",
+        "alert-circle",
+        "#FF6B6B",
       );
     },
   });
@@ -448,12 +506,18 @@ export default function EventoDetalleScreen() {
       queryClient.invalidateQueries({ queryKey: ["balances", eventoId] });
       queryClient.invalidateQueries({ queryKey: ["pagos", eventoId] });
       cerrarModalConfirmacion();
-      Alert.alert("Pago devuelto", "El pago volvió al estado pendiente.");
+      mostrarAvisoPago(
+        "Pago devuelto",
+        "El pago volvió al estado pendiente.",
+        "rotate-ccw",
+      );
     },
     onError: (error: any) => {
-      Alert.alert(
+      mostrarAvisoPago(
         "No se pudo devolver",
         error?.message ?? "Intenta nuevamente.",
+        "alert-circle",
+        "#FF6B6B",
       );
     },
   });
@@ -719,6 +783,38 @@ export default function EventoDetalleScreen() {
           </TouchableOpacity>
         </View>
       )}
+
+      <Modal
+        visible={Boolean(avisoPago)}
+        transparent
+        animationType="slide"
+        onRequestClose={() => setAvisoPago(null)}
+      >
+        <View style={styles.modalOverlay}>
+          <View style={styles.avisoPagoCard}>
+            <View
+              style={[
+                styles.avisoPagoIcono,
+                { borderColor: avisoPago?.color ?? "#FFFFFF" },
+              ]}
+            >
+              <Feather
+                name={avisoPago?.icono ?? "info"}
+                size={24}
+                color={avisoPago?.color ?? "#FFFFFF"}
+              />
+            </View>
+            <Text style={styles.avisoPagoTitulo}>{avisoPago?.titulo}</Text>
+            <Text style={styles.avisoPagoMensaje}>{avisoPago?.mensaje}</Text>
+            <TouchableOpacity
+              style={[styles.botonReportarFinal, styles.avisoPagoBoton]}
+              onPress={() => setAvisoPago(null)}
+            >
+              <Text style={styles.botonReportarFinalText}>Entendido</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
 
       <Modal
         visible={modalReporteVisible}
@@ -1297,6 +1393,44 @@ const styles = StyleSheet.create({
     fontSize: 13,
     fontWeight: "600",
     marginBottom: 8,
+  },
+  avisoPagoCard: {
+    backgroundColor: "#181818",
+    borderTopLeftRadius: 22,
+    borderTopRightRadius: 22,
+    padding: 22,
+    borderWidth: 1,
+    borderColor: "rgba(255,255,255,0.1)",
+    alignItems: "center",
+  },
+  avisoPagoIcono: {
+    width: 58,
+    height: 58,
+    borderRadius: 29,
+    alignItems: "center",
+    justifyContent: "center",
+    marginBottom: 14,
+    borderWidth: 1,
+    backgroundColor: "rgba(255,255,255,0.08)",
+  },
+  avisoPagoTitulo: {
+    color: "#FFFFFF",
+    fontSize: 20,
+    fontWeight: "bold",
+    textAlign: "center",
+  },
+  avisoPagoMensaje: {
+    color: "rgba(255,255,255,0.62)",
+    fontSize: 14,
+    lineHeight: 20,
+    textAlign: "center",
+    marginTop: 8,
+    marginBottom: 20,
+  },
+  avisoPagoBoton: {
+    minWidth: 190,
+    paddingHorizontal: 28,
+    alignSelf: "center",
   },
   deudasSelector: {
     maxHeight: 210,
