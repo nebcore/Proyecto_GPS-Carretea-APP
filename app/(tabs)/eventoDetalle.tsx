@@ -1,9 +1,9 @@
 import {
-    confirmarPago,
-    devolverPagoAPendiente,
-    obtenerPagosEvento,
-    obtenerPagosReportadosEvento,
-    reportarPago,
+  confirmarPago,
+  devolverPagoAPendiente,
+  obtenerPagosEvento,
+  obtenerPagosReportadosEvento,
+  reportarPago,
 } from "@/lib/api/pagos";
 import Feather from "@expo/vector-icons/Feather";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
@@ -11,15 +11,15 @@ import * as ImagePicker from "expo-image-picker";
 import { router, useLocalSearchParams } from "expo-router";
 import { useMemo, useState } from "react";
 import {
-    ActivityIndicator,
-    Alert,
-    Image,
-    Modal,
-    ScrollView,
-    StyleSheet,
-    Text,
-    TouchableOpacity,
-    View,
+  ActivityIndicator,
+  Alert,
+  Image,
+  Modal,
+  ScrollView,
+  StyleSheet,
+  Text,
+  TouchableOpacity,
+  View,
 } from "react-native";
 
 import GlassCard from "@/components/ui/GlassCard";
@@ -31,6 +31,7 @@ import {
   obtenerComprobantesGasto,
   obtenerParticipantesEvento,
 } from "@/lib/api/gastos";
+import { obtenerNotificacionesEvento } from "@/lib/api/notificaciones";
 import type { Deuda } from "@/lib/balances";
 import { useBalancesEvento } from "@/lib/realtime/useBalancesEvento";
 import { supabase } from "@/lib/supabase";
@@ -46,7 +47,7 @@ const formatearFecha = (fechaString: string) => {
 
 const formatearMonto = (monto: number) => `$${monto.toLocaleString("es-CL")}`;
 
-type Tab = "gastos" | "balances" | "participantes";
+type Tab = "gastos" | "balances" | "participantes" | "feed";
 type AvisoPago = {
   titulo: string;
   mensaje: string;
@@ -102,6 +103,12 @@ export default function EventoDetalleScreen() {
   const { data: pagosEvento = [], isLoading: loadingPagosEvento } = useQuery({
     queryKey: ["pagos", eventoId],
     queryFn: () => obtenerPagosEvento(eventoId),
+    enabled: Boolean(eventoId),
+  });
+
+  const { data: feedEvento = [], isLoading: loadingFeedEvento } = useQuery({
+    queryKey: ["notificaciones-evento", eventoId],
+    queryFn: () => obtenerNotificacionesEvento(eventoId, 40),
     enabled: Boolean(eventoId),
   });
 
@@ -454,6 +461,11 @@ export default function EventoDetalleScreen() {
       queryClient.invalidateQueries({ queryKey: ["gastos", eventoId] });
       queryClient.invalidateQueries({ queryKey: ["total-gastos"] });
       queryClient.invalidateQueries({ queryKey: ["actividad-reciente"] });
+      queryClient.invalidateQueries({ queryKey: ["notificaciones"] });
+      queryClient.invalidateQueries({ queryKey: ["notificaciones-no-leidas"] });
+      queryClient.invalidateQueries({
+        queryKey: ["notificaciones-evento", eventoId],
+      });
     },
     onError: (error: any) => {
       Alert.alert("No se pudo borrar", error?.message ?? "Intenta nuevamente.");
@@ -470,6 +482,11 @@ export default function EventoDetalleScreen() {
       queryClient.invalidateQueries({ queryKey: ["actividad-reciente"] });
       queryClient.invalidateQueries({ queryKey: ["balances", eventoId] });
       queryClient.invalidateQueries({ queryKey: ["pagos", eventoId] });
+      queryClient.invalidateQueries({ queryKey: ["notificaciones"] });
+      queryClient.invalidateQueries({ queryKey: ["notificaciones-no-leidas"] });
+      queryClient.invalidateQueries({
+        queryKey: ["notificaciones-evento", eventoId],
+      });
       cerrarModalReporte();
       mostrarAvisoPago(
         "Pago reportado",
@@ -516,6 +533,11 @@ export default function EventoDetalleScreen() {
       queryClient.invalidateQueries({ queryKey: ["actividad-reciente"] });
       queryClient.invalidateQueries({ queryKey: ["balances", eventoId] });
       queryClient.invalidateQueries({ queryKey: ["pagos", eventoId] });
+      queryClient.invalidateQueries({ queryKey: ["notificaciones"] });
+      queryClient.invalidateQueries({ queryKey: ["notificaciones-no-leidas"] });
+      queryClient.invalidateQueries({
+        queryKey: ["notificaciones-evento", eventoId],
+      });
       cerrarModalConfirmacion();
       mostrarAvisoPago(
         "Pago confirmado",
@@ -543,6 +565,11 @@ export default function EventoDetalleScreen() {
       queryClient.invalidateQueries({ queryKey: ["actividad-reciente"] });
       queryClient.invalidateQueries({ queryKey: ["balances", eventoId] });
       queryClient.invalidateQueries({ queryKey: ["pagos", eventoId] });
+      queryClient.invalidateQueries({ queryKey: ["notificaciones"] });
+      queryClient.invalidateQueries({ queryKey: ["notificaciones-no-leidas"] });
+      queryClient.invalidateQueries({
+        queryKey: ["notificaciones-evento", eventoId],
+      });
       cerrarModalConfirmacion();
       mostrarAvisoPago(
         "Pago devuelto",
@@ -575,6 +602,21 @@ export default function EventoDetalleScreen() {
     (acc: number, g: any) => acc + (g.monto_total ?? 0),
     0,
   );
+
+  const formatearTiempoRelativo = (fechaString: string) => {
+    const fecha = new Date(fechaString);
+    const ahora = new Date();
+    const diff = ahora.getTime() - fecha.getTime();
+    const minutos = Math.floor(diff / 60000);
+    const horas = Math.floor(minutos / 60);
+    const dias = Math.floor(horas / 24);
+
+    if (minutos < 1) return "Ahora";
+    if (minutos < 60) return `Hace ${minutos} min`;
+    if (horas < 24) return `Hace ${horas} hora${horas !== 1 ? "s" : ""}`;
+    if (dias === 1) return "Ayer";
+    return `Hace ${dias} días`;
+  };
 
   if (loadingEvento) {
     return (
@@ -634,22 +676,24 @@ export default function EventoDetalleScreen() {
 
         {/* TABS */}
         <View style={styles.tabBar}>
-          {(["gastos", "balances", "participantes"] as Tab[]).map((tab) => (
-            <TouchableOpacity
-              key={tab}
-              style={[styles.tab, tabActivo === tab && styles.tabActivo]}
-              onPress={() => setTabActivo(tab)}
-            >
-              <Text
-                style={[
-                  styles.tabText,
-                  tabActivo === tab && styles.tabTextActivo,
-                ]}
+          {(["gastos", "balances", "participantes", "feed"] as Tab[]).map(
+            (tab) => (
+              <TouchableOpacity
+                key={tab}
+                style={[styles.tab, tabActivo === tab && styles.tabActivo]}
+                onPress={() => setTabActivo(tab)}
               >
-                {tab.charAt(0).toUpperCase() + tab.slice(1)}
-              </Text>
-            </TouchableOpacity>
-          ))}
+                <Text
+                  style={[
+                    styles.tabText,
+                    tabActivo === tab && styles.tabTextActivo,
+                  ]}
+                >
+                  {tab.charAt(0).toUpperCase() + tab.slice(1)}
+                </Text>
+              </TouchableOpacity>
+            ),
+          )}
         </View>
 
         {/* CONTENIDO */}
@@ -876,6 +920,39 @@ export default function EventoDetalleScreen() {
                     </View>
                   );
                 })
+              )}
+            </>
+          )}
+
+          {tabActivo === "feed" && (
+            <>
+              {loadingFeedEvento ? (
+                <ActivityIndicator color="#FFFFFF" style={{ marginTop: 20 }} />
+              ) : feedEvento.length === 0 ? (
+                <Text style={styles.emptyText}>
+                  Aún no hay actividad interna para este evento.
+                </Text>
+              ) : (
+                feedEvento.map((notificacion: any) => (
+                  <View key={notificacion.id} style={styles.gastoCard}>
+                    <View style={styles.avatar}>
+                      <Feather name="bell" size={16} color="#FFFFFF" />
+                    </View>
+                    <View style={styles.cardInfo}>
+                      <Text style={styles.cardTitulo}>
+                        {notificacion.titulo}
+                      </Text>
+                      {notificacion.cuerpo ? (
+                        <Text style={styles.cardSub}>
+                          {notificacion.cuerpo}
+                        </Text>
+                      ) : null}
+                      <Text style={styles.cardFecha}>
+                        {formatearTiempoRelativo(notificacion.creado_en)}
+                      </Text>
+                    </View>
+                  </View>
+                ))
               )}
             </>
           )}
@@ -1250,10 +1327,17 @@ export default function EventoDetalleScreen() {
             </View>
 
             {cargandoBoletas ? (
-              <ActivityIndicator color="#FFFFFF" style={{ marginVertical: 28 }} />
+              <ActivityIndicator
+                color="#FFFFFF"
+                style={{ marginVertical: 28 }}
+              />
             ) : boletasGasto.length === 0 ? (
               <View style={styles.comprobanteVacio}>
-                <Feather name="image" size={24} color="rgba(255,255,255,0.45)" />
+                <Feather
+                  name="image"
+                  size={24}
+                  color="rgba(255,255,255,0.45)"
+                />
                 <Text style={styles.emptyText}>
                   Este gasto todavía no tiene boletas.
                 </Text>

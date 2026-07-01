@@ -5,15 +5,15 @@ import { router, useLocalSearchParams } from "expo-router";
 import { useEffect, useState } from "react";
 import { Controller, useForm } from "react-hook-form";
 import {
-  ActivityIndicator,
-  Alert,
-  Platform,
-  Pressable,
-  StyleSheet,
-  Text,
-  TextInput,
-  TouchableOpacity,
-  View,
+    ActivityIndicator,
+    Alert,
+    Platform,
+    Pressable,
+    StyleSheet,
+    Text,
+    TextInput,
+    TouchableOpacity,
+    View,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
@@ -21,12 +21,12 @@ import { PantallaConTeclado } from "@/components/ui/PantallaConTeclado";
 
 import GlassCard from "@/components/ui/GlassCard";
 import {
-  crearGasto,
-  GastoFormData,
-  GastoFormInput,
-  gastoFormSchema,
-  GastoFormValues,
-  obtenerParticipantesEvento,
+    crearGasto,
+    GastoFormData,
+    GastoFormInput,
+    gastoFormSchema,
+    GastoFormValues,
+    obtenerParticipantesEvento,
 } from "@/lib/api/gastos";
 import { CalculoDivision, TipoDivision } from "@/lib/api/gastos_logic";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
@@ -202,6 +202,10 @@ export default function GastoNuevoScreen() {
         queryClient.invalidateQueries({ queryKey: ["gastos", eventoIdString] }),
         queryClient.invalidateQueries({ queryKey: ["total-gastos"] }),
         queryClient.invalidateQueries({ queryKey: ["actividad-reciente"] }),
+        queryClient.invalidateQueries({ queryKey: ["notificaciones"] }),
+        queryClient.invalidateQueries({
+          queryKey: ["notificaciones-no-leidas"],
+        }),
       ]);
       router.back();
     } catch (err: any) {

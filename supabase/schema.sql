@@ -127,6 +127,7 @@ create table log_auditoria (
 create table notificaciones (
     id uuid primary key default gen_random_uuid(),
     usuario_id uuid not null references usuarios(id) on delete cascade,
+    evento_id uuid references eventos(id) on delete cascade,
     tipo text not null,
     titulo text not null,
     cuerpo text,
