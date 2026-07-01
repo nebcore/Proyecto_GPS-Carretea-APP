@@ -117,7 +117,6 @@ export const reportarPago = async (
     ])
     .select()
     .single();
-
   if (error) throw error;
 
   const { error: comprobanteError } = await supabase
@@ -129,8 +128,35 @@ export const reportarPago = async (
         mime_type: archivo.mimeType,
       },
     ]);
-
   if (comprobanteError) throw comprobanteError;
+
+  //Enviar Notificación al Acreedor
+  const { data: evento } = await supabase
+    .from("eventos")
+    .select("titulo")
+    .eq("id", eventoId)
+    .single();
+  const { data: deudor } = await supabase
+    .from("contactos")
+    .select("nombre")
+    .eq("id", deudorId)
+    .single();
+  const { data: acreedor } = await supabase
+    .from("contactos")
+    .select("referencia_usuario_id")
+    .eq("id", acreedorId)
+    .single();
+
+  if (acreedor?.referencia_usuario_id) {
+    await supabase.from("notificaciones").insert([
+      {
+        usuario_id: acreedor.referencia_usuario_id,
+        tipo: "pago_reportado",
+        titulo: "¡Tienes un pago por confirmar!",
+        cuerpo: `${deudor?.nombre || "Alguien"} ha reportado un pago de $${monto} en el evento "${evento?.titulo || ""}".`,
+      },
+    ]);
+  }
 
   return data;
 };
