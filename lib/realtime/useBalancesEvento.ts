@@ -4,10 +4,10 @@ import { useMemo } from "react";
 import { getGastosByEvento } from "@/lib/api/gastos";
 import { obtenerPagosEvento } from "@/lib/api/pagos";
 import {
-    calcularBalances,
-    simplificarDeudas,
-    type BalanceParticipante,
-    type Deuda,
+  calcularBalances,
+  simplificarDeudas,
+  type BalanceParticipante,
+  type Deuda,
 } from "@/lib/balances";
 import { useEventoRealtime } from "./useEventoRealtime";
 
@@ -184,5 +184,6 @@ export const useBalancesEvento = (eventoId: string) => {
     error: queryGastos.error || queryPagos.error,
     balances: saldos.balances,
     deudas: saldos.deudas,
+    detalleParticipantes: saldos.detalleParticipantes,
   };
 };
