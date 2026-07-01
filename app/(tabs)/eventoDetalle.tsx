@@ -80,7 +80,8 @@ export default function EventoDetalleScreen() {
       enabled: Boolean(eventoId),
     });
 
-  const { balances, deudas } = useBalancesEvento(eventoId);
+  const { balances, deudas, detalleParticipantes } =
+    useBalancesEvento(eventoId);
 
   const { data: pagosEvento = [], isLoading: loadingPagosEvento } = useQuery({
     queryKey: ["pagos", eventoId],
@@ -592,6 +593,49 @@ export default function EventoDetalleScreen() {
                     </Text>
                   </View>
                 ))
+              )}
+
+              <Text style={[styles.sectionTitle, { marginTop: 20 }]}>
+                Detalle por participante
+              </Text>
+              {detalleParticipantes.length === 0 ? (
+                <Text style={styles.emptyText}>No hay detalle disponible.</Text>
+              ) : (
+                detalleParticipantes.map((detalle) => {
+                  const nombre =
+                    participantesPorId.get(detalle.contactoId) ??
+                    detalle.contactoId;
+
+                  return (
+                    <View key={detalle.contactoId} style={styles.gastoCard}>
+                      <View style={styles.cardInfo}>
+                        <Text style={styles.cardTitulo}>{nombre}</Text>
+                        <Text style={styles.cardSub}>
+                          Aportó {formatearMonto(detalle.totalAportado)} ·
+                          Consumió {formatearMonto(detalle.totalConsumido)} ·
+                          Pagos confirmados{" "}
+                          {formatearMonto(detalle.pagosSaldados)}
+                        </Text>
+                        {detalle.movimientos.length > 0 ? (
+                          <Text style={styles.cardSub}>
+                            {detalle.movimientos.length} movimientos registrados
+                          </Text>
+                        ) : null}
+                      </View>
+                      <Text
+                        style={[
+                          styles.gastoMonto,
+                          detalle.saldoNeto >= 0
+                            ? styles.positivo
+                            : styles.negativo,
+                        ]}
+                      >
+                        {detalle.saldoNeto >= 0 ? "+" : ""}
+                        {formatearMonto(detalle.saldoNeto)}
+                      </Text>
+                    </View>
+                  );
+                })
               )}
 
               <TouchableOpacity
