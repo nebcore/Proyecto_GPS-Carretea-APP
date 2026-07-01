@@ -49,6 +49,65 @@ export type GastoFormValues = z.infer<typeof gastoFormSchema>;
 export type GastoFormInput = z.input<typeof gastoFormSchema>;
 export type GastoFormData = z.infer<typeof gastoSchema>;
 
+const COMPROBANTES_BUCKET = "comprobantes";
+
+export type ComprobanteArchivo = {
+  uri: string;
+  mimeType?: string | null;
+  fileName?: string | null;
+};
+
+const obtenerExtensionComprobante = (comprobante: ComprobanteArchivo) => {
+  const nombre = comprobante.fileName ?? comprobante.uri;
+  const extension = nombre.split(".").pop()?.split("?")[0]?.toLowerCase();
+
+  if (extension && extension.length <= 5) {
+    return extension;
+  }
+
+  if (comprobante.mimeType?.includes("png")) {
+    return "png";
+  }
+
+  if (comprobante.mimeType?.includes("webp")) {
+    return "webp";
+  }
+
+  return "jpg";
+};
+
+const subirArchivoComprobante = async (
+  storagePath: string,
+  comprobante: ComprobanteArchivo,
+) => {
+  const archivo = await fetch(comprobante.uri);
+  const arrayBuffer = await archivo.arrayBuffer();
+  const mimeType = comprobante.mimeType ?? "image/jpeg";
+
+  const { error } = await supabase.storage
+    .from(COMPROBANTES_BUCKET)
+    .upload(storagePath, arrayBuffer, {
+      contentType: mimeType,
+      upsert: false,
+    });
+
+  if (error) throw error;
+
+  return {
+    storagePath,
+    mimeType,
+  };
+};
+
+const crearUrlFirmadaComprobante = async (storagePath: string) => {
+  const { data, error } = await supabase.storage
+    .from(COMPROBANTES_BUCKET)
+    .createSignedUrl(storagePath, 60 * 10);
+
+  if (error) throw error;
+  return data.signedUrl;
+};
+
 async function asegurarParticipacionDelCreador(eventoId: string) {
   const {
     data: { user },
@@ -393,4 +452,46 @@ export const getGastosConPagador = async (eventoId: string) => {
     .order("fecha", { ascending: false });
   if (error) throw error;
   return data;
+};
+
+export const agregarComprobanteGasto = async (
+  gastoId: string,
+  comprobante: ComprobanteArchivo,
+) => {
+  const extension = obtenerExtensionComprobante(comprobante);
+  const storagePath = `gastos/${gastoId}/${Date.now()}.${extension}`;
+  const archivo = await subirArchivoComprobante(storagePath, comprobante);
+
+  const { data, error } = await supabase
+    .from("comprobantes")
+    .insert([
+      {
+        gasto_id: gastoId,
+        storage_path: archivo.storagePath,
+        mime_type: archivo.mimeType,
+      },
+    ])
+    .select()
+    .single();
+
+  if (error) throw error;
+
+  return data;
+};
+
+export const obtenerComprobantesGasto = async (gastoId: string) => {
+  const { data, error } = await supabase
+    .from("comprobantes")
+    .select("*")
+    .eq("gasto_id", gastoId)
+    .order("creado_en", { ascending: false });
+
+  if (error) throw error;
+
+  return Promise.all(
+    (data ?? []).map(async (comprobante) => ({
+      ...comprobante,
+      url: await crearUrlFirmadaComprobante(comprobante.storage_path),
+    })),
+  );
 };
