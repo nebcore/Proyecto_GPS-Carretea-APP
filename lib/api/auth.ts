@@ -50,6 +50,41 @@ export const getSession = async () => {
   return data.session;
 };
 
+// Verificación de email desacoplada del toggle "Confirm email" de Supabase
+// (ese toggle bloquea la sesión hasta que se confirma, lo que rompe el
+// flujo de teléfono). Se guarda en user_metadata, no en una tabla, para no
+// requerir cambios de esquema.
+export const getEstadoEmail = async () => {
+  const {
+    data: { user },
+    error,
+  } = await supabase.auth.getUser();
+  if (error) throw error;
+  return {
+    email: user?.email ?? null,
+    verificado: Boolean(user?.user_metadata?.email_verificado),
+  };
+};
+
+export const enviarCodigoVerificacionEmail = async (email: string) => {
+  const { error } = await supabase.auth.signInWithOtp({ email });
+  if (error) throw error;
+};
+
+export const verificarCodigoEmail = async (email: string, codigo: string) => {
+  const { error } = await supabase.auth.verifyOtp({
+    email,
+    token: codigo,
+    type: "email",
+  });
+  if (error) throw error;
+
+  const { error: updateError } = await supabase.auth.updateUser({
+    data: { email_verificado: true },
+  });
+  if (updateError) throw updateError;
+};
+
 export const getDatosBancarios = async () => {
   const { data: { user }, error: authError } = await supabase.auth.getUser();
   if (authError || !user) throw new Error("Usuario no autenticado");
