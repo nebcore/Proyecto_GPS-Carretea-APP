@@ -1,9 +1,9 @@
 import {
-  confirmarPago,
-  devolverPagoAPendiente,
-  obtenerPagosEvento,
-  obtenerPagosReportadosEvento,
-  reportarPago,
+    confirmarPago,
+    devolverPagoAPendiente,
+    obtenerPagosEvento,
+    obtenerPagosReportadosEvento,
+    reportarPago,
 } from "@/lib/api/pagos";
 import Feather from "@expo/vector-icons/Feather";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
@@ -11,23 +11,23 @@ import * as ImagePicker from "expo-image-picker";
 import { router, useLocalSearchParams } from "expo-router";
 import { useMemo, useState } from "react";
 import {
-  ActivityIndicator,
-  Alert,
-  Image,
-  Modal,
-  ScrollView,
-  StyleSheet,
-  Text,
-  TouchableOpacity,
-  View,
+    ActivityIndicator,
+    Alert,
+    Image,
+    Modal,
+    ScrollView,
+    StyleSheet,
+    Text,
+    TouchableOpacity,
+    View,
 } from "react-native";
 
 import GlassCard from "@/components/ui/GlassCard";
 import { getEvento } from "@/lib/api/eventos";
 import {
-  borrarGasto,
-  getGastosConPagador,
-  obtenerParticipantesEvento,
+    borrarGasto,
+    getGastosConPagador,
+    obtenerParticipantesEvento,
 } from "@/lib/api/gastos";
 import type { Deuda } from "@/lib/balances";
 import { useBalancesEvento } from "@/lib/realtime/useBalancesEvento";
@@ -1028,6 +1028,12 @@ const styles = StyleSheet.create({
     color: "rgba(255,255,255,0.4)",
     textAlign: "center",
     marginTop: 20,
+  },
+  sectionTitle: {
+    color: "#FFFFFF",
+    fontSize: 16,
+    fontWeight: "700",
+    marginBottom: 10,
   },
 
   // --- RESUMEN DE SALDOS ---
