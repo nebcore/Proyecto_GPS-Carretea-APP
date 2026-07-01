@@ -1,15 +1,19 @@
+import { supabase } from "@/lib/supabase";
+import { useAuthStore } from "@/store/auth";
 import { DarkTheme, ThemeProvider } from "@react-navigation/native";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { Stack, useRouter, useSegments } from "expo-router";
 import { StatusBar } from "expo-status-bar";
 import { useEffect } from "react";
-import "react-native-reanimated";
 import { Alert, ImageBackground, View } from "react-native";
-import { supabase } from "@/lib/supabase";
-import { useAuthStore } from "@/store/auth";
+import "react-native-reanimated";
 
 const queryClient = new QueryClient();
+let registroEnProceso = false;
 
+export const setRegistroEnProceso = (valor: boolean) => {
+  registroEnProceso = valor;
+};
 const AppTheme = {
   ...DarkTheme,
   colors: {
@@ -22,18 +26,29 @@ const AppTheme = {
 // --- MANEJADOR DE RUTAS (AUTH GATE) ---
 function AuthGate() {
   const { session, loading } = useAuthStore();
-  const segments = useSegments();
+  const segments = useSegments() as string[];
   const router = useRouter();
 
   useEffect(() => {
     if (loading) return;
 
     const inAuthGroup = segments[0] === "(auth)";
+    const inVerificarTelefono = segments[1] === "verificarTelefono";
 
     if (!session && !inAuthGroup) {
       router.replace("/(auth)/login");
-    } else if (session && inAuthGroup) {
-      router.replace("/(tabs)");
+    } else if (session && inAuthGroup && !inVerificarTelefono) {
+      if (registroEnProceso) return;
+      const telefonoVerificado = session.user?.phone_confirmed_at;
+      if (!telefonoVerificado) {
+        const telefono = session.user?.user_metadata?.telefono ?? session.user?.phone;
+        router.replace({
+          pathname: "/(auth)/verificarTelefono",
+          params: { telefono },
+        });
+      } else {
+        router.replace("/(tabs)");
+      }
     }
   }, [session, loading, segments, router]);
 
