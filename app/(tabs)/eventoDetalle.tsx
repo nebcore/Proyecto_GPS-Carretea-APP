@@ -1,9 +1,9 @@
 import {
-  confirmarPago,
-  devolverPagoAPendiente,
-  obtenerPagosEvento,
-  obtenerPagosReportadosEvento,
-  reportarPago,
+    confirmarPago,
+    devolverPagoAPendiente,
+    obtenerPagosEvento,
+    obtenerPagosReportadosEvento,
+    reportarPago,
 } from "@/lib/api/pagos";
 import Feather from "@expo/vector-icons/Feather";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
@@ -11,15 +11,15 @@ import * as ImagePicker from "expo-image-picker";
 import { router, useLocalSearchParams } from "expo-router";
 import { useMemo, useState } from "react";
 import {
-  ActivityIndicator,
-  Alert,
-  Image,
-  Modal,
-  ScrollView,
-  StyleSheet,
-  Text,
-  TouchableOpacity,
-  View,
+    ActivityIndicator,
+    Alert,
+    Image,
+    Modal,
+    ScrollView,
+    StyleSheet,
+    Text,
+    TouchableOpacity,
+    View,
 } from "react-native";
 
 import GlassCard from "@/components/ui/GlassCard";
@@ -31,9 +31,9 @@ import {
   obtenerComprobantesGasto,
   obtenerParticipantesEvento,
 } from "@/lib/api/gastos";
+import type { Deuda } from "@/lib/balances";
 import { useBalancesEvento } from "@/lib/realtime/useBalancesEvento";
 import { supabase } from "@/lib/supabase";
-import type { Deuda } from "@/lib/balances";
 
 const formatearFecha = (fechaString: string) => {
   if (!fechaString) return "";
@@ -96,7 +96,8 @@ export default function EventoDetalleScreen() {
       enabled: Boolean(eventoId),
     });
 
-  const { balances, deudas } = useBalancesEvento(eventoId);
+  const { balances, deudas, detalleParticipantes } =
+    useBalancesEvento(eventoId);
 
   const { data: pagosEvento = [], isLoading: loadingPagosEvento } = useQuery({
     queryKey: ["pagos", eventoId],
@@ -166,18 +167,55 @@ export default function EventoDetalleScreen() {
     return claves;
   }, [pagosEvento]);
 
+  //Calcular contacto del usuario actual y su resumen
+  const miContactoId = useMemo(() => {
+    const participante = participantes.find(
+      (p: any) => p.contactos?.referencia_usuario_id === usuarioActualId,
+    );
+    return participante?.contacto_id;
+  }, [participantes, usuarioActualId]);
+
+  const miResumen = useMemo(() => {
+    if (!miContactoId || !balances) return { debe: 0, leDeben: 0 };
+
+    const miBalance =
+      balances.find((b) => b.contactoId === miContactoId)?.balance || 0;
+
+    return {
+      debe: miBalance < 0 ? Math.abs(miBalance) : 0,
+      leDeben: miBalance > 0 ? miBalance : 0,
+    };
+  }, [balances, miContactoId]);
+
+  //Lógica de deudas del usuario
   const deudasDelUsuario = useMemo(
     () =>
       deudas.filter((deuda) => {
+        // deudorId del usuario actual
         const esDeudaDelUsuario =
           usuariosPorContactoId.get(deuda.deudorId) === usuarioActualId;
+
+        // deudorId del usuario actual no es el acreedor
+        const contactoDeudorId = usuariosPorContactoId.get(deuda.deudorId);
+        const esInvitado = !contactoDeudorId;
+        const soyOrganizador = evento?.creador_id === usuarioActualId;
+
+        const puedePagar = esDeudaDelUsuario || (esInvitado && soyOrganizador);
+
         const claveDeuda = `${deuda.deudorId}-${deuda.acreedorId}-${Number(
           deuda.monto,
         ).toFixed(2)}`;
 
-        return esDeudaDelUsuario && !pagosNoPendientesPorDeuda.has(claveDeuda);
+        return puedePagar && !pagosNoPendientesPorDeuda.has(claveDeuda);
       }),
-    [deudas, pagosNoPendientesPorDeuda, usuarioActualId, usuariosPorContactoId],
+    [
+      deudas,
+      pagosNoPendientesPorDeuda,
+      usuarioActualId,
+      usuariosPorContactoId,
+      evento,
+      participantes,
+    ],
   );
 
   const cerrarModalReporte = () => {
@@ -681,6 +719,30 @@ export default function EventoDetalleScreen() {
           {/* TAB BALANCES */}
           {tabActivo === "balances" && (
             <>
+              {/* NUEVO RESUMEN GLOBAL */}
+              <View style={styles.resumenContainer}>
+                {miResumen.debe > 0 && (
+                  <Text style={styles.textoResumen}>
+                    Debes un total de:{" "}
+                    <Text style={styles.deudaMonto}>
+                      {formatearMonto(miResumen.debe)}
+                    </Text>
+                  </Text>
+                )}
+                {miResumen.leDeben > 0 && (
+                  <Text style={styles.textoResumen}>
+                    Te deben un total de:{" "}
+                    <Text style={styles.positivo}>
+                      {formatearMonto(miResumen.leDeben)}
+                    </Text>
+                  </Text>
+                )}
+                {miResumen.debe === 0 && miResumen.leDeben === 0 && (
+                  <Text style={styles.textoResumen}>
+                    Estás al día. No debes ni te deben nada.
+                  </Text>
+                )}
+              </View>
               {deudas.length === 0 ? (
                 <Text style={styles.emptyText}>No hay deudas pendientes.</Text>
               ) : (
@@ -689,6 +751,13 @@ export default function EventoDetalleScreen() {
                     <View style={styles.cardInfo}>
                       <Text style={styles.cardTitulo}>
                         {participantesPorId.get(d.deudorId) ?? d.deudorId}{" "}
+                        {!usuariosPorContactoId.get(d.deudorId) ? (
+                          <Text style={{ color: "#AAAAAA", fontSize: 12 }}>
+                            (Invitado){" "}
+                          </Text>
+                        ) : (
+                          ""
+                        )}
                         <Text style={styles.flecha}>→</Text>{" "}
                         {participantesPorId.get(d.acreedorId) ?? d.acreedorId}
                       </Text>
@@ -698,6 +767,49 @@ export default function EventoDetalleScreen() {
                     </Text>
                   </View>
                 ))
+              )}
+
+              <Text style={[styles.sectionTitle, { marginTop: 20 }]}>
+                Detalle por participante
+              </Text>
+              {detalleParticipantes.length === 0 ? (
+                <Text style={styles.emptyText}>No hay detalle disponible.</Text>
+              ) : (
+                detalleParticipantes.map((detalle) => {
+                  const nombre =
+                    participantesPorId.get(detalle.contactoId) ??
+                    detalle.contactoId;
+
+                  return (
+                    <View key={detalle.contactoId} style={styles.gastoCard}>
+                      <View style={styles.cardInfo}>
+                        <Text style={styles.cardTitulo}>{nombre}</Text>
+                        <Text style={styles.cardSub}>
+                          Aportó {formatearMonto(detalle.totalAportado)} ·
+                          Consumió {formatearMonto(detalle.totalConsumido)} ·
+                          Pagos confirmados{" "}
+                          {formatearMonto(detalle.pagosSaldados)}
+                        </Text>
+                        {detalle.movimientos.length > 0 ? (
+                          <Text style={styles.cardSub}>
+                            {detalle.movimientos.length} movimientos registrados
+                          </Text>
+                        ) : null}
+                      </View>
+                      <Text
+                        style={[
+                          styles.gastoMonto,
+                          detalle.saldoNeto >= 0
+                            ? styles.positivo
+                            : styles.negativo,
+                        ]}
+                      >
+                        {detalle.saldoNeto >= 0 ? "+" : ""}
+                        {formatearMonto(detalle.saldoNeto)}
+                      </Text>
+                    </View>
+                  );
+                })
               )}
 
               <TouchableOpacity
@@ -896,9 +1008,7 @@ export default function EventoDetalleScreen() {
               ) : (
                 <>
                   <Feather name="upload" size={22} color="#FFFFFF" />
-                  <Text style={styles.comprobanteText}>
-                    Seleccionar imagen
-                  </Text>
+                  <Text style={styles.comprobanteText}>Seleccionar imagen</Text>
                 </>
               )}
             </TouchableOpacity>
@@ -1278,6 +1388,29 @@ const styles = StyleSheet.create({
     color: "rgba(255,255,255,0.4)",
     textAlign: "center",
     marginTop: 20,
+  },
+  sectionTitle: {
+    color: "#FFFFFF",
+    fontSize: 16,
+    fontWeight: "700",
+    marginBottom: 10,
+  },
+
+  // --- RESUMEN DE SALDOS ---
+  resumenContainer: {
+    backgroundColor: "rgba(255,255,255,0.05)",
+    padding: 16,
+    borderRadius: 12,
+    marginBottom: 16,
+    borderWidth: 1,
+    borderColor: "rgba(255,255,255,0.1)",
+    alignItems: "center",
+  },
+  textoResumen: {
+    color: "#FFFFFF",
+    fontSize: 15,
+    fontWeight: "600",
+    marginVertical: 4,
   },
 
   // --- CARDS GASTOS / PARTICIPANTES ---

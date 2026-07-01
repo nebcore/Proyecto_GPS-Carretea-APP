@@ -1,10 +1,24 @@
 import { HapticTab } from "@/components/haptic-tab";
 import Header from "@/components/ui/Header";
 import Feather from "@expo/vector-icons/Feather";
+import { useNavigation } from "@react-navigation/native";
 import { router, Tabs } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
-const HeaderConVolver = () => <Header mostrarVolver onVolver={() => router.back()} />;
+const HeaderConVolver = () => {
+  const navigation = useNavigation();
+
+  const volver = () => {
+    if (navigation.canGoBack()) {
+      navigation.goBack();
+      return;
+    }
+
+    router.replace("/(tabs)/eventos");
+  };
+
+  return <Header mostrarVolver onVolver={volver} />;
+};
 
 export default function TabLayout() {
   const insets = useSafeAreaInsets();
@@ -72,20 +86,20 @@ export default function TabLayout() {
             <Feather name="more-horizontal" size={22} color={color} />
           ),
           href: null,
-          header: HeaderConVolver,
+          header: () => <HeaderConVolver />,
         }}
       />
       <Tabs.Screen
         name="eventoDetalle"
-        options={{ href: null, header: HeaderConVolver }}
+        options={{ href: null, header: () => <HeaderConVolver /> }}
       />
       <Tabs.Screen
         name="gastoNuevo"
-        options={{ href: null, header: HeaderConVolver }}
+        options={{ href: null, header: () => <HeaderConVolver /> }}
       />
       <Tabs.Screen
         name="nuevoEvento"
-        options={{ href: null, header: HeaderConVolver }}
+        options={{ href: null, header: () => <HeaderConVolver /> }}
       />
     </Tabs>
   );
