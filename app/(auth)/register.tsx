@@ -11,6 +11,7 @@ import {
   ActivityIndicator,
   Alert,
   Animated,
+  PanResponder,
   StyleSheet,
   Text,
   TextInput,
@@ -27,7 +28,7 @@ export default function RegisterScreen() {
   const insets = useSafeAreaInsets();
   const setDatos = useSignupStore((s) => s.setDatos);
 
-  const [paso, setPaso] = useState<1 | 2 | 3 | 4>(1);
+  const [paso, setPaso] = useState<1 | 2 | 3>(1);
   const translateX = useRef(new Animated.Value(0)).current;
 
   const [nombre, setNombre] = useState("");
@@ -51,6 +52,39 @@ export default function RegisterScreen() {
     return () => setRegistroEnProceso(false);
   }, []);
 
+  // Arrastrar hacia la derecha retrocede un paso (no memoizado: los
+  // handlers necesitan leer siempre el `paso`/`width` del render actual).
+  const panResponder = PanResponder.create({
+    onMoveShouldSetPanResponder: (_, gesture) =>
+      !loading &&
+      paso > 1 &&
+      gesture.dx > 10 &&
+      Math.abs(gesture.dx) > Math.abs(gesture.dy),
+    onPanResponderMove: (_, gesture) => {
+      if (paso === 1 || gesture.dx <= 0) return;
+      const offset = -(paso - 1) * width;
+      translateX.setValue(offset + Math.min(gesture.dx, width));
+    },
+    onPanResponderRelease: (_, gesture) => {
+      if (paso > 1 && gesture.dx > width * 0.25) {
+        setPaso((paso - 1) as 1 | 2 | 3);
+      } else {
+        Animated.timing(translateX, {
+          toValue: -(paso - 1) * width,
+          duration: 200,
+          useNativeDriver: true,
+        }).start();
+      }
+    },
+    onPanResponderTerminate: () => {
+      Animated.timing(translateX, {
+        toValue: -(paso - 1) * width,
+        duration: 200,
+        useNativeDriver: true,
+      }).start();
+    },
+  });
+
   const irAPaso2 = async () => {
     if (!nombre || !email || !password) {
       Alert.alert("Error", "Completa todos los campos");
@@ -67,57 +101,46 @@ export default function RegisterScreen() {
     }
     try {
       setLoading(true);
-      const dup = await verificarDuplicados(email.trim().toLowerCase(), '');
+      const emailNormalizado = email.trim().toLowerCase();
+
+      // Si ya creamos la cuenta en una pasada anterior por este mismo
+      // paso (ej. el usuario retrocedió y volvió a avanzar sin cambiar
+      // el email), no hay que llamar signUp() de nuevo: ya existe.
+      const { data: { session: sesionActual } } = await supabase.auth.getSession();
+      if (sesionActual?.user?.email === emailNormalizado) {
+        setDatos({ nombre: nombre.trim(), email: emailNormalizado, password });
+        setPaso(2);
+        return;
+      }
+
+      const dup = await verificarDuplicados(emailNormalizado, '');
       if (dup.email_existe) {
         Alert.alert("Error", "Este correo ya está registrado.");
         return;
       }
 
+      // Bloqueamos el AuthGate ANTES de crear la cuenta: si el email
+      // queda confirmado automáticamente, signUp() deja sesión activa
+      // al toque y el AuthGate saltaría a verificarTelefono creyendo
+      // que se retoma un registro abandonado.
+      setRegistroEnProceso(true);
+
       const { error } = await supabase.auth.signUp({
-        email: email.trim().toLowerCase(),
+        email: emailNormalizado,
         password,
         options: { data: { nombre: nombre.trim() } },
       });
       if (error) throw error;
 
-      setDatos({ nombre: nombre.trim(), email: email.trim().toLowerCase(), password });
+      setDatos({ nombre: nombre.trim(), email: emailNormalizado, password });
       setPaso(2);
     } catch (error: any) {
+      setRegistroEnProceso(false);
       Alert.alert("Error", error.message);
     } finally {
       setLoading(false);
     }
   };
-
-const verificarEmailConfirmado = async () => {
-  try {
-    setLoading(true);
-    
-    // Bloqueamos el AuthGate ANTES de iniciar sesión
-    setRegistroEnProceso(true);
-    
-    const { error } = await supabase.auth.signInWithPassword({
-      email: email.trim().toLowerCase(),
-      password,
-    });
-
-    if (error) {
-      setRegistroEnProceso(false);
-      if (error.message.includes('Email not confirmed')) {
-        Alert.alert('Email no confirmado', 'Debes confirmar tu email antes de continuar. Revisa tu bandeja de entrada.');
-        return;
-      }
-      throw error;
-    }
-
-    setPaso(3);
-  } catch (error: any) {
-    setRegistroEnProceso(false);
-    Alert.alert('Error', error.message);
-  } finally {
-    setLoading(false);
-  }
-};
 
   const enviarCodigo = async () => {
     const telefonoNormalizado = normalizarTelefono(numero);
@@ -158,7 +181,7 @@ const verificarEmailConfirmado = async () => {
       if (otpError) throw otpError;
 
       setTelefono(telefonoNormalizado);
-      setPaso(4);
+      setPaso(3);
     } catch (error: any) {
       setRegistroEnProceso(false);
       Alert.alert("Error", error.message);
@@ -168,38 +191,45 @@ const verificarEmailConfirmado = async () => {
   };
 
   const onVerificado = () => {
-  setRegistroEnProceso(false);
-  Alert.alert("¡Listo!", "Teléfono verificado correctamente.", [
-    { text: "OK", onPress: async () => {
-      const { data: { user } } = await supabase.auth.getUser();
-      if (user) {
-        await supabase
-          .from('usuarios')
-          .update({ telefono: telefono })
-          .eq('id', user.id);
-      }
-      router.replace("/(tabs)");
-    }},
-  ]);
-};
+    setRegistroEnProceso(false);
+    Alert.alert("¡Listo!", "Tu cuenta fue creada con éxito.", [
+      {
+        text: "OK",
+        onPress: async () => {
+          const { data: { user } } = await supabase.auth.getUser();
+          if (user) {
+            await supabase
+              .from('usuarios')
+              .update({ telefono: telefono })
+              .eq('id', user.id);
+          }
+          Alert.alert(
+            "Verifica tu email",
+            "Puedes confirmar tu email más tarde desde Configuración.",
+            [{ text: "Entendido", onPress: () => router.replace("/(tabs)") }],
+          );
+        },
+      },
+    ]);
+  };
 
   return (
     <PantallaConTeclado style={styles.container} contentContainerStyle={styles.scroll}>
       <View style={{ paddingTop: insets.top + 24, paddingHorizontal: 32 }}>
-        <PasoBarra paso={paso} total={4} />
+        <PasoBarra paso={paso} total={3} />
       </View>
 
-      <View style={styles.viewport}>
+      <View style={styles.viewport} {...panResponder.panHandlers}>
         <Animated.View
           style={[
             styles.carrusel,
-            { width: width * 4, transform: [{ translateX }] },
+            { width: width * 3, transform: [{ translateX }] },
           ]}
         >
           {/* PASO 1 — Datos */}
           <View style={[styles.paso, { width }]}>
             <Text style={styles.title}>Crea tu cuenta</Text>
-            <Text style={styles.subtitle}>Paso 1 de 4 · Tus datos</Text>
+            <Text style={styles.subtitle}>Paso 1 de 3 · Tus datos</Text>
 
             <TextInput
               style={styles.input}
@@ -242,43 +272,11 @@ const verificarEmailConfirmado = async () => {
             </TouchableOpacity>
           </View>
 
-          {/* PASO 2 — Confirmar email */}
-          <View style={[styles.paso, { width }]}>
-            <Text style={styles.title}>Confirma tu email</Text>
-            <Text style={styles.subtitle}>Paso 2 de 4 · Revisa tu bandeja de entrada</Text>
-
-            <Text style={{ color: '#888', textAlign: 'center', marginBottom: 32, fontSize: 15, lineHeight: 22 }}>
-              Te enviamos un correo a {'\n'}<Text style={{ color: '#fff' }}>{email}</Text>{'\n'}Puedes confirmarlo ahora o más tarde.
-            </Text>
-
-            <TouchableOpacity
-              style={styles.button}
-              onPress={verificarEmailConfirmado}
-              disabled={loading}
-            >
-              {loading
-                ? <ActivityIndicator color="#000" />
-                : <Text style={styles.buttonText}>Ya confirmé mi email</Text>
-              }
-            </TouchableOpacity>
-
-            <TouchableOpacity
-              style={[styles.button, { backgroundColor: 'rgba(255,255,255,0.08)', borderWidth: 1, borderColor: 'rgba(255,255,255,0.1)' }]}
-              onPress={() => setPaso(3)}
-            >
-              <Text style={[styles.buttonText, { color: '#fff' }]}>Más tarde</Text>
-            </TouchableOpacity>
-
-            <TouchableOpacity onPress={() => setPaso(1)} style={{ marginTop: 8 }}>
-              <Text style={styles.link}>Volver</Text>
-            </TouchableOpacity>
-          </View>
-
-          {/* PASO 3 — Teléfono */}
+          {/* PASO 2 — Teléfono */}
           <View style={[styles.paso, { width }]}>
             <Text style={styles.title}>Tu teléfono</Text>
             <Text style={styles.subtitle}>
-              Paso 3 de 4 · Te enviaremos un código por SMS
+              Paso 2 de 3 · Te enviaremos un código por SMS
             </Text>
 
             <View style={styles.row}>
@@ -307,12 +305,12 @@ const verificarEmailConfirmado = async () => {
               }
             </TouchableOpacity>
 
-            <TouchableOpacity onPress={() => setPaso(2)}>
+            <TouchableOpacity onPress={() => setPaso(1)}>
               <Text style={styles.link}>Volver</Text>
             </TouchableOpacity>
           </View>
 
-          {/* PASO 4 — Verificar SMS */}
+          {/* PASO 3 — Verificar SMS */}
           <View style={[styles.paso, { width }]}>
             <PasoVerificarTelefono telefono={telefono} onVerificado={onVerificado} />
           </View>
