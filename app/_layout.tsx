@@ -26,7 +26,7 @@ const AppTheme = {
 // --- MANEJADOR DE RUTAS (AUTH GATE) ---
 function AuthGate() {
   const { session, loading } = useAuthStore();
-  const segments = useSegments();
+  const segments = useSegments() as string[];
   const router = useRouter();
 
   useEffect(() => {
