@@ -6,12 +6,27 @@ export const signUpWithEmail = async (
   nombre: string,
   telefono: string,
 ) => {
+  // 1. Crear usuario con email y contraseña
   const { data, error } = await supabase.auth.signUp({
     email,
     password,
     options: { data: { nombre, telefono } },
   });
   if (error) throw error;
+
+  // 2. Iniciar sesión para obtener el token
+  const { error: signInError } = await supabase.auth.signInWithPassword({
+    email,
+    password,
+  });
+  if (signInError) throw signInError;
+
+  // 3. Enviar OTP al teléfono
+  const { error: otpError } = await supabase.auth.updateUser({
+    phone: telefono,
+  });
+  if (otpError) throw otpError;
+
   return data;
 };
 
@@ -33,6 +48,41 @@ export const getSession = async () => {
   const { data, error } = await supabase.auth.getSession();
   if (error) throw error;
   return data.session;
+};
+
+// Verificación de email desacoplada del toggle "Confirm email" de Supabase
+// (ese toggle bloquea la sesión hasta que se confirma, lo que rompe el
+// flujo de teléfono). Se guarda en user_metadata, no en una tabla, para no
+// requerir cambios de esquema.
+export const getEstadoEmail = async () => {
+  const {
+    data: { user },
+    error,
+  } = await supabase.auth.getUser();
+  if (error) throw error;
+  return {
+    email: user?.email ?? null,
+    verificado: Boolean(user?.user_metadata?.email_verificado),
+  };
+};
+
+export const enviarCodigoVerificacionEmail = async (email: string) => {
+  const { error } = await supabase.auth.signInWithOtp({ email });
+  if (error) throw error;
+};
+
+export const verificarCodigoEmail = async (email: string, codigo: string) => {
+  const { error } = await supabase.auth.verifyOtp({
+    email,
+    token: codigo,
+    type: "email",
+  });
+  if (error) throw error;
+
+  const { error: updateError } = await supabase.auth.updateUser({
+    data: { email_verificado: true },
+  });
+  if (updateError) throw updateError;
 };
 
 export const getDatosBancarios = async () => {
@@ -78,6 +128,15 @@ export const getUsuarioPerfil = async () => {
     .eq("id", user.id)
     .single();
 
+  if (error) throw error;
+  return data;
+};
+
+export const verificarDuplicados = async (email: string, telefono: string) => {
+  const { data, error } = await supabase.rpc('verificar_duplicados', {
+    p_email: email,
+    p_telefono: telefono,
+  });
   if (error) throw error;
   return data;
 };

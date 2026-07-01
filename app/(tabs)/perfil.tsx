@@ -1,24 +1,29 @@
 import GlassCard from "@/components/ui/GlassCard";
-import Header from "@/components/ui/Header";
 import {
+  enviarCodigoVerificacionEmail,
   getDatosBancarios,
+  getEstadoEmail,
   getUsuarioPerfil,
   signOut,
   updateUsuarioPerfil,
   upsertDatosBancarios,
+  verificarCodigoEmail,
 } from "@/lib/api/auth";
 import Feather from "@expo/vector-icons/Feather";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { router } from "expo-router";
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import {
   ActivityIndicator,
   Alert,
+  Animated,
+  Modal,
   ScrollView,
   StyleSheet,
   Text,
   TextInput,
   TouchableOpacity,
+  useWindowDimensions,
   View,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
@@ -38,11 +43,17 @@ const formatearTelefono = (text: string) => {
 
 export default function PerfilScreen() {
   const insets = useSafeAreaInsets();
+  const { width } = useWindowDimensions();
   const queryClient = useQueryClient();
 
   const [editando, setEditando] = useState(false);
   const [nombre, setNombre] = useState("");
   const [telefono, setTelefono] = useState("");
+
+  const [panelEmailVisible, setPanelEmailVisible] = useState(false);
+  const [codigoEnviado, setCodigoEnviado] = useState(false);
+  const [codigoEmail, setCodigoEmail] = useState("");
+  const translateXEmail = useRef(new Animated.Value(width)).current;
 
   const [editandoBanco, setEditandoBanco] = useState(false);
   const [banco, setBanco] = useState("");
@@ -58,6 +69,54 @@ export default function PerfilScreen() {
   const { data: datosBancarios } = useQuery({
     queryKey: ["datos-bancarios"],
     queryFn: getDatosBancarios,
+  });
+
+  const { data: estadoEmail } = useQuery({
+    queryKey: ["estado-email"],
+    queryFn: getEstadoEmail,
+  });
+
+  useEffect(() => {
+    if (!panelEmailVisible) return;
+    translateXEmail.setValue(width);
+    Animated.timing(translateXEmail, {
+      toValue: 0,
+      duration: 260,
+      useNativeDriver: true,
+    }).start();
+  }, [panelEmailVisible]);
+
+  const abrirPanelEmail = () => {
+    if (estadoEmail?.verificado) return;
+    setCodigoEnviado(false);
+    setCodigoEmail("");
+    setPanelEmailVisible(true);
+  };
+
+  const cerrarPanelEmail = () => {
+    Animated.timing(translateXEmail, {
+      toValue: width,
+      duration: 220,
+      useNativeDriver: true,
+    }).start(() => setPanelEmailVisible(false));
+  };
+
+  const enviarCodigoEmailMutation = useMutation({
+    mutationFn: () => enviarCodigoVerificacionEmail(estadoEmail!.email!),
+    onSuccess: () => setCodigoEnviado(true),
+    onError: (error: any) =>
+      Alert.alert("Error", error?.message ?? "No se pudo enviar el código."),
+  });
+
+  const verificarCodigoEmailMutation = useMutation({
+    mutationFn: () => verificarCodigoEmail(estadoEmail!.email!, codigoEmail),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["estado-email"] });
+      cerrarPanelEmail();
+      Alert.alert("Listo", "Tu email quedó verificado.");
+    },
+    onError: (error: any) =>
+      Alert.alert("Error", error?.message ?? "Código incorrecto."),
   });
 
   const actualizarMutation = useMutation({
@@ -132,7 +191,6 @@ export default function PerfilScreen() {
 
   return (
     <View style={styles.root}>
-      <Header />
       <ScrollView
         contentContainerStyle={[
           styles.container,
@@ -360,6 +418,25 @@ export default function PerfilScreen() {
             <GlassCard style={styles.card}>
               <Text style={styles.cardTitle}>Configuración</Text>
               <View style={{ marginTop: 16 }}>
+                <TouchableOpacity
+                  style={styles.settingRow}
+                  onPress={abrirPanelEmail}
+                  disabled={estadoEmail?.verificado}
+                >
+                  <View style={styles.settingLeft}>
+                    <Feather name="mail" size={18} color="#AAAAAA" />
+                    <Text style={styles.settingLabel}>Email</Text>
+                  </View>
+                  {estadoEmail?.verificado ? (
+                    <View style={styles.badgeVerificado}>
+                      <Feather name="check" size={12} color="#50C878" />
+                      <Text style={styles.badgeVerificadoText}>Verificado</Text>
+                    </View>
+                  ) : (
+                    <Text style={styles.settingAction}>Verificar</Text>
+                  )}
+                </TouchableOpacity>
+                <View style={styles.divisor} />
                 <TouchableOpacity style={styles.settingRow}>
                   <View style={styles.settingLeft}>
                     <Feather name="bell" size={18} color="#AAAAAA" />
@@ -389,6 +466,96 @@ export default function PerfilScreen() {
           </>
         )}
       </ScrollView>
+
+      <Modal
+        visible={panelEmailVisible}
+        transparent
+        animationType="fade"
+        onRequestClose={cerrarPanelEmail}
+      >
+        <View style={styles.overlayEmail}>
+          <TouchableOpacity
+            style={StyleSheet.absoluteFill}
+            activeOpacity={1}
+            onPress={cerrarPanelEmail}
+          />
+          <Animated.View
+            style={[
+              styles.panelEmail,
+              { transform: [{ translateX: translateXEmail }] },
+            ]}
+          >
+            <View style={styles.panelEmailHeader}>
+              <Text style={styles.cardTitle}>Verificar email</Text>
+              <TouchableOpacity onPress={cerrarPanelEmail}>
+                <Feather name="x" size={22} color="#AAAAAA" />
+              </TouchableOpacity>
+            </View>
+
+            {!codigoEnviado ? (
+              <>
+                <Text style={styles.panelEmailTexto}>
+                  Te enviaremos un código a{"\n"}
+                  <Text style={{ color: "#fff" }}>{estadoEmail?.email}</Text>
+                </Text>
+                <TouchableOpacity
+                  style={[
+                    styles.btnGuardar,
+                    styles.btnPanelEmail,
+                    enviarCodigoEmailMutation.isPending && { opacity: 0.5 },
+                  ]}
+                  onPress={() => enviarCodigoEmailMutation.mutate()}
+                  disabled={enviarCodigoEmailMutation.isPending}
+                >
+                  {enviarCodigoEmailMutation.isPending ? (
+                    <ActivityIndicator size="small" color="#000" />
+                  ) : (
+                    <Text style={styles.btnGuardarText}>Enviar código</Text>
+                  )}
+                </TouchableOpacity>
+              </>
+            ) : (
+              <>
+                <Text style={styles.panelEmailTexto}>
+                  Ingresa el código que enviamos a{"\n"}
+                  <Text style={{ color: "#fff" }}>{estadoEmail?.email}</Text>
+                </Text>
+                <TextInput
+                  style={styles.codigoInput}
+                  placeholder="········"
+                  placeholderTextColor="#555"
+                  value={codigoEmail}
+                  onChangeText={setCodigoEmail}
+                  keyboardType="number-pad"
+                  maxLength={8}
+                  autoFocus
+                />
+                <TouchableOpacity
+                  style={[
+                    styles.btnGuardar,
+                    styles.btnPanelEmail,
+                    verificarCodigoEmailMutation.isPending && { opacity: 0.5 },
+                  ]}
+                  onPress={() => verificarCodigoEmailMutation.mutate()}
+                  disabled={verificarCodigoEmailMutation.isPending}
+                >
+                  {verificarCodigoEmailMutation.isPending ? (
+                    <ActivityIndicator size="small" color="#000" />
+                  ) : (
+                    <Text style={styles.btnGuardarText}>Verificar</Text>
+                  )}
+                </TouchableOpacity>
+                <TouchableOpacity
+                  onPress={() => enviarCodigoEmailMutation.mutate()}
+                  disabled={enviarCodigoEmailMutation.isPending}
+                >
+                  <Text style={styles.link}>Reenviar código</Text>
+                </TouchableOpacity>
+              </>
+            )}
+          </Animated.View>
+        </View>
+      </Modal>
     </View>
   );
 }
@@ -497,6 +664,17 @@ const styles = StyleSheet.create({
     gap: 12,
   },
   settingLabel: { color: "#FFFFFF", fontSize: 15 },
+  settingAction: { color: "#AAAAAA", fontSize: 13, fontWeight: "600" },
+  badgeVerificado: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 4,
+    backgroundColor: "rgba(80,200,120,0.15)",
+    borderRadius: 8,
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+  },
+  badgeVerificadoText: { color: "#50C878", fontSize: 12, fontWeight: "600" },
 
   sinDatos: {
     color: "#555555",
@@ -504,5 +682,55 @@ const styles = StyleSheet.create({
     fontStyle: "italic",
     textAlign: "center",
     paddingVertical: 8,
+  },
+
+  overlayEmail: {
+    flex: 1,
+    backgroundColor: "rgba(0,0,0,0.5)",
+    flexDirection: "row",
+    justifyContent: "flex-end",
+    alignItems: "center",
+  },
+  panelEmail: {
+    width: "70%",
+    maxWidth: 300,
+    backgroundColor: "#0A0A0A",
+    borderRadius: 20,
+    borderWidth: 1,
+    borderColor: "rgba(255,255,255,0.08)",
+    marginRight: 12,
+    paddingHorizontal: 20,
+    paddingVertical: 24,
+  },
+  btnPanelEmail: { flex: 0 },
+  panelEmailHeader: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    marginBottom: 24,
+  },
+  panelEmailTexto: {
+    color: "#888",
+    fontSize: 14,
+    lineHeight: 22,
+    marginBottom: 24,
+  },
+  codigoInput: {
+    backgroundColor: "rgba(255,255,255,0.08)",
+    borderRadius: 12,
+    padding: 16,
+    color: "#fff",
+    fontSize: 24,
+    marginBottom: 16,
+    borderWidth: 1,
+    borderColor: "rgba(255,255,255,0.1)",
+    textAlign: "center",
+    letterSpacing: 8,
+  },
+  link: {
+    color: "#888",
+    textAlign: "center",
+    fontSize: 14,
+    marginTop: 8,
   },
 });

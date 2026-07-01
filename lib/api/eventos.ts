@@ -108,6 +108,19 @@ export const deleteEvento = async (eventoId: string) => {
   if (error) throw error;
 };
 
+// 5. CAMBIAR ESTADO DE UN EVENTO (abierto/finalizado)
+export const actualizarEstadoEvento = async (
+  eventoId: string,
+  estado: "abierto" | "finalizado",
+) => {
+  const { error } = await supabase
+    .from("eventos")
+    .update({ estado })
+    .eq("id", eventoId);
+
+  if (error) throw error;
+};
+
 export const getEvento = async (eventoId: string) => {
   const { data, error } = await supabase
     .from("eventos")

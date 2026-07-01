@@ -18,15 +18,21 @@ const normalizarMonto = (valor: number) =>
 const esCero = (valor: number) => Math.abs(valor) < UMBRAL_CERO;
 
 /**
- * Calcula el balance neto de cada participante a partir de los gastos del evento.
- * Retorna array con cuánto debe o le deben a cada uno.
+ * Calcula el balance neto de cada participante a partir de los gastos del evento
+ * y descuenta los pagos que ya han sido confirmados (saldados).
  */
 export const calcularBalances = (
   gastosPagadores: { contacto_id: string; monto_aportado: number }[],
   gastosConsumidores: { contacto_id: string; parte: number }[],
+  pagosSaldados: {
+    deudor_id: string;
+    acreedor_id: string;
+    monto: number;
+  }[] = [],
 ): BalanceParticipante[] => {
   const balances = new Map<string, number>();
 
+  // Sumamos lo que aportó cada uno (balance positivo = le deben)
   for (const pagador of gastosPagadores) {
     const balanceActual = balances.get(pagador.contacto_id) ?? 0;
     balances.set(
@@ -35,6 +41,7 @@ export const calcularBalances = (
     );
   }
 
+  // Restamos lo que consumió cada uno (balance negativo = debe)
   for (const consumidor of gastosConsumidores) {
     const balanceActual = balances.get(consumidor.contacto_id) ?? 0;
     balances.set(
@@ -43,13 +50,30 @@ export const calcularBalances = (
     );
   }
 
-  return Array.from(balances.entries())
+  //Ajustamos según los pagos ya realizados entre los participantes
+  for (const pago of pagosSaldados) {
+    const montoPago = Number(pago.monto);
+
+    // El deudor ya pagó su parte, por lo tanto su balance sube (se acerca a 0)
+    const balanceDeudor = balances.get(pago.deudor_id) ?? 0;
+    balances.set(pago.deudor_id, normalizarMonto(balanceDeudor + montoPago));
+
+    // El acreedor recibió el dinero, por lo tanto su balance baja (se acerca a 0)
+    const balanceAcreedor = balances.get(pago.acreedor_id) ?? 0;
+    balances.set(
+      pago.acreedor_id,
+      normalizarMonto(balanceAcreedor - montoPago),
+    );
+  }
+
+  return Array.from(balances.entries()) //
     .map(([contactoId, balance]) => ({
       contactoId,
       balance: normalizarMonto(balance),
     }))
-    .sort((izquierda, derecha) =>
-      izquierda.contactoId.localeCompare(derecha.contactoId),
+    .sort(
+      (izquierda, derecha) =>
+        izquierda.contactoId.localeCompare(derecha.contactoId), //
     );
 };
 

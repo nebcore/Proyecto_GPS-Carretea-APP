@@ -9,7 +9,6 @@ import {
   Alert,
   Platform,
   Pressable,
-  ScrollView,
   StyleSheet,
   Text,
   TextInput,
@@ -18,8 +17,9 @@ import {
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
+import { PantallaConTeclado } from "@/components/ui/PantallaConTeclado";
+
 import GlassCard from "@/components/ui/GlassCard";
-import Header from "@/components/ui/Header";
 import {
   crearGasto,
   GastoFormData,
@@ -218,7 +218,6 @@ export default function GastoNuevoScreen() {
   if (isLoading) {
     return (
       <View style={styles.root}>
-        <Header mostrarVolver onVolver={() => router.back()} />
         <View style={styles.center}>
           <ActivityIndicator color="#FFFFFF" />
         </View>
@@ -228,15 +227,11 @@ export default function GastoNuevoScreen() {
 
   return (
     <View style={styles.root}>
-      <Header mostrarVolver onVolver={() => router.back()} />
-
-      <ScrollView
+      <PantallaConTeclado
         contentContainerStyle={[
           styles.scroll,
           { paddingBottom: insets.bottom + 32 },
         ]}
-        showsVerticalScrollIndicator={false}
-        keyboardShouldPersistTaps="handled"
       >
         {/* TÍTULO */}
         <Text style={styles.titulo}>Anotar gasto</Text>
@@ -587,7 +582,7 @@ export default function GastoNuevoScreen() {
             </>
           )}
         </TouchableOpacity>
-      </ScrollView>
+      </PantallaConTeclado>
     </View>
   );
 }
