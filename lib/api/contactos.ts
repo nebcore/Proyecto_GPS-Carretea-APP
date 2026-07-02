@@ -18,6 +18,11 @@ const buscarUsuarioPorTelefono = async (telefono: string) => {
 };
 
 export const getContactos = async () => {
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user) return [];
+
   const { data, error } = await supabase
     .from("contactos")
     .select(
@@ -29,6 +34,7 @@ export const getContactos = async () => {
       )
     `,
     )
+    .eq("usuario_id", user.id)
     .order("nombre", { ascending: true });
   if (error) throw error;
 
