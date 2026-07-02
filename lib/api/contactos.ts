@@ -1,6 +1,28 @@
 import { supabase } from "../supabase";
+import { normalizarTelefono } from "../utils/telefono";
+
+const buscarUsuarioPorTelefono = async (telefono: string) => {
+  const telefonoNormalizado = telefono ? normalizarTelefono(telefono) : "";
+  if (!telefonoNormalizado) return { telefonoNormalizado: "", usuarioId: null };
+
+  const { data } = await supabase
+    .from("usuarios")
+    .select("id")
+    .eq("telefono", telefonoNormalizado)
+    .maybeSingle();
+
+  return {
+    telefonoNormalizado,
+    usuarioId: data?.id ?? null,
+  };
+};
 
 export const getContactos = async () => {
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user) return [];
+
   const { data, error } = await supabase
     .from("contactos")
     .select(
@@ -12,6 +34,7 @@ export const getContactos = async () => {
       )
     `,
     )
+    .eq("usuario_id", user.id)
     .order("nombre", { ascending: true });
   if (error) throw error;
 
@@ -31,9 +54,18 @@ export const createContacto = async (contacto: {
   const {
     data: { user },
   } = await supabase.auth.getUser();
+
+  const telefonoNormalizado = contacto.telefono
+    ? normalizarTelefono(contacto.telefono)
+    : undefined;
+
   const { data, error } = await supabase
     .from("contactos")
-    .insert({ ...contacto, usuario_id: user!.id })
+    .insert({
+      ...contacto,
+      telefono: telefonoNormalizado || null,
+      usuario_id: user!.id,
+    })
     .select()
     .single();
   if (error) throw error;
@@ -49,22 +81,17 @@ export const createContactoConGrupos = async (
     data: { user },
   } = await supabase.auth.getUser();
 
-  const { data: usuarioExistente } = telefono
-    ? await supabase
-        .from("usuarios")
-        .select("id")
-        .eq("telefono", telefono)
-        .maybeSingle()
-    : { data: null };
+  const { telefonoNormalizado, usuarioId } =
+    await buscarUsuarioPorTelefono(telefono);
 
   const { data: contacto, error } = await supabase
     .from("contactos")
     .insert({
       nombre,
-      telefono: telefono || null,
+      telefono: telefonoNormalizado || null,
       usuario_id: user!.id,
-      referencia_usuario_id: usuarioExistente?.id ?? null,
-      es_temporal: !usuarioExistente,
+      referencia_usuario_id: usuarioId,
+      es_temporal: !usuarioId,
     })
     .select()
     .single();
@@ -114,6 +141,7 @@ export const getOrCreateContactoPropio = async () => {
     user.user_metadata?.name ||
     user.email ||
     "Yo";
+  const telefono = user.phone ? normalizarTelefono(user.phone) : null;
 
   const { data: contactoCreado, error: errorCreacion } = await supabase
     .from("contactos")
@@ -121,6 +149,7 @@ export const getOrCreateContactoPropio = async () => {
       usuario_id: user.id,
       referencia_usuario_id: user.id,
       nombre,
+      telefono,
       es_temporal: false,
     })
     .select()
@@ -139,9 +168,17 @@ export const updateContactoConGrupos = async (
   telefono: string,
   gruposIds: string[],
 ) => {
+  const { telefonoNormalizado, usuarioId } =
+    await buscarUsuarioPorTelefono(telefono);
+
   const { error } = await supabase
     .from("contactos")
-    .update({ nombre, telefono: telefono || null })
+    .update({
+      nombre,
+      telefono: telefonoNormalizado || null,
+      referencia_usuario_id: usuarioId,
+      es_temporal: !usuarioId,
+    })
     .eq("id", contactoId);
   if (error) throw error;
 

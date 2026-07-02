@@ -1,9 +1,15 @@
 import { supabase } from "../supabase";
 
 export const getGrupos = async () => {
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user) return [];
+
   const { data, error } = await supabase
     .from("grupos_contacto")
     .select("*")
+    .eq("usuario_id", user.id)
     .order("nombre", { ascending: true });
   if (error) throw error;
   return data;

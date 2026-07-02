@@ -1,4 +1,5 @@
 import { supabase } from "../supabase";
+import { normalizarTelefono } from "../utils/telefono";
 
 export const signUpWithEmail = async (
   email: string,
@@ -6,11 +7,13 @@ export const signUpWithEmail = async (
   nombre: string,
   telefono: string,
 ) => {
+  const telefonoNormalizado = normalizarTelefono(telefono);
+
   // 1. Crear usuario con email y contraseña
   const { data, error } = await supabase.auth.signUp({
     email,
     password,
-    options: { data: { nombre, telefono } },
+    options: { data: { nombre, telefono: telefonoNormalizado } },
   });
   if (error) throw error;
 
@@ -23,7 +26,7 @@ export const signUpWithEmail = async (
 
   // 3. Enviar OTP al teléfono
   const { error: otpError } = await supabase.auth.updateUser({
-    phone: telefono,
+    phone: telefonoNormalizado,
   });
   if (otpError) throw otpError;
 
@@ -145,9 +148,16 @@ export const updateUsuarioPerfil = async (campos: { nombre?: string; telefono?: 
   const { data: { user }, error: authError } = await supabase.auth.getUser();
   if (authError || !user) throw new Error("Usuario no autenticado");
 
+  const camposNormalizados = {
+    ...campos,
+    ...(campos.telefono !== undefined
+      ? { telefono: normalizarTelefono(campos.telefono) || null }
+      : {}),
+  };
+
   const { data, error } = await supabase
     .from("usuarios")
-    .update(campos)
+    .update(camposNormalizados)
     .eq("id", user.id)
     .select()
     .single();
