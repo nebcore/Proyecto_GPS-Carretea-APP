@@ -1,4 +1,5 @@
 import { supabase } from "@/lib/supabase";
+import { useAppRealtime } from "@/lib/realtime/useAppRealtime";
 import { useAuthStore } from "@/store/auth";
 import { DarkTheme, ThemeProvider } from "@react-navigation/native";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
@@ -22,6 +23,11 @@ const AppTheme = {
     card: "transparent",
   },
 };
+
+function AppRealtimeBridge({ usuarioId }: { usuarioId: string | undefined }) {
+  useAppRealtime(usuarioId);
+  return null;
+}
 
 // --- MANEJADOR DE RUTAS (AUTH GATE) ---
 function AuthGate() {
@@ -73,6 +79,7 @@ export default function RootLayout() {
 
   return (
     <QueryClientProvider client={queryClient}>
+      <AppRealtimeBridge usuarioId={miUsuarioId} />
       <ImageBackground
         source={require("../assets/images/lycoris-fondo.jpeg")}
         style={{ flex: 1 }}
