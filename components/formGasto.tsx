@@ -123,6 +123,9 @@ export function FormGasto({ eventoId, participantes }: Props) {
     });
   }
 
+  const formatearMontoInput = (valor?: number) =>
+    valor ? new Intl.NumberFormat("es-CL").format(valor) : "";
+
   function actualizarFechaCompleta(
     nuevaFecha: Date,
     onChange: (value: string) => void,
@@ -306,7 +309,7 @@ export function FormGasto({ eventoId, participantes }: Props) {
         render={({ field: { onChange, value } }) => (
           <TextInput
             keyboardType="numeric"
-            value={value ? String(value) : ""}
+            value={formatearMontoInput(value)}
             onChangeText={(text) => {
               const limpio = text.replace(/[^0-9]/g, "");
               onChange(limpio === "" ? undefined : Number(limpio));
@@ -462,11 +465,9 @@ export function FormGasto({ eventoId, participantes }: Props) {
             <Text style={{ flex: 1 }}>{participante.nombre}</Text>
             <TextInput
               keyboardType="numeric"
-              value={
-                montosPagadores[participante.contacto_id]
-                  ? String(montosPagadores[participante.contacto_id])
-                  : ""
-              }
+              value={formatearMontoInput(
+                montosPagadores[participante.contacto_id],
+              )}
               placeholder="0"
               placeholderTextColor="#9CA3AF"
               editable={selectedPagadores[participante.contacto_id] ?? false}
@@ -600,9 +601,13 @@ export function FormGasto({ eventoId, participantes }: Props) {
               <TextInput
                 keyboardType="numeric"
                 value={
-                  montosExactos[participante.contacto_id]
-                    ? String(montosExactos[participante.contacto_id])
-                    : ""
+                  tipoDivision === "montos_exactos"
+                    ? formatearMontoInput(
+                        montosExactos[participante.contacto_id],
+                      )
+                    : montosExactos[participante.contacto_id]
+                      ? String(montosExactos[participante.contacto_id])
+                      : ""
                 }
                 placeholder={
                   tipoDivision === "montos_exactos"
@@ -613,7 +618,10 @@ export function FormGasto({ eventoId, participantes }: Props) {
                 }
                 placeholderTextColor="#9CA3AF"
                 onChangeText={(text) => {
-                  const limpio = text.replace(/[^0-9\.]/g, "");
+                  const limpio =
+                    tipoDivision === "porcentual"
+                      ? text.replace(/[^0-9\.]/g, "")
+                      : text.replace(/[^0-9]/g, "");
 
                   setMontosExactos((prev) => ({
                     ...prev,

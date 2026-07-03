@@ -97,6 +97,9 @@ export default function GastoNuevoScreen() {
     });
   };
 
+  const formatearMontoInput = (valor?: number) =>
+    valor ? new Intl.NumberFormat("es-CL").format(valor) : "";
+
   const obtenerConsumidoresIds = () =>
     participantes
       .filter((p: any) => selectedConsumers[p.contacto_id] ?? true)
@@ -283,7 +286,7 @@ export default function GastoNuevoScreen() {
                   styles.montoInput,
                   errors.monto_total && styles.inputError,
                 ]}
-                value={value ? String(value) : ""}
+                value={formatearMontoInput(value ? Number(value) : undefined)}
                 onChangeText={(text) => {
                   const limpio = text.replace(/[^0-9]/g, "");
                   onChange(limpio === "" ? undefined : Number(limpio));
@@ -353,11 +356,7 @@ export default function GastoNuevoScreen() {
                 <TextInput
                   style={styles.montoPersonaInput}
                   keyboardType="numeric"
-                  value={
-                    montosPagadores[p.contacto_id]
-                      ? String(montosPagadores[p.contacto_id])
-                      : ""
-                  }
+                  value={formatearMontoInput(montosPagadores[p.contacto_id])}
                   placeholder="0"
                   placeholderTextColor="rgba(255,255,255,0.3)"
                   onChangeText={(text) => {
@@ -576,9 +575,11 @@ export default function GastoNuevoScreen() {
                         style={styles.montoPersonaInput}
                         keyboardType="numeric"
                         value={
-                          montosExactos[p.contacto_id]
-                            ? String(montosExactos[p.contacto_id])
-                            : ""
+                          tipoDivision === "montos_exactos"
+                            ? formatearMontoInput(montosExactos[p.contacto_id])
+                            : montosExactos[p.contacto_id]
+                              ? String(montosExactos[p.contacto_id])
+                              : ""
                         }
                         placeholder={
                           tipoDivision === "montos_exactos" ? "0" : "1"
