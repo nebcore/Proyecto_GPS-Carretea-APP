@@ -1,7 +1,8 @@
 import Feather from "@expo/vector-icons/Feather";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import * as Contacts from "expo-contacts";
-import React, { useState } from "react";
+import { useFocusEffect } from "expo-router";
+import React, { useCallback, useState } from "react";
 import {
     Alert,
     KeyboardAvoidingView,
@@ -27,6 +28,7 @@ import {
 } from "@/lib/api/contactos";
 import { createGrupo, deleteGrupo, getGrupos } from "@/lib/api/grupos";
 
+const INTERVALO_REFRESCO_AGENDA_MS = 8000;
 const ALFABETO = "#ABCDEFGHIJKLMNOPQRSTUVWXYZ".split("");
 
 const formatearTelefono = (text: string) => {
@@ -77,6 +79,25 @@ export default function AgendaScreen() {
     queryKey: ["grupos"],
     queryFn: getGrupos,
   });
+
+  useFocusEffect(
+    useCallback(() => {
+      const refrescarAgenda = () => {
+        queryClient.invalidateQueries({ queryKey: ["contactos"] });
+        queryClient.invalidateQueries({ queryKey: ["contactos-invitar"] });
+        queryClient.invalidateQueries({ queryKey: ["grupos"] });
+      };
+
+      refrescarAgenda();
+
+      const intervalo = setInterval(
+        refrescarAgenda,
+        INTERVALO_REFRESCO_AGENDA_MS,
+      );
+
+      return () => clearInterval(intervalo);
+    }, [queryClient]),
+  );
 
   // --- MUTATIONS ---
   const crearContactoMutation = useMutation({

@@ -68,6 +68,7 @@ export default function GastoNuevoScreen() {
   const {
     control,
     handleSubmit,
+    reset,
     setValue,
     formState: { errors },
   } = useForm<GastoFormInput, unknown, GastoFormValues>({
@@ -96,6 +97,33 @@ export default function GastoNuevoScreen() {
     });
   };
 
+  const formatearMontoInput = (valor?: number) =>
+    valor ? new Intl.NumberFormat("es-CL").format(valor) : "";
+
+  const obtenerConsumidoresIds = () =>
+    participantes
+      .filter((p: any) => selectedConsumers[p.contacto_id] ?? true)
+      .map((p: any) => p.contacto_id);
+
+  const limpiarFormulario = () => {
+    const nuevaFecha = new Date();
+
+    reset({
+      evento_id: eventoIdString,
+      descripcion: "",
+      monto_total: undefined,
+      fecha: nuevaFecha.toISOString(),
+      tipo_division: "equitativo",
+    });
+    setTipoDivision("equitativo");
+    setPagadorId("");
+    setMontosPagadores({});
+    setSelectedConsumers({});
+    setMontosExactos({});
+    setFechaSeleccionada(nuevaFecha);
+    setMostrarFecha(false);
+  };
+
   async function onSubmit(data: GastoFormValues) {
     // Validar que haya al menos un pagador con aporte
     const aportes = Object.values(montosPagadores).map((v) => Number(v) || 0);
@@ -117,10 +145,17 @@ export default function GastoNuevoScreen() {
       return;
     }
 
+    const consumidoresIds = obtenerConsumidoresIds();
+
+    if (consumidoresIds.length === 0) {
+      Alert.alert("Consumidores vacios", "Selecciona al menos un consumidor.");
+      return;
+    }
+
     // Validaciones cliente para nuevos modos de división
     if (tipoDivision === "porcentual") {
-      const totalPct = Object.values(montosExactos).reduce(
-        (s, v) => s + (Number(v) || 0),
+      const totalPct = consumidoresIds.reduce(
+        (s, contactoId) => s + (Number(montosExactos[contactoId]) || 0),
         0,
       );
       if (Math.abs(totalPct - 100) > 0.5) {
@@ -133,8 +168,8 @@ export default function GastoNuevoScreen() {
     }
 
     if (tipoDivision === "por_cuotas") {
-      const totalParts = Object.values(montosExactos).reduce(
-        (s, v) => s + (Number(v) || 0),
+      const totalParts = consumidoresIds.reduce(
+        (s, contactoId) => s + (Number(montosExactos[contactoId]) || 0),
         0,
       );
       if (totalParts <= 0) {
@@ -157,21 +192,6 @@ export default function GastoNuevoScreen() {
         return;
       }
 
-      // Consumidores seleccionados: usar selección si existe, sino todos
-      const consumidoresIdsFromSelection = Object.keys(
-        selectedConsumers,
-      ).filter((k) => selectedConsumers[k]);
-      const consumidoresIds = consumidoresIdsFromSelection.length
-        ? consumidoresIdsFromSelection
-        : participantes.map((p: any) => p.contacto_id);
-
-      if (consumidoresIds.length === 0) {
-        Alert.alert(
-          "Consumidores vacíos",
-          "Selecciona al menos un consumidor.",
-        );
-        return;
-      }
       const consumidoresCalculados = CalculoDivision({
         monto_total: data.monto_total,
         consumidoresID: consumidoresIds,
@@ -203,6 +223,7 @@ export default function GastoNuevoScreen() {
         queryClient.invalidateQueries({ queryKey: ["total-gastos"] }),
         queryClient.invalidateQueries({ queryKey: ["actividad-reciente"] }),
       ]);
+      limpiarFormulario();
       router.back();
     } catch (err: any) {
       Alert.alert("Error", err?.message ?? "No se pudo registrar el gasto.");
@@ -265,7 +286,7 @@ export default function GastoNuevoScreen() {
                   styles.montoInput,
                   errors.monto_total && styles.inputError,
                 ]}
-                value={value ? String(value) : ""}
+                value={formatearMontoInput(value ? Number(value) : undefined)}
                 onChangeText={(text) => {
                   const limpio = text.replace(/[^0-9]/g, "");
                   onChange(limpio === "" ? undefined : Number(limpio));
@@ -335,6 +356,7 @@ export default function GastoNuevoScreen() {
                 <TextInput
                   style={styles.montoPersonaInput}
                   keyboardType="numeric"
+                  value={formatearMontoInput(montosPagadores[p.contacto_id])}
                   placeholder="0"
                   placeholderTextColor="rgba(255,255,255,0.3)"
                   onChangeText={(text) => {
@@ -529,6 +551,11 @@ export default function GastoNuevoScreen() {
                     <TextInput
                       style={styles.montoPersonaInput}
                       keyboardType="numeric"
+                      value={
+                        montosExactos[p.contacto_id]
+                          ? String(montosExactos[p.contacto_id])
+                          : ""
+                      }
                       placeholder="0"
                       placeholderTextColor="rgba(255,255,255,0.3)"
                       onChangeText={(text) => {
@@ -547,6 +574,13 @@ export default function GastoNuevoScreen() {
                       <TextInput
                         style={styles.montoPersonaInput}
                         keyboardType="numeric"
+                        value={
+                          tipoDivision === "montos_exactos"
+                            ? formatearMontoInput(montosExactos[p.contacto_id])
+                            : montosExactos[p.contacto_id]
+                              ? String(montosExactos[p.contacto_id])
+                              : ""
+                        }
                         placeholder={
                           tipoDivision === "montos_exactos" ? "0" : "1"
                         }

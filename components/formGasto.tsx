@@ -67,6 +67,7 @@ export function FormGasto({ eventoId, participantes }: Props) {
   const {
     control,
     handleSubmit,
+    reset,
     setValue,
     formState: { errors },
   } = useForm<GastoFormValues>({
@@ -122,6 +123,9 @@ export function FormGasto({ eventoId, participantes }: Props) {
     });
   }
 
+  const formatearMontoInput = (valor?: number) =>
+    valor ? new Intl.NumberFormat("es-CL").format(valor) : "";
+
   function actualizarFechaCompleta(
     nuevaFecha: Date,
     onChange: (value: string) => void,
@@ -142,15 +146,44 @@ export function FormGasto({ eventoId, participantes }: Props) {
     );
   }
 
+  const obtenerConsumidoresIds = () =>
+    participantes
+      .filter(
+        (participante) =>
+          selectedConsumers[participante.contacto_id] ?? true,
+      )
+      .map((participante) => participante.contacto_id);
+
+  const limpiarFormulario = () => {
+    const nuevaFecha = new Date();
+
+    reset({
+      evento_id: eventoId,
+      descripcion: "",
+      categoria: undefined,
+      monto_total: undefined as unknown as number,
+      fecha: nuevaFecha.toISOString(),
+      tipo_division: "equitativo",
+    });
+    setTipoDivision("equitativo");
+    setPagadorId(participantes[0]?.contacto_id || "");
+    setMontosPagadores({});
+    setSelectedPagadores(
+      Object.fromEntries(
+        participantes.map((p, i) => [p.contacto_id, i === 0]),
+      ) as Record<string, boolean>,
+    );
+    setSelectedConsumers({});
+    setMontosExactos({});
+    setFechaSeleccionada(nuevaFecha);
+    setMostrarCalendario(false);
+    setMostrarReloj(false);
+  };
+
   async function onSubmit(data: GastoFormValues) {
     try {
       setGuardando(true);
-      const consumidoresIdsFromSelection = Object.keys(
-        selectedConsumers,
-      ).filter((k) => selectedConsumers[k]);
-      const consumidoresIds = consumidoresIdsFromSelection.length
-        ? consumidoresIdsFromSelection
-        : participantes.map((participante) => participante.contacto_id);
+      const consumidoresIds = obtenerConsumidoresIds();
 
       if (consumidoresIds.length === 0) {
         Alert.alert(
@@ -163,8 +196,8 @@ export function FormGasto({ eventoId, participantes }: Props) {
 
       // Validaciones cliente para porcentual y por_cuotas
       if (tipoDivision === "porcentual") {
-        const totalPct = Object.values(montosExactos).reduce(
-          (s, v) => s + (Number(v) || 0),
+        const totalPct = consumidoresIds.reduce(
+          (s, contactoId) => s + (Number(montosExactos[contactoId]) || 0),
           0,
         );
         if (Math.abs(totalPct - 100) > 0.5) {
@@ -178,8 +211,8 @@ export function FormGasto({ eventoId, participantes }: Props) {
       }
 
       if (tipoDivision === "por_cuotas") {
-        const totalParts = Object.values(montosExactos).reduce(
-          (s, v) => s + (Number(v) || 0),
+        const totalParts = consumidoresIds.reduce(
+          (s, contactoId) => s + (Number(montosExactos[contactoId]) || 0),
           0,
         );
         if (totalParts <= 0) {
@@ -234,6 +267,7 @@ export function FormGasto({ eventoId, participantes }: Props) {
       };
 
       await crearGasto(gastoFinal);
+      limpiarFormulario();
 
       Alert.alert("Gasto creado", "El gasto ha sido creado con éxito.");
       router.back();
@@ -275,7 +309,7 @@ export function FormGasto({ eventoId, participantes }: Props) {
         render={({ field: { onChange, value } }) => (
           <TextInput
             keyboardType="numeric"
-            value={value ? String(value) : ""}
+            value={formatearMontoInput(value)}
             onChangeText={(text) => {
               const limpio = text.replace(/[^0-9]/g, "");
               onChange(limpio === "" ? undefined : Number(limpio));
@@ -431,6 +465,9 @@ export function FormGasto({ eventoId, participantes }: Props) {
             <Text style={{ flex: 1 }}>{participante.nombre}</Text>
             <TextInput
               keyboardType="numeric"
+              value={formatearMontoInput(
+                montosPagadores[participante.contacto_id],
+              )}
               placeholder="0"
               placeholderTextColor="#9CA3AF"
               editable={selectedPagadores[participante.contacto_id] ?? false}
@@ -563,6 +600,15 @@ export function FormGasto({ eventoId, participantes }: Props) {
               <Text>{participante.nombre}</Text>
               <TextInput
                 keyboardType="numeric"
+                value={
+                  tipoDivision === "montos_exactos"
+                    ? formatearMontoInput(
+                        montosExactos[participante.contacto_id],
+                      )
+                    : montosExactos[participante.contacto_id]
+                      ? String(montosExactos[participante.contacto_id])
+                      : ""
+                }
                 placeholder={
                   tipoDivision === "montos_exactos"
                     ? `Monto ${participante.nombre}`
@@ -572,7 +618,10 @@ export function FormGasto({ eventoId, participantes }: Props) {
                 }
                 placeholderTextColor="#9CA3AF"
                 onChangeText={(text) => {
-                  const limpio = text.replace(/[^0-9\.]/g, "");
+                  const limpio =
+                    tipoDivision === "porcentual"
+                      ? text.replace(/[^0-9\.]/g, "")
+                      : text.replace(/[^0-9]/g, "");
 
                   setMontosExactos((prev) => ({
                     ...prev,
