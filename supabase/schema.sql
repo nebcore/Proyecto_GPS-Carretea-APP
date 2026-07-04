@@ -393,3 +393,42 @@ $$ language plpgsql security definer;
 create trigger on_auth_user_created
   after insert on auth.users
   for each row execute function handle_new_user();
+
+-- Crear la función interna que procesa el registro e interactúa con la API de Expo
+CREATE OR REPLACE FUNCTION public.enviar_notificacion_push_expo()
+RETURNS trigger
+LANGUAGE plpgsql
+SECURITY DEFINER
+AS $$
+DECLARE
+    v_push_token text;
+BEGIN
+    -- Buscamos el push_token del usuario al que va dirigida la notificación
+    SELECT push_token INTO v_push_token 
+    FROM public.usuarios 
+    WHERE id = NEW.usuario_id;
+
+    -- Si el usuario tiene un token activo registrado, disparamos el POST síncrono a Expo
+    IF v_push_token IS NOT NULL AND v_push_token LIKE 'ExponentPushToken%' THEN
+        PERFORM net.http_post(
+            url := 'https://exp.host/--/api/v2/push/send',
+            headers := '{"Content-Type": "application/json"}'::jsonb,
+            body := json_build_object(
+                'to', v_push_token,
+                'title', NEW.titulo,
+                'body', COALESCE(NEW.cuerpo, ''),
+                'sound', 'default',
+                'data', json_build_object('eventoId', NEW.evento_id)
+            )::text::bytea
+        );
+    END IF;
+
+    RETURN NEW;
+END;
+$$;
+
+-- Vincular la función mediante un trigger automático posterior a cada inserción
+CREATE OR REPLACE TRIGGER on_notification_created
+AFTER INSERT ON public.notificaciones
+FOR EACH ROW
+EXECUTE FUNCTION public.enviar_notificacion_push_expo();

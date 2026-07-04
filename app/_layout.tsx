@@ -1,5 +1,6 @@
-import { supabase } from "@/lib/supabase";
+import { registrarParaNotificacionesPush } from "@/lib/api/pushNotifications";
 import { useAppRealtime } from "@/lib/realtime/useAppRealtime";
+import { supabase } from "@/lib/supabase";
 import { useAuthStore } from "@/store/auth";
 import { DarkTheme, ThemeProvider } from "@react-navigation/native";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
@@ -47,7 +48,8 @@ function AuthGate() {
       if (registroEnProceso) return;
       const telefonoVerificado = session.user?.phone_confirmed_at;
       if (!telefonoVerificado) {
-        const telefono = session.user?.user_metadata?.telefono ?? session.user?.phone;
+        const telefono =
+          session.user?.user_metadata?.telefono ?? session.user?.phone;
         router.replace({
           pathname: "/(auth)/verificarTelefono",
           params: { telefono },
@@ -76,6 +78,13 @@ export default function RootLayout() {
   useEffect(() => {
     initialize();
   }, [initialize]);
+
+  // EFECTO DE REGISTRO PUSH
+  useEffect(() => {
+    if (miUsuarioId) {
+      registrarParaNotificacionesPush(miUsuarioId);
+    }
+  }, [miUsuarioId]);
 
   return (
     <QueryClientProvider client={queryClient}>
@@ -118,19 +127,19 @@ export function useEscucharBroadcast(miUsuarioId: string | undefined) {
   useEffect(() => {
     if (!miUsuarioId) return;
 
-    // 1. Nos conectamos a una "radio" global para toda la app
+    // Nos conectamos a una "radio" global para toda la app
     const canalGlobal = supabase.channel("radio_invitaciones");
 
     canalGlobal
       .on("broadcast", { event: "nueva_invitacion" }, (payload) => {
-        // 2. Revisamos si el mensaje es para nosotros
+        // Revisamos si el mensaje es para nosotros
         if (payload.payload.destinatario_id === miUsuarioId) {
           Alert.alert(payload.payload.titulo, payload.payload.mensaje);
         }
       })
       .subscribe();
 
-    // 3. Apagamos la radio si el usuario cierra sesión o sale
+    // Apagamos la radio si el usuario cierra sesión o sale
     return () => {
       supabase.removeChannel(canalGlobal);
     };

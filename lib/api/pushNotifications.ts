@@ -40,7 +40,7 @@ export async function registrarParaNotificacionesPush(usuarioId: string) {
     const tokenData = await Notifications.getExpoPushTokenAsync({
       // NOTA: Reemplazar por el projectId real que obtienen en el dashboard de Expo (EAS)
       // O configurado en su app.json
-      projectId: "TOKEN",
+      projectId: "bfa7d408-cef6-4c7c-916b-d75a55911bb5",
     });
 
     const token = tokenData.data;

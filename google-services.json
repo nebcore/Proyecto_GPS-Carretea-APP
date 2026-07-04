@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "590136823517",
+    "project_id": "carretea-app",
+    "storage_bucket": "carretea-app.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:590136823517:android:d792061239a4b72730d534",
+        "android_client_info": {
+          "package_name": "com.ashcrow.Proyecto_GPSCarreteaAPP"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyD2Vgg42jQ9rGxhJYs-bFkewxwvV2xS6Fw"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
