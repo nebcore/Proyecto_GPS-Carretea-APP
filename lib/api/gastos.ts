@@ -178,13 +178,13 @@ export async function crearGasto(data: GastoFormData) {
 
   // Validaciones según tipo_division
   if (gasto.tipo_division === "porcentual") {
-    const sumaPct = (gastos_consumidores || []).reduce(
+    const sumaPartes = (gastos_consumidores || []).reduce(
       (s, c) => s + Number(c.parte || 0),
       0,
     );
-    if (Math.abs(sumaPct - 100) > 0.5) {
+    if (gasto.monto_total && Math.abs(sumaPartes - gasto.monto_total) > 1) {
       throw new Error(
-        `La suma de porcentajes debe ser 100 (actual: ${sumaPct}).`,
+        `La suma de partes calculadas (${sumaPartes}) no coincide con el monto total (${gasto.monto_total}).`,
       );
     }
   }
@@ -194,8 +194,10 @@ export async function crearGasto(data: GastoFormData) {
       (s, c) => s + Number(c.parte || 0),
       0,
     );
-    if (sumaParts <= 0) {
-      throw new Error("La suma de partes debe ser mayor a cero.");
+    if (gasto.monto_total && Math.abs(sumaParts - gasto.monto_total) > 1) {
+      throw new Error(
+        `La suma de partes calculadas (${sumaParts}) no coincide con el monto total (${gasto.monto_total}).`,
+      );
     }
   }
 

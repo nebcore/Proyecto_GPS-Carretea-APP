@@ -23,7 +23,7 @@ import {
 } from "react-native";
 
 import GlassCard from "@/components/ui/GlassCard";
-import { getEvento } from "@/lib/api/eventos";
+import { actualizarEstadoEvento, getEvento } from "@/lib/api/eventos";
 import {
   agregarComprobanteGasto,
   borrarGasto,
@@ -227,6 +227,43 @@ export default function EventoDetalleScreen() {
       participantes,
     ],
   );
+
+  const esCreador = evento?.creador_id === usuarioActualId;
+
+  const actualizarEstadoMutation = useMutation({
+    mutationFn: (estado: "abierto" | "finalizado") =>
+      actualizarEstadoEvento(eventoId, estado),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["evento", eventoId] });
+      queryClient.invalidateQueries({ queryKey: ["eventos"] });
+    },
+    onError: (error: any) => {
+      Alert.alert(
+        "Error",
+        error?.message ?? "No se pudo actualizar el estado del evento.",
+      );
+    },
+  });
+
+  const confirmarCambioEstado = () => {
+    const finalizando = evento?.estado !== "finalizado";
+    Alert.alert(
+      finalizando ? "Finalizar evento" : "Reabrir evento",
+      finalizando
+        ? "¿Quieres marcar este evento como finalizado? Podrás reabrirlo después si lo necesitas."
+        : "¿Quieres reabrir este evento?",
+      [
+        { text: "Cancelar", style: "cancel" },
+        {
+          text: finalizando ? "Finalizar" : "Reabrir",
+          onPress: () =>
+            actualizarEstadoMutation.mutate(
+              finalizando ? "finalizado" : "abierto",
+            ),
+        },
+      ],
+    );
+  };
 
   const cerrarModalReporte = () => {
     setModalReporteVisible(false);
@@ -703,6 +740,22 @@ export default function EventoDetalleScreen() {
               <Text style={styles.eventoTitulo} numberOfLines={1}>
                 {evento?.titulo}
               </Text>
+              <View
+                style={[
+                  styles.estadoBadge,
+                  evento?.estado === "finalizado" && styles.estadoBadgeCerrado,
+                ]}
+              >
+                <Text
+                  style={[
+                    styles.estadoBadgeText,
+                    evento?.estado === "finalizado" &&
+                      styles.estadoBadgeTextCerrado,
+                  ]}
+                >
+                  {evento?.estado}
+                </Text>
+              </View>
               <TouchableOpacity>
                 <Feather
                   name="edit-3"
@@ -733,6 +786,24 @@ export default function EventoDetalleScreen() {
                   {participantes.length} personas
                 </Text>
               </View>
+              {esCreador ? (
+                <TouchableOpacity
+                  style={styles.pill}
+                  onPress={confirmarCambioEstado}
+                  disabled={actualizarEstadoMutation.isPending}
+                >
+                  <Feather
+                    name={evento?.estado === "finalizado" ? "rotate-ccw" : "check-circle"}
+                    size={11}
+                    color="rgba(255,255,255,0.5)"
+                  />
+                  <Text style={styles.pillText}>
+                    {evento?.estado === "finalizado"
+                      ? "Reabrir evento"
+                      : "Finalizar evento"}
+                  </Text>
+                </TouchableOpacity>
+              ) : null}
             </View>
           </View>
           <View style={styles.headerRight}>
@@ -1529,6 +1600,24 @@ const styles = StyleSheet.create({
     color: "#AAAAAA",
     fontSize: 13,
     marginBottom: 10,
+  },
+  estadoBadge: {
+    backgroundColor: "rgba(80,200,120,0.15)",
+    borderRadius: 8,
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+  },
+  estadoBadgeCerrado: {
+    backgroundColor: "rgba(255,255,255,0.1)",
+  },
+  estadoBadgeText: {
+    color: "#50C878",
+    fontSize: 11,
+    fontWeight: "600",
+    textTransform: "capitalize",
+  },
+  estadoBadgeTextCerrado: {
+    color: "rgba(255,255,255,0.6)",
   },
   infoPills: {
     flexDirection: "row",
