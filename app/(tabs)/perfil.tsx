@@ -540,17 +540,17 @@ export default function PerfilScreen() {
                   ) : (
                     <Text style={styles.settingAction}>Verificar</Text>
                   )}
-                  <View style={styles.divisor} />
-                  <TouchableOpacity
-                    style={styles.settingRow}
-                    onPress={handleConectarGoogle}
-                  >
-                    <View style={styles.settingLeft}>
-                      <Feather name="calendar" size={18} color="#4285F4" />
-                      <Text style={styles.settingLabel}>Google Calendar</Text>
-                    </View>
-                    <Feather name="chevron-right" size={18} color="#444444" />
-                  </TouchableOpacity>
+                </TouchableOpacity>
+                <View style={styles.divisor} />
+                <TouchableOpacity
+                  style={styles.settingRow}
+                  onPress={handleConectarGoogle}
+                >
+                  <View style={styles.settingLeft}>
+                    <Feather name="calendar" size={18} color="#4285F4" />
+                    <Text style={styles.settingLabel}>Google Calendar</Text>
+                  </View>
+                  <Feather name="chevron-right" size={18} color="#444444" />
                 </TouchableOpacity>
                 <View style={styles.divisor} />
                 <TouchableOpacity style={styles.settingRow}>
