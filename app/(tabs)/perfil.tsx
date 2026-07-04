@@ -201,7 +201,7 @@ export default function PerfilScreen() {
 
   const handleConectarGoogle = async () => {
     try {
-      const redirectUrl = "carretea://";
+      const redirectUrl = "proyectogpscarreteaapp://";
 
       const { data, error } = await supabase.auth.linkIdentity({
         provider: "google",
