@@ -818,12 +818,17 @@ export default function EventoDetalleScreen() {
               ) : (
                 deudas.map((d: any, i: number) => {
                   // Verificamos permisos para mostrar el botón
+                  const soyDeudor =
+                    usuariosPorContactoId.get(d.deudorId) === usuarioActualId;
                   const esInvitado = !usuariosPorContactoId.get(d.deudorId);
                   const soyOrganizador = evento?.creador_id === usuarioActualId;
                   const soyAcreedor =
                     usuariosPorContactoId.get(d.acreedorId) === usuarioActualId;
+                  // No se muestra si el deudor soy yo mismo, ni si es un invitado sin cuenta
                   const puedeRecordar =
-                    (soyOrganizador || soyAcreedor) && !esInvitado;
+                    (soyOrganizador || soyAcreedor) &&
+                    !esInvitado &&
+                    !soyDeudor;
 
                   return (
                     <View key={i} style={styles.gastoCard}>
