@@ -203,12 +203,16 @@ export default function PerfilScreen() {
     try {
       const redirectUrl = "carretea://";
 
-      const { data, error } = await supabase.auth.signInWithOAuth({
+      const { data, error } = await supabase.auth.linkIdentity({
         provider: "google",
         options: {
           scopes: "https://www.googleapis.com/auth/calendar",
           redirectTo: redirectUrl,
           skipBrowserRedirect: true,
+          queryParams: {
+            access_type: "offline", // para recibir refresh_token de Google
+            prompt: "consent", // fuerza que Google lo entregue siempre
+          },
         },
       });
 
@@ -221,21 +225,26 @@ export default function PerfilScreen() {
 
       if (result.type === "success" && result.url) {
         const params = new URLSearchParams(result.url.split("#")[1]);
-        const accessToken = params.get("access_token");
-        const refreshToken = params.get("refresh_token");
         const providerToken = params.get("provider_token");
+        const providerRefreshToken = params.get("provider_refresh_token");
 
         if (providerToken) {
-          await guardarGoogleToken(providerToken);
+          await guardarGoogleToken(providerToken, providerRefreshToken);
           Alert.alert("¡Listo!", "Google Calendar conectado correctamente.");
+        } else {
+          Alert.alert(
+            "Error",
+            "No se recibió el token de Google. Intenta nuevamente.",
+          );
         }
+      } else if (result.type === "cancel" || result.type === "dismiss") {
+        // Usuario canceló el flujo, no hacer nada
       }
     } catch (error: any) {
       console.log("Error:", error);
       Alert.alert("Error", error.message);
     }
   };
-
   return (
     <View style={styles.root}>
       <ScrollView
@@ -531,6 +540,17 @@ export default function PerfilScreen() {
                   ) : (
                     <Text style={styles.settingAction}>Verificar</Text>
                   )}
+                  <View style={styles.divisor} />
+                  <TouchableOpacity
+                    style={styles.settingRow}
+                    onPress={handleConectarGoogle}
+                  >
+                    <View style={styles.settingLeft}>
+                      <Feather name="calendar" size={18} color="#4285F4" />
+                      <Text style={styles.settingLabel}>Google Calendar</Text>
+                    </View>
+                    <Feather name="chevron-right" size={18} color="#444444" />
+                  </TouchableOpacity>
                 </TouchableOpacity>
                 <View style={styles.divisor} />
                 <TouchableOpacity style={styles.settingRow}>

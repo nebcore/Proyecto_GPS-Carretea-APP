@@ -1,7 +1,4 @@
 "use no memo";
-import { obtenerGoogleToken } from "@/lib/api/usuarios";
-import { supabase } from "@/lib/supabase";
-import { crearEventoCalendar } from "@/services/googleCalendar";
 import Feather from "@expo/vector-icons/Feather";
 import DateTimePicker from "@react-native-community/datetimepicker";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
@@ -24,6 +21,9 @@ import { PantallaConTeclado } from "@/components/ui/PantallaConTeclado";
 import { createContactoConGrupos, getContactos } from "@/lib/api/contactos";
 import { createEventoConParticipantes } from "@/lib/api/eventos";
 import { getGrupos } from "@/lib/api/grupos";
+import { obtenerGoogleToken } from "@/lib/api/usuarios";
+import { supabase } from "@/lib/supabase";
+import { crearEventoCalendar } from "@/services/googleCalendar";
 
 const formatearTelefono = (text: string) => {
   let cleaned = text.replace(/[^\d+]/g, "");
@@ -48,6 +48,7 @@ export default function NuevoEventoScreen() {
   const [fecha, setFecha] = useState(new Date());
   const [showDatePicker, setShowDatePicker] = useState(false);
   const [modoFecha, setModoFecha] = useState<"date" | "time">("date");
+  const [agregarAlCalendar, setAgregarAlCalendar] = useState(false);
 
   const [participantesSeleccionados, setParticipantesSeleccionados] = useState<
     any[]
@@ -60,7 +61,6 @@ export default function NuevoEventoScreen() {
 
   const [modalNuevoPartVisible, setModalNuevoPartVisible] = useState(false);
   const [nuevoPartNombre, setNuevoPartNombre] = useState("");
-  const [agregarAlCalendar, setAgregarAlCalendar] = useState(false);
   const [nuevoPartNumero, setNuevoPartNumero] = useState("");
   const [nuevoPartGrupos, setNuevoPartGrupos] = useState<any[]>([]);
   const [mostrarSelectorGruposNuevo, setMostrarSelectorGruposNuevo] =
@@ -99,7 +99,7 @@ export default function NuevoEventoScreen() {
         idsFinales,
       );
     },
-    onSuccess: async (nuevoEvento) => {
+    onSuccess: async (nuevoEvento: any) => {
       if (agregarAlCalendar) {
         try {
           const accessToken = await obtenerGoogleToken();
@@ -111,10 +111,18 @@ export default function NuevoEventoScreen() {
               fechaFin: fecha.toISOString(),
             });
             if (resultado?.id) {
-              await supabase
+              const { error } = await supabase
                 .from("eventos")
                 .update({ google_event_id: resultado.id })
-                .eq("id", nuevoEvento.id);
+                .eq("id", nuevoEvento?.id);
+
+              if (error) {
+                console.log("Error al guardar google_event_id:", error);
+                Alert.alert(
+                  "Aviso",
+                  "El evento se creó y se agregó a Google Calendar, pero no quedó vinculado correctamente. Puedes intentar sincronizarlo de nuevo desde el detalle del evento.",
+                );
+              }
             }
           } else {
             Alert.alert(
@@ -124,6 +132,10 @@ export default function NuevoEventoScreen() {
           }
         } catch (e) {
           console.log("Error al agregar a Calendar:", e);
+          Alert.alert(
+            "Aviso",
+            "El evento se creó, pero no se pudo sincronizar con Google Calendar.",
+          );
         }
       }
       queryClient.invalidateQueries({ queryKey: ["eventos"] });
@@ -432,6 +444,7 @@ export default function NuevoEventoScreen() {
               </View>
             </View>
           </View>
+
           {/* AGREGAR A GOOGLE CALENDAR */}
           <TouchableOpacity
             style={[
@@ -1055,7 +1068,7 @@ const styles = StyleSheet.create({
     backgroundColor: "rgba(255,255,255,0.05)",
     borderRadius: 12,
     padding: 14,
-    marginBottom: 12,
+    marginBottom: 20,
     borderWidth: 1,
     borderColor: "rgba(255,255,255,0.1)",
   },
