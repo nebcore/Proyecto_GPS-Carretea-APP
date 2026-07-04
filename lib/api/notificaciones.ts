@@ -134,3 +134,42 @@ export const marcarTodasLasNotificacionesLeidas = async () => {
 
   if (error) throw error;
 };
+
+export const enviarRecordatorioManual = async (
+  eventoId: string,
+  deudorContactoId: string,
+  monto: number,
+) => {
+  // Buscar si el contacto deudor tiene una cuenta real en la app
+  const { data: deudor, error: deudorError } = await supabase
+    .from("contactos")
+    .select("referencia_usuario_id")
+    .eq("id", deudorContactoId)
+    .single();
+
+  if (deudorError) throw deudorError;
+
+  if (!deudor?.referencia_usuario_id) {
+    throw new Error(
+      "Este usuario es un invitado sin cuenta en la app. Cóbrale en persona.",
+    );
+  }
+
+  // Buscar el nombre del evento para que el mensaje sea claro
+  const { data: evento, error: eventoError } = await supabase
+    .from("eventos")
+    .select("titulo")
+    .eq("id", eventoId)
+    .single();
+
+  if (eventoError) throw eventoError;
+
+  // Generar la notificación in-app usando la función base
+  await crearNotificacionEvento({
+    eventoId,
+    tipo: "recordatorio_manual",
+    titulo: "¡Recordatorio de pago!",
+    cuerpo: `Tienes una deuda pendiente de $${monto} en el evento "${evento?.titulo}".`,
+    usuarioIds: [deudor.referencia_usuario_id], // Enviar SOLO al deudor
+  });
+};

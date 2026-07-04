@@ -31,7 +31,10 @@ import {
   obtenerComprobantesGasto,
   obtenerParticipantesEvento,
 } from "@/lib/api/gastos";
-import { obtenerNotificacionesEvento } from "@/lib/api/notificaciones";
+import {
+  enviarRecordatorioManual,
+  obtenerNotificacionesEvento,
+} from "@/lib/api/notificaciones";
 import type { Deuda } from "@/lib/balances";
 import { useBalancesEvento } from "@/lib/realtime/useBalancesEvento";
 import { supabase } from "@/lib/supabase";
@@ -556,6 +559,7 @@ export default function EventoDetalleScreen() {
     },
   });
 
+  // Devolver pago a pendiente
   const devolverPagoMutation = useMutation({
     mutationFn: (pagoId: string) => devolverPagoAPendiente(pagoId),
     onSuccess: () => {
@@ -581,6 +585,28 @@ export default function EventoDetalleScreen() {
       mostrarAvisoPago(
         "No se pudo devolver",
         error?.message ?? "Intenta nuevamente.",
+        "alert-circle",
+        "#FF6B6B",
+      );
+    },
+  });
+
+  // Enviar recordatorio manual a un participante
+  const enviarRecordatorioMutation = useMutation({
+    mutationFn: ({ deudorId, monto }: { deudorId: string; monto: number }) =>
+      enviarRecordatorioManual(eventoId, deudorId, monto),
+    onSuccess: () => {
+      mostrarAvisoPago(
+        "Recordatorio enviado",
+        "Se ha enviado una notificación al participante.",
+        "bell",
+        "#4CAF50",
+      );
+    },
+    onError: (error: any) => {
+      mostrarAvisoPago(
+        "No se pudo enviar",
+        error?.message ?? "Hubo un problema al enviar el recordatorio.",
         "alert-circle",
         "#FF6B6B",
       );
@@ -790,27 +816,57 @@ export default function EventoDetalleScreen() {
               {deudas.length === 0 ? (
                 <Text style={styles.emptyText}>No hay deudas pendientes.</Text>
               ) : (
-                deudas.map((d: any, i: number) => (
-                  <View key={i} style={styles.gastoCard}>
-                    <View style={styles.cardInfo}>
-                      <Text style={styles.cardTitulo}>
-                        {participantesPorId.get(d.deudorId) ?? d.deudorId}{" "}
-                        {!usuariosPorContactoId.get(d.deudorId) ? (
-                          <Text style={{ color: "#AAAAAA", fontSize: 12 }}>
-                            (Invitado){" "}
-                          </Text>
-                        ) : (
-                          ""
+                deudas.map((d: any, i: number) => {
+                  // Verificamos permisos para mostrar el botón
+                  const esInvitado = !usuariosPorContactoId.get(d.deudorId);
+                  const soyOrganizador = evento?.creador_id === usuarioActualId;
+                  const soyAcreedor =
+                    usuariosPorContactoId.get(d.acreedorId) === usuarioActualId;
+                  const puedeRecordar =
+                    (soyOrganizador || soyAcreedor) && !esInvitado;
+
+                  return (
+                    <View key={i} style={styles.gastoCard}>
+                      <View style={styles.cardInfo}>
+                        <Text style={styles.cardTitulo}>
+                          {participantesPorId.get(d.deudorId) ?? d.deudorId}{" "}
+                          {esInvitado ? (
+                            <Text style={{ color: "#AAAAAA", fontSize: 12 }}>
+                              (Invitado){" "}
+                            </Text>
+                          ) : (
+                            ""
+                          )}
+                          <Text style={styles.flecha}>→</Text>{" "}
+                          {participantesPorId.get(d.acreedorId) ?? d.acreedorId}
+                        </Text>
+                      </View>
+                      <View style={{ alignItems: "flex-end" }}>
+                        <Text style={[styles.gastoMonto, styles.deudaMonto]}>
+                          {formatearMonto(d.monto)}
+                        </Text>
+
+                        {puedeRecordar && (
+                          <TouchableOpacity
+                            style={styles.btnRecordatorio}
+                            onPress={() =>
+                              enviarRecordatorioMutation.mutate({
+                                deudorId: d.deudorId,
+                                monto: d.monto,
+                              })
+                            }
+                            disabled={enviarRecordatorioMutation.isPending}
+                          >
+                            <Feather name="bell" size={12} color="#AAAAAA" />
+                            <Text style={styles.btnRecordatorioText}>
+                              Recordar
+                            </Text>
+                          </TouchableOpacity>
                         )}
-                        <Text style={styles.flecha}>→</Text>{" "}
-                        {participantesPorId.get(d.acreedorId) ?? d.acreedorId}
-                      </Text>
+                      </View>
                     </View>
-                    <Text style={[styles.gastoMonto, styles.deudaMonto]}>
-                      {formatearMonto(d.monto)}
-                    </Text>
-                  </View>
-                ))
+                  );
+                })
               )}
 
               <Text style={[styles.sectionTitle, { marginTop: 20 }]}>
@@ -1910,5 +1966,22 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.4,
     shadowRadius: 5,
     elevation: 8,
+  },
+  btnRecordatorio: {
+    marginTop: 6,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 4,
+    backgroundColor: "rgba(255,255,255,0.08)",
+    paddingHorizontal: 8,
+    paddingVertical: 5,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: "rgba(255,255,255,0.1)",
+  },
+  btnRecordatorioText: {
+    color: "#AAAAAA",
+    fontSize: 11,
+    fontWeight: "600",
   },
 });
