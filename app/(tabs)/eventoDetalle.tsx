@@ -652,6 +652,47 @@ export default function EventoDetalleScreen() {
     );
   }
 
+  const obtenerEstiloFeed = (tipo: string) => {
+    switch (tipo) {
+      case "gasto_creado":
+        return {
+          icon: "shopping-cart",
+          color: "#EAB308",
+          bg: "rgba(234, 179, 8, 0.15)",
+        }; // Amarillo
+      case "pago_reportado":
+        return {
+          icon: "clock",
+          color: "#3B82F6",
+          bg: "rgba(59, 130, 246, 0.15)",
+        }; // Azul
+      case "pago_confirmado":
+        return {
+          icon: "check-circle",
+          color: "#10B981",
+          bg: "rgba(16, 185, 129, 0.15)",
+        }; // Verde
+      case "pago_devuelto":
+        return {
+          icon: "rotate-ccw",
+          color: "#EF4444",
+          bg: "rgba(239, 68, 68, 0.15)",
+        }; // Rojo
+      case "nuevo_participante":
+        return {
+          icon: "user-plus",
+          color: "#A855F7",
+          bg: "rgba(168, 85, 247, 0.15)",
+        }; // Morado
+      default:
+        return {
+          icon: "activity",
+          color: "#FFFFFF",
+          bg: "rgba(255, 255, 255, 0.1)",
+        }; // Por defecto
+    }
+  };
+
   return (
     <View style={styles.root}>
       <View style={styles.container}>
@@ -994,26 +1035,36 @@ export default function EventoDetalleScreen() {
                   Aún no hay actividad interna para este evento.
                 </Text>
               ) : (
-                feedEvento.map((notificacion: any) => (
-                  <View key={notificacion.id} style={styles.gastoCard}>
-                    <View style={styles.avatar}>
-                      <Feather name="bell" size={16} color="#FFFFFF" />
-                    </View>
-                    <View style={styles.cardInfo}>
-                      <Text style={styles.cardTitulo}>
-                        {notificacion.titulo}
-                      </Text>
-                      {notificacion.cuerpo ? (
-                        <Text style={styles.cardSub}>
-                          {notificacion.cuerpo}
+                feedEvento.map((notificacion: any) => {
+                  const estilo = obtenerEstiloFeed(notificacion.tipo);
+
+                  return (
+                    <View key={notificacion.id} style={styles.gastoCard}>
+                      <View
+                        style={[styles.avatar, { backgroundColor: estilo.bg }]}
+                      >
+                        <Feather
+                          name={estilo.icon as any}
+                          size={16}
+                          color={estilo.color}
+                        />
+                      </View>
+                      <View style={styles.cardInfo}>
+                        <Text style={styles.cardTitulo}>
+                          {notificacion.titulo}
                         </Text>
-                      ) : null}
-                      <Text style={styles.cardFecha}>
-                        {formatearTiempoRelativo(notificacion.creado_en)}
-                      </Text>
+                        {notificacion.cuerpo ? (
+                          <Text style={styles.cardSub}>
+                            {notificacion.cuerpo}
+                          </Text>
+                        ) : null}
+                        <Text style={styles.cardFecha}>
+                          {formatearTiempoRelativo(notificacion.creado_en)}
+                        </Text>
+                      </View>
                     </View>
-                  </View>
-                ))
+                  );
+                })
               )}
             </>
           )}
