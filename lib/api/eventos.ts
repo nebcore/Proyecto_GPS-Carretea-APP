@@ -130,7 +130,7 @@ export const getEvento = async (eventoId: string) => {
       participantes_evento(
         contacto_id,
         rol,
-        contactos(id, nombre)
+        contactos(id, nombre, referencia_usuario_id)
       )
     `,
     )
@@ -147,15 +147,51 @@ export const updateEvento = async (
     descripcion?: string;
     ubicacion?: string;
     fecha_evento?: string;
-  }
+  },
 ) => {
   const { data, error } = await supabase
-    .from('eventos')
+    .from("eventos")
     .update(datos)
-    .eq('id', eventoId)
+    .eq("id", eventoId)
     .select()
     .single();
 
   if (error) throw error;
   return data;
+};
+
+export const obtenerAttendeesParaCalendar = async (
+  participantes: any[],
+): Promise<{ attendees: { email: string }[]; sinEmail: string[] }> => {
+  const idsUsuarios = participantes
+    .map((p) => p.contactos?.referencia_usuario_id)
+    .filter(Boolean);
+
+  let emailsPorUsuarioId: Record<string, string> = {};
+
+  if (idsUsuarios.length > 0) {
+    const { data, error } = await supabase
+      .from("usuarios")
+      .select("id, email")
+      .in("id", idsUsuarios);
+    if (error) throw error;
+    emailsPorUsuarioId = Object.fromEntries(
+      (data ?? []).map((u: any) => [u.id, u.email]),
+    );
+  }
+
+  const attendees: { email: string }[] = [];
+  const sinEmail: string[] = [];
+
+  for (const p of participantes) {
+    const refId = p.contactos?.referencia_usuario_id;
+    const email = refId ? emailsPorUsuarioId[refId] : null;
+    if (email) {
+      attendees.push({ email });
+    } else {
+      sinEmail.push(p.contactos?.nombre ?? "Participante");
+    }
+  }
+
+  return { attendees, sinEmail };
 };

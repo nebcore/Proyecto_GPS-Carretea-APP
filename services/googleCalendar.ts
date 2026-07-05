@@ -3,6 +3,7 @@ interface Evento {
   fechaInicio: string;
   fechaFin: string;
   descripcion?: string;
+  attendees?: { email: string }[];
 }
 
 export const crearEventoCalendar = async (
@@ -22,6 +23,7 @@ export const crearEventoCalendar = async (
         description: evento.descripcion,
         start: { dateTime: evento.fechaInicio },
         end: { dateTime: evento.fechaFin },
+        attendees: evento.attendees ?? [],
       }),
     },
   );
@@ -82,6 +84,7 @@ export const actualizarEventoCalendar = async (
       body: JSON.stringify({
         summary: evento.titulo,
         description: evento.descripcion,
+        attendees: evento.attendees ?? [],
       }),
     },
   );

@@ -1,8 +1,11 @@
 import GlassCard from "@/components/ui/GlassCard";
+import { getContactosParaInvitar } from "@/lib/api/contactos";
 import {
   actualizarEstadoEvento,
   deleteEvento,
   getEvento,
+  invitarContactoAlEvento,
+  obtenerAttendeesParaCalendar,
   updateEvento,
 } from "@/lib/api/eventos";
 import {
@@ -92,6 +95,7 @@ export default function EventoDetalleScreen() {
   const [editTitulo, setEditTitulo] = useState("");
   const [editDescripcion, setEditDescripcion] = useState("");
   const [editUbicacion, setEditUbicacion] = useState("");
+  const [modalInvitarVisible, setModalInvitarVisible] = useState(false);
   const queryClient = useQueryClient();
 
   const { data: evento, isLoading: loadingEvento } = useQuery({
@@ -111,6 +115,13 @@ export default function EventoDetalleScreen() {
       queryKey: ["participantes", eventoId],
       queryFn: () => obtenerParticipantesEvento(eventoId),
       enabled: Boolean(eventoId),
+    });
+
+  const { data: contactosInvitar = [], isLoading: loadingContactosInvitar } =
+    useQuery({
+      queryKey: ["contactos-invitar"],
+      queryFn: getContactosParaInvitar,
+      enabled: modalInvitarVisible,
     });
 
   const { balances, deudas, detalleParticipantes } =
@@ -140,6 +151,11 @@ export default function EventoDetalleScreen() {
     if (Array.isArray(contacto)) return contacto[0]?.nombre ?? fallback;
     return contacto.nombre ?? fallback;
   };
+
+  const yaEstaInvitado = (contactoId: string) =>
+    evento?.participantes_evento?.some(
+      (p: any) => p.contacto_id === contactoId,
+    );
 
   const participantesPorId = useMemo(() => {
     const mapa = new Map<string, string>();
@@ -510,17 +526,66 @@ export default function EventoDetalleScreen() {
     },
   });
 
+  const invitarMutation = useMutation({
+    mutationFn: (contactoId: string) =>
+      invitarContactoAlEvento(eventoId, contactoId),
+    onSuccess: async () => {
+      // Traemos el evento actualizado (con el nuevo participante ya incluido)
+      // para poder sincronizar la lista completa de invitados con Calendar.
+      let eventoActualizado: any = null;
+      try {
+        eventoActualizado = await getEvento(eventoId);
+      } catch (e) {
+        console.log("No se pudo refrescar el evento tras invitar:", e);
+      }
+
+      if (eventoActualizado?.google_event_id) {
+        try {
+          const accessToken = await obtenerGoogleToken();
+          if (accessToken) {
+            const { attendees } = await obtenerAttendeesParaCalendar(
+              eventoActualizado?.participantes_evento ?? [],
+            );
+            await actualizarEventoCalendar(
+              accessToken,
+              eventoActualizado.google_event_id,
+              {
+                titulo: eventoActualizado.titulo,
+                descripcion: eventoActualizado.descripcion,
+                fechaInicio: eventoActualizado.fecha_evento,
+                fechaFin: eventoActualizado.fecha_evento,
+                attendees,
+              },
+            );
+          }
+        } catch (e) {
+          console.log("Error al sincronizar invitado con Calendar:", e);
+        }
+      }
+
+      queryClient.invalidateQueries({ queryKey: ["evento", eventoId] });
+      queryClient.invalidateQueries({ queryKey: ["participantes", eventoId] });
+      setModalInvitarVisible(false);
+      Alert.alert("¡Invitado!", "Contacto agregado al evento.");
+    },
+    onError: (error: any) =>
+      Alert.alert("Error", error.message || "No se pudo invitar al contacto."),
+  });
+
   const editarEventoMutation = useMutation({
     mutationFn: async (datos: any) => {
-      // Actualizar en Google Calendar si tiene google_event_id
       if (evento?.google_event_id) {
         const accessToken = await obtenerGoogleToken();
         if (accessToken) {
+          const { attendees } = await obtenerAttendeesParaCalendar(
+            evento?.participantes_evento ?? [],
+          );
           await actualizarEventoCalendar(accessToken, evento.google_event_id, {
             titulo: datos.titulo,
             descripcion: datos.descripcion,
             fechaInicio: evento?.fecha_evento,
             fechaFin: evento?.fecha_evento,
+            attendees,
           });
         }
       }
@@ -627,11 +692,16 @@ export default function EventoDetalleScreen() {
         return;
       }
 
+      const { attendees, sinEmail } = await obtenerAttendeesParaCalendar(
+        evento?.participantes_evento ?? [],
+      );
+
       const resultado = await crearEventoCalendar(accessToken, {
         titulo: evento?.titulo ?? "Evento de prueba",
         descripcion: evento?.descripcion ?? "",
         fechaInicio: evento?.fecha_evento,
         fechaFin: evento?.fecha_evento,
+        attendees,
       });
 
       if (resultado?.id) {
@@ -645,7 +715,17 @@ export default function EventoDetalleScreen() {
         }
       }
 
-      Alert.alert("¡Listo!", "Evento agregado a Google Calendar.");
+      if (sinEmail.length > 0) {
+        Alert.alert(
+          "Agregado con aviso",
+          `Evento agregado a Google Calendar. Estos participantes no tienen email y no recibieron invitación: ${sinEmail.join(", ")}`,
+        );
+      } else {
+        Alert.alert(
+          "¡Listo!",
+          "Evento agregado a Google Calendar con invitaciones enviadas.",
+        );
+      }
     } catch (error) {
       console.log("Error:", error);
       Alert.alert("Error", "No se pudo agregar a Google Calendar.");
@@ -1062,6 +1142,18 @@ export default function EventoDetalleScreen() {
           {/* TAB PARTICIPANTES */}
           {tabActivo === "participantes" && (
             <>
+              <TouchableOpacity
+                style={[styles.botonSecundario, { marginBottom: 12 }]}
+                onPress={() => setModalInvitarVisible(true)}
+              >
+                <View style={styles.invitarBtnContent}>
+                  <Feather name="user-plus" size={16} color="#FFFFFF" />
+                  <Text style={styles.botonSecundarioText}>
+                    Invitar participante
+                  </Text>
+                </View>
+              </TouchableOpacity>
+
               {loadingParticipantes ? (
                 <ActivityIndicator color="#FFFFFF" style={{ marginTop: 20 }} />
               ) : participantes.length === 0 ? (
@@ -1312,6 +1404,63 @@ export default function EventoDetalleScreen() {
             </View>
           </View>
         </KeyboardAvoidingView>
+      </Modal>
+
+      {/* MODAL INVITAR PARTICIPANTE */}
+      <Modal visible={modalInvitarVisible} transparent animationType="slide">
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalCard}>
+            <Text style={styles.modalTitle}>Invitar participante</Text>
+
+            {loadingContactosInvitar ? (
+              <ActivityIndicator color="#FFFFFF" />
+            ) : contactosInvitar.length === 0 ? (
+              <Text style={styles.emptyText}>
+                No tienes más contactos disponibles.
+              </Text>
+            ) : (
+              <ScrollView>
+                {contactosInvitar.map((c: any) => {
+                  const invitado = yaEstaInvitado(c.id);
+                  return (
+                    <TouchableOpacity
+                      key={c.id}
+                      style={[
+                        styles.contactRow,
+                        invitado && styles.contactRowDisabled,
+                      ]}
+                      onPress={() => !invitado && invitarMutation.mutate(c.id)}
+                      disabled={invitado || invitarMutation.isPending}
+                    >
+                      <Text
+                        style={[
+                          styles.contactNombre,
+                          invitado && { color: "#555" },
+                        ]}
+                      >
+                        {c.nombre}
+                      </Text>
+                      {invitado ? (
+                        <Text style={styles.yaInvitadoText}>Ya invitado</Text>
+                      ) : invitarMutation.isPending ? (
+                        <ActivityIndicator size="small" color="#FFFFFF" />
+                      ) : (
+                        <Feather name="plus" size={18} color="#FFFFFF" />
+                      )}
+                    </TouchableOpacity>
+                  );
+                })}
+              </ScrollView>
+            )}
+
+            <TouchableOpacity
+              style={[styles.cancelBtn, { marginTop: 12 }]}
+              onPress={() => setModalInvitarVisible(false)}
+            >
+              <Text style={styles.cancelBtnText}>Cerrar</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
       </Modal>
 
       <Modal
@@ -1766,6 +1915,22 @@ const styles = StyleSheet.create({
     fontWeight: "bold",
     fontSize: 15,
   },
+  invitarBtnContent: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+  },
+  contactRow: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    paddingVertical: 14,
+    borderBottomWidth: 1,
+    borderColor: "rgba(255,255,255,0.06)",
+  },
+  contactRowDisabled: { opacity: 0.4 },
+  contactNombre: { color: "#FFFFFF", fontSize: 15 },
+  yaInvitadoText: { color: "#555", fontSize: 13 },
   modalOverlay: {
     flex: 1,
     justifyContent: "flex-end",
