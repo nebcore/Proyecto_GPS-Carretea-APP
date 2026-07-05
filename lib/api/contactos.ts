@@ -1,7 +1,7 @@
 import { supabase } from "../supabase";
 import { normalizarTelefono } from "../utils/telefono";
 
-const buscarUsuarioPorTelefono = async (telefono: string) => {
+export const buscarUsuarioPorTelefono = async (telefono: string) => {
   const telefonoNormalizado = telefono ? normalizarTelefono(telefono) : "";
   if (!telefonoNormalizado) return { telefonoNormalizado: "", usuarioId: null };
 
