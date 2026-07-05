@@ -115,6 +115,20 @@ export const invitarContactoAlEvento = async (
   });
 };
 
+// ELIMINAR UN PARTICIPANTE DE UN EVENTO
+export const eliminarParticipanteDelEvento = async (
+  eventoId: string,
+  contactoId: string,
+) => {
+  const { error } = await supabase
+    .from("participantes_evento")
+    .delete()
+    .eq("evento_id", eventoId)
+    .eq("contacto_id", contactoId);
+
+  if (error) throw error;
+};
+
 // ELIMINAR UN EVENTO
 export const deleteEvento = async (eventoId: string) => {
   const { error } = await supabase.from("eventos").delete().eq("id", eventoId);
@@ -122,7 +136,7 @@ export const deleteEvento = async (eventoId: string) => {
   if (error) throw error;
 };
 
-// 5. CAMBIAR ESTADO DE UN EVENTO (abierto/finalizado)
+// CAMBIAR ESTADO DE UN EVENTO (abierto/finalizado)
 export const actualizarEstadoEvento = async (
   eventoId: string,
   estado: "abierto" | "finalizado",
@@ -130,6 +144,29 @@ export const actualizarEstadoEvento = async (
   const { error } = await supabase
     .from("eventos")
     .update({ estado })
+    .eq("id", eventoId);
+
+  if (error) throw error;
+};
+
+// ACTUALIZAR DATOS DE UN EVENTO
+export const updateEvento = async (
+  eventoId: string,
+  datos: {
+    titulo: string;
+    descripcion: string;
+    ubicacion: string;
+    fechaEvento: string;
+  },
+) => {
+  const { error } = await supabase
+    .from("eventos")
+    .update({
+      titulo: datos.titulo,
+      descripcion: datos.descripcion,
+      ubicacion: datos.ubicacion,
+      fecha_evento: datos.fechaEvento,
+    })
     .eq("id", eventoId);
 
   if (error) throw error;

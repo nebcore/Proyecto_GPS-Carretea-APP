@@ -273,7 +273,7 @@ export default function NuevoEventoScreen() {
                 <DateTimePicker
                   value={fecha}
                   mode={modoFecha}
-                  is24Hour
+                  is24Hour={false}
                   display="default"
                   onChange={(_, selected) => {
                     setShowDatePicker(Platform.OS === "ios");

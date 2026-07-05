@@ -41,7 +41,16 @@
           }
         }
       ],
-      "@react-native-community/datetimepicker"
+      [
+        "@react-native-community/datetimepicker",
+        {
+          "android": {
+            "timePicker": {
+              "numbersSelectorColor": { "light": "#FFFFFF", "dark": "#FFFFFF" }
+            }
+          }
+        }
+      ]
     ],
     "experiments": {
       "typedRoutes": true,
