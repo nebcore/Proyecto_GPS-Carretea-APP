@@ -67,13 +67,6 @@ export default function PerfilScreen() {
     recordatorios: true,
   });
 
-  // Sincronizar estado local cuando llegan los datos del perfil
-  useEffect(() => {
-    if (perfil?.preferencias_notificaciones) {
-      setPrefNotif(perfil.preferencias_notificaciones);
-    }
-  }, [perfil]);
-
   // Crear la mutación para guardar silenciosamente en la base de datos
   const actualizarPreferenciasMutation = useMutation({
     mutationFn: (nuevasPrefs: any) =>
@@ -123,6 +116,13 @@ export default function PerfilScreen() {
     queryKey: ["perfil"],
     queryFn: getUsuarioPerfil,
   });
+
+  // Sincronizar estado local cuando llegan los datos del perfil
+  useEffect(() => {
+    if (perfil?.preferencias_notificaciones) {
+      setPrefNotif(perfil.preferencias_notificaciones);
+    }
+  }, [perfil]);
 
   const { data: datosBancarios } = useQuery({
     queryKey: ["datos-bancarios"],
