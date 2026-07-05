@@ -1,10 +1,10 @@
+import { Alert } from "@/components/ui/AppAlert";
 import Feather from "@expo/vector-icons/Feather";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import * as Contacts from "expo-contacts";
 import { useFocusEffect } from "expo-router";
 import React, { useCallback, useState } from "react";
 import {
-    Alert,
     KeyboardAvoidingView,
     Modal,
     Platform,
