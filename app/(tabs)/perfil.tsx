@@ -9,7 +9,7 @@ import {
   upsertDatosBancarios,
   verificarCodigoEmail,
 } from "@/lib/api/auth";
-import { guardarGoogleToken } from "@/lib/api/usuarios";
+import { guardarGoogleToken, obtenerGoogleToken } from "@/lib/api/usuarios";
 import { supabase } from "@/lib/supabase";
 import Feather from "@expo/vector-icons/Feather";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
@@ -78,6 +78,18 @@ export default function PerfilScreen() {
   const { data: estadoEmail } = useQuery({
     queryKey: ["estado-email"],
     queryFn: getEstadoEmail,
+  });
+
+  const { data: googleCalendarVinculado } = useQuery({
+    queryKey: ["google-calendar-vinculado"],
+    queryFn: async () => {
+      try {
+        const token = await obtenerGoogleToken();
+        return Boolean(token);
+      } catch {
+        return false;
+      }
+    },
   });
 
   useEffect(() => {
@@ -230,6 +242,9 @@ export default function PerfilScreen() {
 
         if (providerToken) {
           await guardarGoogleToken(providerToken, providerRefreshToken);
+          queryClient.invalidateQueries({
+            queryKey: ["google-calendar-vinculado"],
+          });
           Alert.alert("¡Listo!", "Google Calendar conectado correctamente.");
         } else {
           Alert.alert(
@@ -550,7 +565,14 @@ export default function PerfilScreen() {
                     <Feather name="calendar" size={18} color="#4285F4" />
                     <Text style={styles.settingLabel}>Google Calendar</Text>
                   </View>
-                  <Feather name="chevron-right" size={18} color="#444444" />
+                  {googleCalendarVinculado ? (
+                    <View style={styles.badgeVerificado}>
+                      <Feather name="check" size={12} color="#50C878" />
+                      <Text style={styles.badgeVerificadoText}>Vinculado</Text>
+                    </View>
+                  ) : (
+                    <Text style={styles.settingAction}>Conectar</Text>
+                  )}
                 </TouchableOpacity>
                 <View style={styles.divisor} />
                 <TouchableOpacity style={styles.settingRow}>
