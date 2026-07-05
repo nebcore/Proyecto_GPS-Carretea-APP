@@ -1,5 +1,6 @@
 import { PasoBarra } from "@/components/auth/PasoBarra";
 import { PasoVerificarTelefono } from "@/components/auth/PasoVerificarTelefono";
+import { Alert } from "@/components/ui/AppAlert";
 import { PantallaConTeclado } from "@/components/ui/PantallaConTeclado";
 import { verificarDuplicados } from "@/lib/api/auth";
 import { supabase } from "@/lib/supabase";
@@ -9,7 +10,6 @@ import { useRouter } from "expo-router";
 import { useEffect, useRef, useState } from "react";
 import {
   ActivityIndicator,
-  Alert,
   Animated,
   PanResponder,
   StyleSheet,

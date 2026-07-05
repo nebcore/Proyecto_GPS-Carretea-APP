@@ -1,3 +1,4 @@
+import { Alert } from "@/components/ui/AppAlert";
 import GlassCard from "@/components/ui/GlassCard";
 import {
   enviarCodigoVerificacionEmail,
@@ -15,7 +16,6 @@ import { router } from "expo-router";
 import { useEffect, useRef, useState } from "react";
 import {
   ActivityIndicator,
-  Alert,
   Animated,
   Modal,
   ScrollView,

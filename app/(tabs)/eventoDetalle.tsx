@@ -5,6 +5,7 @@ import {
     obtenerPagosReportadosEvento,
     reportarPago,
 } from "@/lib/api/pagos";
+import { Alert } from "@/components/ui/AppAlert";
 import DateTimePicker from "@react-native-community/datetimepicker";
 import Feather from "@expo/vector-icons/Feather";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
@@ -13,7 +14,6 @@ import { router, useLocalSearchParams } from "expo-router";
 import { useMemo, useState } from "react";
 import {
     ActivityIndicator,
-    Alert,
     Image,
     Modal,
     Platform,
@@ -24,6 +24,7 @@ import {
     TouchableOpacity,
     View,
 } from "react-native";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import GlassCard from "@/components/ui/GlassCard";
 import { getContactosParaInvitar } from "@/lib/api/contactos";
@@ -66,6 +67,7 @@ type AvisoPago = {
 
 export default function EventoDetalleScreen() {
   const { eventoId } = useLocalSearchParams<{ eventoId: string }>();
+  const insets = useSafeAreaInsets();
   const [tabActivo, setTabActivo] = useState<Tab>("gastos");
   const [modalReporteVisible, setModalReporteVisible] = useState(false);
   const [modalConfirmacionVisible, setModalConfirmacionVisible] =
@@ -1090,7 +1092,9 @@ export default function EventoDetalleScreen() {
         onRequestClose={() => setAvisoPago(null)}
       >
         <View style={styles.modalOverlay}>
-          <View style={styles.avisoPagoCard}>
+          <View
+            style={[styles.avisoPagoCard, { paddingBottom: 22 + insets.bottom }]}
+          >
             <View
               style={[
                 styles.avisoPagoIcono,
@@ -1122,7 +1126,7 @@ export default function EventoDetalleScreen() {
         onRequestClose={cerrarModalReporte}
       >
         <View style={styles.modalOverlay}>
-          <View style={styles.modalCard}>
+          <View style={[styles.modalCard, { paddingBottom: 20 + insets.bottom }]}>
             <View style={styles.modalHeader}>
               <Text style={styles.modalTitulo}>Reportar pago</Text>
               <TouchableOpacity
@@ -1225,7 +1229,7 @@ export default function EventoDetalleScreen() {
         onRequestClose={cerrarModalConfirmacion}
       >
         <View style={styles.modalOverlay}>
-          <View style={styles.modalCard}>
+          <View style={[styles.modalCard, { paddingBottom: 20 + insets.bottom }]}>
             <View style={styles.modalHeader}>
               <Text style={styles.modalTitulo}>Confirmar pagos</Text>
               <TouchableOpacity
@@ -1335,7 +1339,7 @@ export default function EventoDetalleScreen() {
         onRequestClose={cerrarModalOpcionesGasto}
       >
         <View style={styles.modalOverlay}>
-          <View style={styles.modalCard}>
+          <View style={[styles.modalCard, { paddingBottom: 20 + insets.bottom }]}>
             <View style={styles.opcionesGastoHeader}>
               <View style={styles.opcionesGastoIcono}>
                 <Feather name="file-text" size={22} color="#FFFFFF" />
@@ -1417,7 +1421,7 @@ export default function EventoDetalleScreen() {
         onRequestClose={cerrarModalBoletas}
       >
         <View style={styles.modalOverlay}>
-          <View style={styles.modalCard}>
+          <View style={[styles.modalCard, { paddingBottom: 20 + insets.bottom }]}>
             <View style={styles.modalHeader}>
               <View style={styles.deudaOptionInfo}>
                 <Text style={styles.modalTitulo}>Boletas del gasto</Text>
