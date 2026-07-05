@@ -1,9 +1,9 @@
 import { signInWithEmail } from "@/lib/api/auth";
+import { Alert } from "@/components/ui/AppAlert";
 import { useRouter } from "expo-router";
 import { useState } from "react";
 import {
     ActivityIndicator,
-    Alert,
     StyleSheet,
     Text,
     TextInput,
