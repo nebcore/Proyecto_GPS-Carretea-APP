@@ -1,4 +1,3 @@
-import { Alert } from "@/components/ui/AppAlert";
 import Feather from "@expo/vector-icons/Feather";
 import { zodResolver } from "@hookform/resolvers/zod";
 import DateTimePicker from "@react-native-community/datetimepicker";
@@ -7,6 +6,7 @@ import { useEffect, useState } from "react";
 import { Controller, useForm } from "react-hook-form";
 import {
   ActivityIndicator,
+  Alert,
   Platform,
   Pressable,
   StyleSheet,
@@ -222,6 +222,10 @@ export default function GastoNuevoScreen() {
         queryClient.invalidateQueries({ queryKey: ["gastos", eventoIdString] }),
         queryClient.invalidateQueries({ queryKey: ["total-gastos"] }),
         queryClient.invalidateQueries({ queryKey: ["actividad-reciente"] }),
+        queryClient.invalidateQueries({ queryKey: ["notificaciones"] }),
+        queryClient.invalidateQueries({
+          queryKey: ["notificaciones-no-leidas"],
+        }),
       ]);
       limpiarFormulario();
       router.back();

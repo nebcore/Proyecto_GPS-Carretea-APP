@@ -1,6 +1,7 @@
 import { z } from "zod";
 import { supabase } from "../supabase";
 import { getOrCreateContactoPropio } from "./contactos";
+import { crearNotificacionEvento } from "./notificaciones";
 
 export const gastoFormSchema = z.object({
   evento_id: z.string().uuid(),
@@ -250,6 +251,12 @@ export async function crearGasto(data: GastoFormData) {
       })),
     );
 
+  await crearNotificacionEvento({
+    eventoId: gasto.evento_id,
+    tipo: "gasto_creado",
+    titulo: "Nuevo gasto registrado",
+    cuerpo: `${gasto.descripcion} por $${Number(gasto.monto_total).toLocaleString("es-CL")} fue agregado al evento.`,
+  });
   if (errorConsumidores) throw errorConsumidores;
 
   return nuevoGasto;

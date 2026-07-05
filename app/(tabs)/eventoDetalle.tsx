@@ -1,25 +1,25 @@
 import {
-    confirmarPago,
-    devolverPagoAPendiente,
-    obtenerPagosEvento,
-    obtenerPagosReportadosEvento,
-    reportarPago,
+  confirmarPago,
+  devolverPagoAPendiente,
+  obtenerPagosEvento,
+  obtenerPagosReportadosEvento,
+  reportarPago,
 } from "@/lib/api/pagos";
-import { Alert } from "@/components/ui/AppAlert";
 import Feather from "@expo/vector-icons/Feather";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import * as ImagePicker from "expo-image-picker";
 import { router, useLocalSearchParams } from "expo-router";
 import { useMemo, useState } from "react";
 import {
-    ActivityIndicator,
-    Image,
-    Modal,
-    ScrollView,
-    StyleSheet,
-    Text,
-    TouchableOpacity,
-    View,
+  ActivityIndicator,
+  Alert,
+  Image,
+  Modal,
+  ScrollView,
+  StyleSheet,
+  Text,
+  TouchableOpacity,
+  View,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
@@ -32,6 +32,10 @@ import {
   obtenerComprobantesGasto,
   obtenerParticipantesEvento,
 } from "@/lib/api/gastos";
+import {
+  enviarRecordatorioManual,
+  obtenerNotificacionesEvento,
+} from "@/lib/api/notificaciones";
 import type { Deuda } from "@/lib/balances";
 import { useBalancesEvento } from "@/lib/realtime/useBalancesEvento";
 import { supabase } from "@/lib/supabase";
@@ -47,7 +51,7 @@ const formatearFecha = (fechaString: string) => {
 
 const formatearMonto = (monto: number) => `$${monto.toLocaleString("es-CL")}`;
 
-type Tab = "gastos" | "balances" | "participantes";
+type Tab = "gastos" | "balances" | "participantes" | "feed";
 type AvisoPago = {
   titulo: string;
   mensaje: string;
@@ -104,6 +108,12 @@ export default function EventoDetalleScreen() {
   const { data: pagosEvento = [], isLoading: loadingPagosEvento } = useQuery({
     queryKey: ["pagos", eventoId],
     queryFn: () => obtenerPagosEvento(eventoId),
+    enabled: Boolean(eventoId),
+  });
+
+  const { data: feedEvento = [], isLoading: loadingFeedEvento } = useQuery({
+    queryKey: ["notificaciones-evento", eventoId],
+    queryFn: () => obtenerNotificacionesEvento(eventoId, 40),
     enabled: Boolean(eventoId),
   });
 
@@ -493,6 +503,11 @@ export default function EventoDetalleScreen() {
       queryClient.invalidateQueries({ queryKey: ["gastos", eventoId] });
       queryClient.invalidateQueries({ queryKey: ["total-gastos"] });
       queryClient.invalidateQueries({ queryKey: ["actividad-reciente"] });
+      queryClient.invalidateQueries({ queryKey: ["notificaciones"] });
+      queryClient.invalidateQueries({ queryKey: ["notificaciones-no-leidas"] });
+      queryClient.invalidateQueries({
+        queryKey: ["notificaciones-evento", eventoId],
+      });
     },
     onError: (error: any) => {
       Alert.alert("No se pudo borrar", error?.message ?? "Intenta nuevamente.");
@@ -509,6 +524,11 @@ export default function EventoDetalleScreen() {
       queryClient.invalidateQueries({ queryKey: ["actividad-reciente"] });
       queryClient.invalidateQueries({ queryKey: ["balances", eventoId] });
       queryClient.invalidateQueries({ queryKey: ["pagos", eventoId] });
+      queryClient.invalidateQueries({ queryKey: ["notificaciones"] });
+      queryClient.invalidateQueries({ queryKey: ["notificaciones-no-leidas"] });
+      queryClient.invalidateQueries({
+        queryKey: ["notificaciones-evento", eventoId],
+      });
       cerrarModalReporte();
       mostrarAvisoPago(
         "Pago reportado",
@@ -555,6 +575,11 @@ export default function EventoDetalleScreen() {
       queryClient.invalidateQueries({ queryKey: ["actividad-reciente"] });
       queryClient.invalidateQueries({ queryKey: ["balances", eventoId] });
       queryClient.invalidateQueries({ queryKey: ["pagos", eventoId] });
+      queryClient.invalidateQueries({ queryKey: ["notificaciones"] });
+      queryClient.invalidateQueries({ queryKey: ["notificaciones-no-leidas"] });
+      queryClient.invalidateQueries({
+        queryKey: ["notificaciones-evento", eventoId],
+      });
       cerrarModalConfirmacion();
       mostrarAvisoPago(
         "Pago confirmado",
@@ -573,6 +598,7 @@ export default function EventoDetalleScreen() {
     },
   });
 
+  // Devolver pago a pendiente
   const devolverPagoMutation = useMutation({
     mutationFn: (pagoId: string) => devolverPagoAPendiente(pagoId),
     onSuccess: () => {
@@ -582,6 +608,11 @@ export default function EventoDetalleScreen() {
       queryClient.invalidateQueries({ queryKey: ["actividad-reciente"] });
       queryClient.invalidateQueries({ queryKey: ["balances", eventoId] });
       queryClient.invalidateQueries({ queryKey: ["pagos", eventoId] });
+      queryClient.invalidateQueries({ queryKey: ["notificaciones"] });
+      queryClient.invalidateQueries({ queryKey: ["notificaciones-no-leidas"] });
+      queryClient.invalidateQueries({
+        queryKey: ["notificaciones-evento", eventoId],
+      });
       cerrarModalConfirmacion();
       mostrarAvisoPago(
         "Pago devuelto",
@@ -593,6 +624,28 @@ export default function EventoDetalleScreen() {
       mostrarAvisoPago(
         "No se pudo devolver",
         error?.message ?? "Intenta nuevamente.",
+        "alert-circle",
+        "#FF6B6B",
+      );
+    },
+  });
+
+  // Enviar recordatorio manual a un participante
+  const enviarRecordatorioMutation = useMutation({
+    mutationFn: ({ deudorId, monto }: { deudorId: string; monto: number }) =>
+      enviarRecordatorioManual(eventoId, deudorId, monto),
+    onSuccess: () => {
+      mostrarAvisoPago(
+        "Recordatorio enviado",
+        "Se ha enviado una notificación al participante.",
+        "bell",
+        "#4CAF50",
+      );
+    },
+    onError: (error: any) => {
+      mostrarAvisoPago(
+        "No se pudo enviar",
+        error?.message ?? "Hubo un problema al enviar el recordatorio.",
         "alert-circle",
         "#FF6B6B",
       );
@@ -615,6 +668,21 @@ export default function EventoDetalleScreen() {
     0,
   );
 
+  const formatearTiempoRelativo = (fechaString: string) => {
+    const fecha = new Date(fechaString);
+    const ahora = new Date();
+    const diff = ahora.getTime() - fecha.getTime();
+    const minutos = Math.floor(diff / 60000);
+    const horas = Math.floor(minutos / 60);
+    const dias = Math.floor(horas / 24);
+
+    if (minutos < 1) return "Ahora";
+    if (minutos < 60) return `Hace ${minutos} min`;
+    if (horas < 24) return `Hace ${horas} hora${horas !== 1 ? "s" : ""}`;
+    if (dias === 1) return "Ayer";
+    return `Hace ${dias} días`;
+  };
+
   if (loadingEvento) {
     return (
       <View style={styles.center}>
@@ -622,6 +690,47 @@ export default function EventoDetalleScreen() {
       </View>
     );
   }
+
+  const obtenerEstiloFeed = (tipo: string) => {
+    switch (tipo) {
+      case "gasto_creado":
+        return {
+          icon: "shopping-cart",
+          color: "#EAB308",
+          bg: "rgba(234, 179, 8, 0.15)",
+        }; // Amarillo
+      case "pago_reportado":
+        return {
+          icon: "clock",
+          color: "#3B82F6",
+          bg: "rgba(59, 130, 246, 0.15)",
+        }; // Azul
+      case "pago_confirmado":
+        return {
+          icon: "check-circle",
+          color: "#10B981",
+          bg: "rgba(16, 185, 129, 0.15)",
+        }; // Verde
+      case "pago_devuelto":
+        return {
+          icon: "rotate-ccw",
+          color: "#EF4444",
+          bg: "rgba(239, 68, 68, 0.15)",
+        }; // Rojo
+      case "nuevo_participante":
+        return {
+          icon: "user-plus",
+          color: "#A855F7",
+          bg: "rgba(168, 85, 247, 0.15)",
+        }; // Morado
+      default:
+        return {
+          icon: "activity",
+          color: "#FFFFFF",
+          bg: "rgba(255, 255, 255, 0.1)",
+        }; // Por defecto
+    }
+  };
 
   return (
     <View style={styles.root}>
@@ -686,7 +795,11 @@ export default function EventoDetalleScreen() {
                   disabled={actualizarEstadoMutation.isPending}
                 >
                   <Feather
-                    name={evento?.estado === "finalizado" ? "rotate-ccw" : "check-circle"}
+                    name={
+                      evento?.estado === "finalizado"
+                        ? "rotate-ccw"
+                        : "check-circle"
+                    }
                     size={11}
                     color="rgba(255,255,255,0.5)"
                   />
@@ -707,22 +820,24 @@ export default function EventoDetalleScreen() {
 
         {/* TABS */}
         <View style={styles.tabBar}>
-          {(["gastos", "balances", "participantes"] as Tab[]).map((tab) => (
-            <TouchableOpacity
-              key={tab}
-              style={[styles.tab, tabActivo === tab && styles.tabActivo]}
-              onPress={() => setTabActivo(tab)}
-            >
-              <Text
-                style={[
-                  styles.tabText,
-                  tabActivo === tab && styles.tabTextActivo,
-                ]}
+          {(["gastos", "balances", "participantes", "feed"] as Tab[]).map(
+            (tab) => (
+              <TouchableOpacity
+                key={tab}
+                style={[styles.tab, tabActivo === tab && styles.tabActivo]}
+                onPress={() => setTabActivo(tab)}
               >
-                {tab.charAt(0).toUpperCase() + tab.slice(1)}
-              </Text>
-            </TouchableOpacity>
-          ))}
+                <Text
+                  style={[
+                    styles.tabText,
+                    tabActivo === tab && styles.tabTextActivo,
+                  ]}
+                >
+                  {tab.charAt(0).toUpperCase() + tab.slice(1)}
+                </Text>
+              </TouchableOpacity>
+            ),
+          )}
         </View>
 
         {/* CONTENIDO */}
@@ -819,27 +934,62 @@ export default function EventoDetalleScreen() {
               {deudas.length === 0 ? (
                 <Text style={styles.emptyText}>No hay deudas pendientes.</Text>
               ) : (
-                deudas.map((d: any, i: number) => (
-                  <View key={i} style={styles.gastoCard}>
-                    <View style={styles.cardInfo}>
-                      <Text style={styles.cardTitulo}>
-                        {participantesPorId.get(d.deudorId) ?? d.deudorId}{" "}
-                        {!usuariosPorContactoId.get(d.deudorId) ? (
-                          <Text style={{ color: "#AAAAAA", fontSize: 12 }}>
-                            (Invitado){" "}
-                          </Text>
-                        ) : (
-                          ""
+                deudas.map((d: any, i: number) => {
+                  // Verificamos permisos para mostrar el botón
+                  const soyDeudor =
+                    usuariosPorContactoId.get(d.deudorId) === usuarioActualId;
+                  const esInvitado = !usuariosPorContactoId.get(d.deudorId);
+                  const soyOrganizador = evento?.creador_id === usuarioActualId;
+                  const soyAcreedor =
+                    usuariosPorContactoId.get(d.acreedorId) === usuarioActualId;
+                  // No se muestra si el deudor soy yo mismo, ni si es un invitado sin cuenta
+                  const puedeRecordar =
+                    (soyOrganizador || soyAcreedor) &&
+                    !esInvitado &&
+                    !soyDeudor;
+
+                  return (
+                    <View key={i} style={styles.gastoCard}>
+                      <View style={styles.cardInfo}>
+                        <Text style={styles.cardTitulo}>
+                          {participantesPorId.get(d.deudorId) ?? d.deudorId}{" "}
+                          {esInvitado ? (
+                            <Text style={{ color: "#AAAAAA", fontSize: 12 }}>
+                              (Invitado){" "}
+                            </Text>
+                          ) : (
+                            ""
+                          )}
+                          <Text style={styles.flecha}>→</Text>{" "}
+                          {participantesPorId.get(d.acreedorId) ?? d.acreedorId}
+                        </Text>
+                      </View>
+                      <View style={{ alignItems: "flex-end" }}>
+                        <Text style={[styles.gastoMonto, styles.deudaMonto]}>
+                          {formatearMonto(d.monto)}
+                        </Text>
+
+                        {puedeRecordar && (
+                          <TouchableOpacity
+                            style={styles.btnRecordatorio}
+                            onPress={() =>
+                              enviarRecordatorioMutation.mutate({
+                                deudorId: d.deudorId,
+                                monto: d.monto,
+                              })
+                            }
+                            disabled={enviarRecordatorioMutation.isPending}
+                          >
+                            <Feather name="bell" size={12} color="#AAAAAA" />
+                            <Text style={styles.btnRecordatorioText}>
+                              Recordar
+                            </Text>
+                          </TouchableOpacity>
                         )}
-                        <Text style={styles.flecha}>→</Text>{" "}
-                        {participantesPorId.get(d.acreedorId) ?? d.acreedorId}
-                      </Text>
+                      </View>
                     </View>
-                    <Text style={[styles.gastoMonto, styles.deudaMonto]}>
-                      {formatearMonto(d.monto)}
-                    </Text>
-                  </View>
-                ))
+                  );
+                })
               )}
 
               <Text style={[styles.sectionTitle, { marginTop: 20 }]}>
@@ -952,6 +1102,49 @@ export default function EventoDetalleScreen() {
               )}
             </>
           )}
+
+          {tabActivo === "feed" && (
+            <>
+              {loadingFeedEvento ? (
+                <ActivityIndicator color="#FFFFFF" style={{ marginTop: 20 }} />
+              ) : feedEvento.length === 0 ? (
+                <Text style={styles.emptyText}>
+                  Aún no hay actividad interna para este evento.
+                </Text>
+              ) : (
+                feedEvento.map((notificacion: any) => {
+                  const estilo = obtenerEstiloFeed(notificacion.tipo);
+
+                  return (
+                    <View key={notificacion.id} style={styles.gastoCard}>
+                      <View
+                        style={[styles.avatar, { backgroundColor: estilo.bg }]}
+                      >
+                        <Feather
+                          name={estilo.icon as any}
+                          size={16}
+                          color={estilo.color}
+                        />
+                      </View>
+                      <View style={styles.cardInfo}>
+                        <Text style={styles.cardTitulo}>
+                          {notificacion.titulo}
+                        </Text>
+                        {notificacion.cuerpo ? (
+                          <Text style={styles.cardSub}>
+                            {notificacion.cuerpo}
+                          </Text>
+                        ) : null}
+                        <Text style={styles.cardFecha}>
+                          {formatearTiempoRelativo(notificacion.creado_en)}
+                        </Text>
+                      </View>
+                    </View>
+                  );
+                })
+              )}
+            </>
+          )}
         </ScrollView>
       </View>
 
@@ -977,7 +1170,10 @@ export default function EventoDetalleScreen() {
       >
         <View style={styles.modalOverlay}>
           <View
-            style={[styles.avisoPagoCard, { paddingBottom: 22 + insets.bottom }]}
+            style={[
+              styles.avisoPagoCard,
+              { paddingBottom: 22 + insets.bottom },
+            ]}
           >
             <View
               style={[
@@ -1010,7 +1206,9 @@ export default function EventoDetalleScreen() {
         onRequestClose={cerrarModalReporte}
       >
         <View style={styles.modalOverlay}>
-          <View style={[styles.modalCard, { paddingBottom: 20 + insets.bottom }]}>
+          <View
+            style={[styles.modalCard, { paddingBottom: 20 + insets.bottom }]}
+          >
             <View style={styles.modalHeader}>
               <Text style={styles.modalTitulo}>Reportar pago</Text>
               <TouchableOpacity
@@ -1113,7 +1311,9 @@ export default function EventoDetalleScreen() {
         onRequestClose={cerrarModalConfirmacion}
       >
         <View style={styles.modalOverlay}>
-          <View style={[styles.modalCard, { paddingBottom: 20 + insets.bottom }]}>
+          <View
+            style={[styles.modalCard, { paddingBottom: 20 + insets.bottom }]}
+          >
             <View style={styles.modalHeader}>
               <Text style={styles.modalTitulo}>Confirmar pagos</Text>
               <TouchableOpacity
@@ -1223,7 +1423,9 @@ export default function EventoDetalleScreen() {
         onRequestClose={cerrarModalOpcionesGasto}
       >
         <View style={styles.modalOverlay}>
-          <View style={[styles.modalCard, { paddingBottom: 20 + insets.bottom }]}>
+          <View
+            style={[styles.modalCard, { paddingBottom: 20 + insets.bottom }]}
+          >
             <View style={styles.opcionesGastoHeader}>
               <View style={styles.opcionesGastoIcono}>
                 <Feather name="file-text" size={22} color="#FFFFFF" />
@@ -1305,7 +1507,9 @@ export default function EventoDetalleScreen() {
         onRequestClose={cerrarModalBoletas}
       >
         <View style={styles.modalOverlay}>
-          <View style={[styles.modalCard, { paddingBottom: 20 + insets.bottom }]}>
+          <View
+            style={[styles.modalCard, { paddingBottom: 20 + insets.bottom }]}
+          >
             <View style={styles.modalHeader}>
               <View style={styles.deudaOptionInfo}>
                 <Text style={styles.modalTitulo}>Boletas del gasto</Text>
@@ -1325,10 +1529,17 @@ export default function EventoDetalleScreen() {
             </View>
 
             {cargandoBoletas ? (
-              <ActivityIndicator color="#FFFFFF" style={{ marginVertical: 28 }} />
+              <ActivityIndicator
+                color="#FFFFFF"
+                style={{ marginVertical: 28 }}
+              />
             ) : boletasGasto.length === 0 ? (
               <View style={styles.comprobanteVacio}>
-                <Feather name="image" size={24} color="rgba(255,255,255,0.45)" />
+                <Feather
+                  name="image"
+                  size={24}
+                  color="rgba(255,255,255,0.45)"
+                />
                 <Text style={styles.emptyText}>
                   Este gasto todavía no tiene boletas.
                 </Text>
@@ -1919,5 +2130,22 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.4,
     shadowRadius: 5,
     elevation: 8,
+  },
+  btnRecordatorio: {
+    marginTop: 6,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 4,
+    backgroundColor: "rgba(255,255,255,0.08)",
+    paddingHorizontal: 8,
+    paddingVertical: 5,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: "rgba(255,255,255,0.1)",
+  },
+  btnRecordatorioText: {
+    color: "#AAAAAA",
+    fontSize: 11,
+    fontWeight: "600",
   },
 });

@@ -101,6 +101,10 @@ export default function TabLayout() {
         name="nuevoEvento"
         options={{ href: null, header: () => <HeaderConVolver /> }}
       />
+      <Tabs.Screen
+        name="notificaciones"
+        options={{ href: null, header: () => <HeaderConVolver /> }}
+      />
     </Tabs>
   );
 }
