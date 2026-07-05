@@ -1,3 +1,4 @@
+import { Alert } from "@/components/ui/AppAlert";
 import GlassCard from "@/components/ui/GlassCard";
 import Feather from "@expo/vector-icons/Feather";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
@@ -5,7 +6,6 @@ import { router } from "expo-router";
 import React, { useState } from "react";
 import {
   ActivityIndicator,
-  Alert,
   KeyboardAvoidingView,
   Modal,
   Platform,
@@ -178,7 +178,7 @@ export default function EventosScreen() {
       {/* MODAL DETALLE EVENTO */}
       <Modal visible={modalDetalleVisible} transparent animationType="fade">
         <View style={styles.modalOverlay}>
-          <View style={styles.modalCard}>
+          <View style={[styles.modalCard, { paddingBottom: 24 + insets.bottom }]}>
             {eventoSeleccionado && (
               <ScrollView showsVerticalScrollIndicator={false}>
                 <Text style={styles.modalTitle}>
@@ -289,7 +289,7 @@ export default function EventosScreen() {
       {/* MODAL INVITAR CONTACTO */}
       <Modal visible={modalInvitarVisible} transparent animationType="slide">
         <View style={styles.modalOverlay}>
-          <View style={styles.modalCard}>
+          <View style={[styles.modalCard, { paddingBottom: 24 + insets.bottom }]}>
             <Text style={styles.modalTitle}>Invitar contacto</Text>
             {loadingContactos ? (
               <ActivityIndicator color="#FFFFFF" />

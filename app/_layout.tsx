@@ -1,5 +1,7 @@
 import { registrarParaNotificacionesPush } from "@/lib/api/pushNotifications";
 import { useNotificationRouter } from "@/lib/hooks/useNotificationRouter";
+import { AppAlertProvider, Alert } from "@/components/ui/AppAlert";
+import { supabase } from "@/lib/supabase";
 import { useAppRealtime } from "@/lib/realtime/useAppRealtime";
 import { supabase } from "@/lib/supabase";
 import { useAuthStore } from "@/store/auth";
@@ -8,7 +10,7 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { Stack, useRouter, useSegments } from "expo-router";
 import { StatusBar } from "expo-status-bar";
 import { useEffect } from "react";
-import { Alert, ImageBackground, View } from "react-native";
+import { ImageBackground, View } from "react-native";
 import "react-native-reanimated";
 
 const queryClient = new QueryClient();
@@ -107,15 +109,17 @@ export default function RootLayout() {
               translucent={false}
             />
             <AuthGate />
-            <Stack
-              screenOptions={{
-                headerShown: false,
-                contentStyle: { backgroundColor: "transparent" },
-              }}
-            >
-              <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
-              <Stack.Screen name="(auth)" options={{ headerShown: false }} />
-            </Stack>
+            <AppAlertProvider>
+              <Stack
+                screenOptions={{
+                  headerShown: false,
+                  contentStyle: { backgroundColor: "transparent" },
+                }}
+              >
+                <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
+                <Stack.Screen name="(auth)" options={{ headerShown: false }} />
+              </Stack>
+            </AppAlertProvider>
           </ThemeProvider>
         </View>
       </ImageBackground>
