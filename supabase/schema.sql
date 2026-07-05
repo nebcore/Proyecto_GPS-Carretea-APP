@@ -432,3 +432,66 @@ CREATE OR REPLACE TRIGGER on_notification_created
 AFTER INSERT ON public.notificaciones
 FOR EACH ROW
 EXECUTE FUNCTION public.enviar_notificacion_push_expo();
+
+-- 1. Habilitamos la extensión del reloj interno de Supabase (si no está activa)
+CREATE EXTENSION IF NOT EXISTS pg_cron;
+
+-- 2. Programamos el Cron Job para que corra todos los días a las 12:00 PM ('0 12 * * *')
+SELECT cron.schedule('recordatorio_deudas_3_dias', '0 12 * * *', $$
+    WITH consumos AS (
+        -- Sumamos todo lo que consumió cada contacto por evento y sacamos la fecha del gasto más viejo
+        SELECT g.evento_id, gc.contacto_id, SUM(gc.parte) as total_consumido, MIN(g.fecha) as fecha_gasto_mas_antiguo
+        FROM public.gastos g
+        JOIN public.gastos_consumidores gc ON g.id = gc.gasto_id
+        GROUP BY g.evento_id, gc.contacto_id
+    ),
+    aportes AS (
+        -- Sumamos todo lo que aportó (pagó por el grupo) cada contacto
+        SELECT g.evento_id, gp.contacto_id, SUM(gp.monto_aportado) as total_aportado
+        FROM public.gastos g
+        JOIN public.gastos_pagadores gp ON g.id = gp.gasto_id
+        GROUP BY g.evento_id, gp.contacto_id
+    ),
+    pagos_enviados AS (
+        -- Sumamos lo que el usuario ya devolvió/saldó
+        SELECT evento_id, deudor_id AS contacto_id, SUM(monto) as total_pagado
+        FROM public.pagos
+        WHERE estado IN ('reportado', 'saldado')
+        GROUP BY evento_id, deudor_id
+    ),
+    pagos_recibidos AS (
+        -- Sumamos lo que le han devuelto a él
+        SELECT evento_id, acreedor_id AS contacto_id, SUM(monto) as total_recibido
+        FROM public.pagos
+        WHERE estado IN ('reportado', 'saldado')
+        GROUP BY evento_id, acreedor_id
+    ),
+    balances AS (
+        -- Recreamos la matemática de tu app: (Aportes - Consumos + Pagos Enviados - Pagos Recibidos)
+        SELECT 
+            c.evento_id, 
+            c.contacto_id, 
+            c.fecha_gasto_mas_antiguo,
+            COALESCE(a.total_aportado, 0) - COALESCE(c.total_consumido, 0) + COALESCE(pe.total_pagado, 0) - COALESCE(pr.total_recibido, 0) AS balance_neto
+        FROM consumos c
+        LEFT JOIN aportes a ON c.evento_id = a.evento_id AND c.contacto_id = a.contacto_id
+        LEFT JOIN pagos_enviados pe ON c.evento_id = pe.evento_id AND c.contacto_id = pe.contacto_id
+        LEFT JOIN pagos_recibidos pr ON c.evento_id = pr.evento_id AND c.contacto_id = pr.contacto_id
+    )
+    -- Insertamos la notificación para los que deben dinero
+    INSERT INTO public.notificaciones (usuario_id, evento_id, tipo, titulo, cuerpo)
+    SELECT 
+        cont.referencia_usuario_id,
+        b.evento_id,
+        'recordatorio_automatico',
+        '¡Tienes saldos pendientes!',
+        'Tienes una deuda de $' || ROUND(ABS(b.balance_neto)) || ' originada hace más de 3 días en el evento "' || ev.titulo || '". Por favor, ponte al día.'
+    FROM balances b
+    JOIN public.contactos cont ON b.contacto_id = cont.id
+    JOIN public.eventos ev ON b.evento_id = ev.id
+    -- LAS 4 REGLAS DEL RF_08.1:
+    WHERE b.balance_neto < -1                                   -- 1. Que su balance sea negativo (Debe dinero)
+      AND b.fecha_gasto_mas_antiguo < NOW() - INTERVAL '3 days' -- 2. Que el gasto tenga más de 3 días
+      AND ev.estado = 'abierto'                                 -- 3. Que el evento no esté cerrado
+      AND cont.referencia_usuario_id IS NOT NULL;               -- 4. Que sea un usuario real con la app instalada
+$$);
