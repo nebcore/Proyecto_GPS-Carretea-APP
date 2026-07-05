@@ -9,6 +9,7 @@ import { Alert } from "@/components/ui/AppAlert";
 import DateTimePicker from "@react-native-community/datetimepicker";
 import Feather from "@expo/vector-icons/Feather";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import * as Clipboard from "expo-clipboard";
 import * as ImagePicker from "expo-image-picker";
 import { router, useLocalSearchParams } from "expo-router";
 import { useMemo, useState } from "react";
@@ -68,6 +69,12 @@ type AvisoPago = {
   icono: any;
   color: string;
 };
+type DatosBancarios = {
+  banco: string;
+  tipo_cuenta: string;
+  numero_cuenta: string;
+  rut: string;
+};
 
 export default function EventoDetalleScreen() {
   const { eventoId } = useLocalSearchParams<{ eventoId: string }>();
@@ -93,6 +100,8 @@ export default function EventoDetalleScreen() {
   const [avisoPago, setAvisoPago] = useState<AvisoPago | null>(null);
   const [modalEditarEventoVisible, setModalEditarEventoVisible] =
     useState(false);
+  const [participanteBancarioSeleccionado, setParticipanteBancarioSeleccionado] =
+    useState<any | null>(null);
   const [editNombre, setEditNombre] = useState("");
   const [editDescripcion, setEditDescripcion] = useState("");
   const [editUbicacion, setEditUbicacion] = useState("");
@@ -388,6 +397,10 @@ export default function EventoDetalleScreen() {
     setGastoSeleccionado(null);
   };
 
+  const cerrarModalDatosBancarios = () => {
+    setParticipanteBancarioSeleccionado(null);
+  };
+
   const mostrarAvisoPago = (
     titulo: string,
     mensaje: string,
@@ -593,6 +606,35 @@ export default function EventoDetalleScreen() {
     const gasto = gastoSeleccionado;
     cerrarModalOpcionesGasto();
     seleccionarBoletaGasto(gasto);
+  };
+
+  const copiarDatosBancarios = async () => {
+    const datos = participanteBancarioSeleccionado?.datos_bancarios as
+      | DatosBancarios
+      | null
+      | undefined;
+
+    if (!datos) return;
+
+    const nombre = obtenerNombreContacto(
+      participanteBancarioSeleccionado.contactos,
+    );
+    const texto = [
+      nombre,
+      `Banco: ${datos.banco}`,
+      `Tipo de cuenta: ${datos.tipo_cuenta}`,
+      `Numero de cuenta: ${datos.numero_cuenta}`,
+      `RUT: ${datos.rut}`,
+    ].join("\n");
+
+    await Clipboard.setStringAsync(texto);
+    cerrarModalDatosBancarios();
+    mostrarAvisoPago(
+      "Copiado",
+      "Los datos bancarios quedaron en el portapapeles.",
+      "copy",
+      "#4CAF50",
+    );
   };
 
   const cerrarModalConfirmacion = () => {
@@ -1187,7 +1229,12 @@ export default function EventoDetalleScreen() {
                   const monto = balance?.balance ?? 0;
                   const nombre = obtenerNombreContacto(p.contactos);
                   return (
-                    <View key={p.contacto_id} style={styles.gastoCard}>
+                    <TouchableOpacity
+                      key={p.contacto_id}
+                      style={styles.gastoCard}
+                      onPress={() => setParticipanteBancarioSeleccionado(p)}
+                      activeOpacity={0.78}
+                    >
                       <View style={styles.avatar}>
                         <Text style={styles.avatarText}>
                           {nombre.substring(0, 1).toUpperCase()}
@@ -1208,7 +1255,13 @@ export default function EventoDetalleScreen() {
                         {monto >= 0 ? "+" : ""}
                         {formatearMonto(monto)}
                       </Text>
-                    </View>
+                      <Feather
+                        name="credit-card"
+                        size={18}
+                        color="rgba(255,255,255,0.35)"
+                        style={styles.participanteCardIcon}
+                      />
+                    </TouchableOpacity>
                   );
                 })
               )}
@@ -1273,6 +1326,97 @@ export default function EventoDetalleScreen() {
           </TouchableOpacity>
         </View>
       )}
+
+      <Modal
+        visible={Boolean(participanteBancarioSeleccionado)}
+        transparent
+        animationType="fade"
+        onRequestClose={cerrarModalDatosBancarios}
+      >
+        <View style={styles.modalOverlayCenter}>
+          <View style={styles.modalBancoCard}>
+            <View style={styles.modalHeader}>
+              <View style={styles.deudaOptionInfo}>
+                <Text style={styles.modalTitulo}>Datos bancarios</Text>
+                <Text style={styles.deudaOptionSub}>
+                  {obtenerNombreContacto(
+                    participanteBancarioSeleccionado?.contactos,
+                  )}
+                </Text>
+              </View>
+              <TouchableOpacity
+                style={styles.modalClose}
+                onPress={cerrarModalDatosBancarios}
+              >
+                <Feather name="x" size={20} color="#FFFFFF" />
+              </TouchableOpacity>
+            </View>
+
+            {participanteBancarioSeleccionado?.datos_bancarios ? (
+              <>
+                {[
+                  {
+                    label: "Banco",
+                    value: participanteBancarioSeleccionado.datos_bancarios
+                      .banco,
+                    icon: "credit-card" as const,
+                  },
+                  {
+                    label: "Tipo de cuenta",
+                    value: participanteBancarioSeleccionado.datos_bancarios
+                      .tipo_cuenta,
+                    icon: "list" as const,
+                  },
+                  {
+                    label: "Numero de cuenta",
+                    value: participanteBancarioSeleccionado.datos_bancarios
+                      .numero_cuenta,
+                    icon: "hash" as const,
+                  },
+                  {
+                    label: "RUT",
+                    value: participanteBancarioSeleccionado.datos_bancarios.rut,
+                    icon: "user" as const,
+                  },
+                ].map((campo) => (
+                  <View key={campo.label} style={styles.datoBancoRow}>
+                    <View style={styles.datoBancoIcon}>
+                      <Feather
+                        name={campo.icon}
+                        size={16}
+                        color="rgba(255,255,255,0.65)"
+                      />
+                    </View>
+                    <View style={styles.deudaOptionInfo}>
+                      <Text style={styles.datoBancoLabel}>{campo.label}</Text>
+                      <Text style={styles.datoBancoValor}>{campo.value}</Text>
+                    </View>
+                  </View>
+                ))}
+
+                <TouchableOpacity
+                  style={[styles.botonReportarFinal, styles.copiarBancoBtn]}
+                  onPress={copiarDatosBancarios}
+                >
+                  <Feather name="copy" size={17} color="#000000" />
+                  <Text style={styles.botonReportarFinalText}>Copiar datos</Text>
+                </TouchableOpacity>
+              </>
+            ) : (
+              <View style={styles.datosBancoVacios}>
+                <Feather
+                  name="lock"
+                  size={24}
+                  color="rgba(255,255,255,0.45)"
+                />
+                <Text style={styles.emptyText}>
+                  No hay datos bancarios disponibles para este participante.
+                </Text>
+              </View>
+            )}
+          </View>
+        </View>
+      </Modal>
 
       <Modal
         visible={Boolean(avisoPago)}
@@ -2078,6 +2222,9 @@ const styles = StyleSheet.create({
     fontSize: 15,
     fontWeight: "bold",
   },
+  participanteCardIcon: {
+    marginLeft: 10,
+  },
   deleteButton: {
     width: 36,
     height: 36,
@@ -2114,11 +2261,27 @@ const styles = StyleSheet.create({
     justifyContent: "flex-end",
     backgroundColor: "rgba(0,0,0,0.65)",
   },
+  modalOverlayCenter: {
+    flex: 1,
+    alignItems: "center",
+    justifyContent: "center",
+    padding: 20,
+    backgroundColor: "rgba(0,0,0,0.65)",
+  },
   modalCard: {
     maxHeight: "88%",
     backgroundColor: "#181818",
     borderTopLeftRadius: 22,
     borderTopRightRadius: 22,
+    padding: 20,
+    borderWidth: 1,
+    borderColor: "rgba(255,255,255,0.1)",
+  },
+  modalBancoCard: {
+    width: "100%",
+    maxWidth: 420,
+    backgroundColor: "#181818",
+    borderRadius: 22,
     padding: 20,
     borderWidth: 1,
     borderColor: "rgba(255,255,255,0.1)",
@@ -2268,6 +2431,46 @@ const styles = StyleSheet.create({
     minWidth: 190,
     paddingHorizontal: 28,
     alignSelf: "center",
+  },
+  datoBancoRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    minHeight: 58,
+    padding: 12,
+    marginBottom: 10,
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: "rgba(255,255,255,0.08)",
+    backgroundColor: "rgba(255,255,255,0.07)",
+  },
+  datoBancoIcon: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    alignItems: "center",
+    justifyContent: "center",
+    marginRight: 12,
+    backgroundColor: "rgba(255,255,255,0.08)",
+  },
+  datoBancoLabel: {
+    color: "rgba(255,255,255,0.5)",
+    fontSize: 12,
+    marginBottom: 3,
+  },
+  datoBancoValor: {
+    color: "#FFFFFF",
+    fontSize: 15,
+    fontWeight: "700",
+  },
+  copiarBancoBtn: {
+    marginTop: 8,
+    flexDirection: "row",
+    gap: 8,
+  },
+  datosBancoVacios: {
+    minHeight: 150,
+    alignItems: "center",
+    justifyContent: "center",
   },
   deudasSelector: {
     maxHeight: 210,
