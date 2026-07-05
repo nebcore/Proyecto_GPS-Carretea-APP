@@ -547,6 +547,7 @@ export default function EventoDetalleScreen() {
           if (accessToken) {
             const { attendees } = await obtenerAttendeesParaCalendar(
               eventoActualizado?.participantes_evento ?? [],
+              eventoActualizado?.creador_id,
             );
             await actualizarEventoCalendar(
               accessToken,
@@ -581,6 +582,7 @@ export default function EventoDetalleScreen() {
         if (accessToken) {
           const { attendees } = await obtenerAttendeesParaCalendar(
             evento?.participantes_evento ?? [],
+            evento?.creador_id,
           );
           await actualizarEventoCalendar(accessToken, evento.google_event_id, {
             titulo: datos.titulo,
@@ -696,6 +698,7 @@ export default function EventoDetalleScreen() {
 
       const { attendees, sinEmail } = await obtenerAttendeesParaCalendar(
         evento?.participantes_evento ?? [],
+        evento?.creador_id,
       );
 
       const resultado = await crearEventoCalendar(accessToken, {
@@ -892,12 +895,27 @@ export default function EventoDetalleScreen() {
               ) : null}
             </View>
             <TouchableOpacity
-              style={styles.calendarBtn}
+              style={[
+                styles.calendarBtn,
+                evento?.google_event_id && styles.calendarBtnSynced,
+              ]}
               onPress={agregarACalendar}
+              disabled={Boolean(evento?.google_event_id)}
             >
-              <Feather name="calendar" size={13} color="#FFFFFF" />
-              <Text style={styles.calendarBtnText}>
-                Agregar a Google Calendar
+              <Feather
+                name={evento?.google_event_id ? "check-circle" : "calendar"}
+                size={13}
+                color={evento?.google_event_id ? "#4CAF50" : "#FFFFFF"}
+              />
+              <Text
+                style={[
+                  styles.calendarBtnText,
+                  evento?.google_event_id && styles.calendarBtnTextSynced,
+                ]}
+              >
+                {evento?.google_event_id
+                  ? "Agregado a Google Calendar"
+                  : "Agregar a Google Calendar"}
               </Text>
             </TouchableOpacity>
           </View>

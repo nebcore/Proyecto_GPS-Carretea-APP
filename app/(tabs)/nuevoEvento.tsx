@@ -19,7 +19,10 @@ import {
 
 import { PantallaConTeclado } from "@/components/ui/PantallaConTeclado";
 import { createContactoConGrupos, getContactos } from "@/lib/api/contactos";
-import { createEventoConParticipantes } from "@/lib/api/eventos";
+import {
+  createEventoConParticipantes,
+  obtenerAttendeesParaCalendar,
+} from "@/lib/api/eventos";
 import { getGrupos } from "@/lib/api/grupos";
 import { obtenerGoogleToken } from "@/lib/api/usuarios";
 import { supabase } from "@/lib/supabase";
@@ -104,11 +107,24 @@ export default function NuevoEventoScreen() {
         try {
           const accessToken = await obtenerGoogleToken();
           if (accessToken) {
+            const participantesParaAttendees = participantesSeleccionados.map(
+              (p: any) => ({
+                contactos: {
+                  nombre: p.nombre,
+                  referencia_usuario_id: p.referencia_usuario_id,
+                },
+              }),
+            );
+            const { attendees, sinEmail } = await obtenerAttendeesParaCalendar(
+              participantesParaAttendees,
+            );
+
             const resultado = await crearEventoCalendar(accessToken, {
               titulo: nombre.trim(),
               descripcion: descripcion.trim(),
               fechaInicio: fecha.toISOString(),
               fechaFin: fecha.toISOString(),
+              attendees,
             });
             if (resultado?.id) {
               const { error } = await supabase
@@ -123,6 +139,12 @@ export default function NuevoEventoScreen() {
                   "El evento se creó y se agregó a Google Calendar, pero no quedó vinculado correctamente. Puedes intentar sincronizarlo de nuevo desde el detalle del evento.",
                 );
               }
+            }
+            if (sinEmail.length > 0) {
+              Alert.alert(
+                "Agregado con aviso",
+                `Evento agregado a Google Calendar. Estos participantes no tienen email y no recibieron invitación: ${sinEmail.join(", ")}`,
+              );
             }
           } else {
             Alert.alert(

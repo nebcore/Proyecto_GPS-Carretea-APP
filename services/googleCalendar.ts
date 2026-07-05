@@ -11,7 +11,7 @@ export const crearEventoCalendar = async (
   evento: Evento,
 ): Promise<any> => {
   const response = await fetch(
-    "https://www.googleapis.com/calendar/v3/calendars/primary/events",
+    "https://www.googleapis.com/calendar/v3/calendars/primary/events?sendUpdates=all",
     {
       method: "POST",
       headers: {
@@ -38,7 +38,7 @@ export const eliminarEventoCalendar = async (
   googleEventId: string,
 ): Promise<void> => {
   const response = await fetch(
-    `https://www.googleapis.com/calendar/v3/calendars/primary/events/${googleEventId}`,
+    `https://www.googleapis.com/calendar/v3/calendars/primary/events/${googleEventId}?sendUpdates=all`,
     {
       method: "DELETE",
       headers: {
@@ -74,7 +74,7 @@ export const actualizarEventoCalendar = async (
   evento: Evento,
 ): Promise<any> => {
   const response = await fetch(
-    `https://www.googleapis.com/calendar/v3/calendars/primary/events/${googleEventId}`,
+    `https://www.googleapis.com/calendar/v3/calendars/primary/events/${googleEventId}?sendUpdates=all`,
     {
       method: "PATCH",
       headers: {

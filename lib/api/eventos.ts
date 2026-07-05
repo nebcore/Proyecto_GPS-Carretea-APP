@@ -162,6 +162,7 @@ export const updateEvento = async (
 
 export const obtenerAttendeesParaCalendar = async (
   participantes: any[],
+  excluirUsuarioId?: string | null,
 ): Promise<{ attendees: { email: string }[]; sinEmail: string[] }> => {
   const idsUsuarios = participantes
     .map((p) => p.contactos?.referencia_usuario_id)
@@ -185,6 +186,10 @@ export const obtenerAttendeesParaCalendar = async (
 
   for (const p of participantes) {
     const refId = p.contactos?.referencia_usuario_id;
+    if (excluirUsuarioId && refId === excluirUsuarioId) {
+      continue;
+    }
+
     const email = refId ? emailsPorUsuarioId[refId] : null;
     if (email) {
       attendees.push({ email });
