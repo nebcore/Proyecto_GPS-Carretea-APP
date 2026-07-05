@@ -3,28 +3,28 @@ import Feather from "@expo/vector-icons/Feather";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import * as Contacts from "expo-contacts";
 import { useFocusEffect } from "expo-router";
-import React, { useCallback, useState } from "react";
+import React, { useCallback, useRef, useState } from "react";
 import {
-    KeyboardAvoidingView,
-    Modal,
-    Platform,
-    ScrollView,
-    StyleSheet,
-    Text,
-    TextInput,
-    TouchableOpacity,
-    View,
+  ActivityIndicator,
+  KeyboardAvoidingView,
+  Modal,
+  Platform,
+  ScrollView,
+  StyleSheet,
+  Text,
+  TextInput,
+  TouchableOpacity,
+  View,
 } from "react-native";
 import { GestureHandlerRootView } from "react-native-gesture-handler";
 
-import { PantallaConTeclado } from "@/components/ui/PantallaConTeclado";
-
 import {
-    createContactoConGrupos,
-    deleteContacto,
-    deleteContactos,
-    getContactos,
-    updateContactoConGrupos,
+  buscarUsuarioPorTelefono,
+  createContactoConGrupos,
+  deleteContacto,
+  deleteContactos,
+  getContactos,
+  updateContactoConGrupos,
 } from "@/lib/api/contactos";
 import { createGrupo, deleteGrupo, getGrupos } from "@/lib/api/grupos";
 
@@ -68,14 +68,31 @@ export default function AgendaScreen() {
   const [contactosSeleccionados, setContactosSeleccionados] = useState<
     string[]
   >([]);
+  const [menuFiltroVisible, setMenuFiltroVisible] = useState(false);
+  const [gruposFiltro, setGruposFiltro] = useState<string[]>([]);
+  const [soloVinculados, setSoloVinculados] = useState(false);
+
+  const [modalImportarVisible, setModalImportarVisible] = useState(false);
+  const [contactosParaImportar, setContactosParaImportar] = useState<
+    Contacts.Contact[]
+  >([]);
+  const [soloUsuariosCarretea, setSoloUsuariosCarretea] = useState(false);
+  const [importando, setImportando] = useState(false);
+  const [progresoImportacion, setProgresoImportacion] = useState({
+    actual: 0,
+    total: 0,
+  });
+
+  const listaScrollRef = useRef<ScrollView>(null);
+  const offsetsPorLetra = useRef<Record<string, number>>({});
 
   // --- QUERIES ---
-  const { data: contactos = [] } = useQuery({
+  const { data: contactos = [], isLoading: loadingContactos } = useQuery({
     queryKey: ["contactos"],
     queryFn: getContactos,
   });
 
-  const { data: grupos = [] } = useQuery({
+  const { data: grupos = [], isLoading: loadingGrupos } = useQuery({
     queryKey: ["grupos"],
     queryFn: getGrupos,
   });
@@ -166,7 +183,9 @@ export default function AgendaScreen() {
       setNuevoNombreGrupo("");
       setIsCreatingGroup(false);
     },
-    onError: (error) => {},
+    onError: (error: any) => {
+      Alert.alert("Error", error?.message ?? "No se pudo crear el grupo.");
+    },
   });
 
   const borrarGrupoMutation = useMutation({
@@ -179,6 +198,18 @@ export default function AgendaScreen() {
     setGruposSeleccionados((prev) =>
       prev.includes(id) ? prev.filter((g) => g !== id) : [...prev, id],
     );
+  };
+
+  const toggleGrupoFiltro = (id: string) => {
+    setGruposFiltro((prev) =>
+      prev.includes(id) ? prev.filter((g) => g !== id) : [...prev, id],
+    );
+  };
+
+  const irALetra = (letra: string) => {
+    const offset = offsetsPorLetra.current[letra];
+    if (offset === undefined) return;
+    listaScrollRef.current?.scrollTo({ y: offset, animated: true });
   };
 
   const agregarContacto = () => {
@@ -264,6 +295,14 @@ export default function AgendaScreen() {
     );
   };
 
+  const toggleSeleccionarTodos = () => {
+    const idsVisibles = contactosFiltrados.map((c: any) => c.id);
+    const todosSeleccionados =
+      idsVisibles.length > 0 &&
+      idsVisibles.every((id: string) => contactosSeleccionados.includes(id));
+    setContactosSeleccionados(todosSeleccionados ? [] : idsVisibles);
+  };
+
   const borrarContactosSeleccionados = () => {
     if (contactosSeleccionados.length === 0) return setModoSeleccion(false);
     Alert.alert(
@@ -280,7 +319,7 @@ export default function AgendaScreen() {
     );
   };
 
-  const importarContactosNativos = async () => {
+  const prepararImportacion = async () => {
     const { status } = await Contacts.requestPermissionsAsync();
     if (status !== "granted") {
       Alert.alert("Aviso", "Permiso denegado para leer contactos.");
@@ -308,39 +347,97 @@ export default function AgendaScreen() {
       return;
     }
 
-    Alert.alert(
-      "Importar Contactos",
-      `Se importarán ${nuevos.length} contactos nuevos.`,
-      [
-        { text: "Cancelar", style: "cancel" },
-        {
-          text: "Importar",
-          onPress: async () => {
-            for (const c of nuevos) {
-              const tel = c.phoneNumbers?.[0]?.number?.replace(/\s/g, "") || "";
-              await createContactoConGrupos(c.name!, tel, []);
-            }
-            queryClient.invalidateQueries({ queryKey: ["contactos"] });
-            Alert.alert("Listo", `${nuevos.length} contactos importados.`);
-          },
-        },
-      ],
-    );
+    setContactosParaImportar(nuevos);
+    setSoloUsuariosCarretea(false);
+    setModalImportarVisible(true);
   };
 
-  const confirmarImportacion = () => {
-    Alert.alert(
-      "Importar Contactos",
-      "¿Deseas sincronizar los contactos de tu teléfono con la agenda?",
-      [
-        { text: "Cancelar", style: "cancel" },
-        { text: "Sí, importar", onPress: importarContactosNativos },
-      ],
-    );
+  const cancelarImportacion = () => {
+    if (importando) return;
+    setModalImportarVisible(false);
+    setContactosParaImportar([]);
   };
 
-  const contactosFiltrados = contactos.filter((c: any) =>
-    c.nombre.toLowerCase().includes(busqueda.toLowerCase()),
+  const ejecutarImportacion = async () => {
+    setImportando(true);
+    setProgresoImportacion({ actual: 0, total: contactosParaImportar.length });
+
+    let importados = 0;
+    let omitidos = 0;
+    let fallidos = 0;
+
+    for (let i = 0; i < contactosParaImportar.length; i++) {
+      const c = contactosParaImportar[i];
+      const tel = c.phoneNumbers?.[0]?.number?.replace(/\s/g, "") || "";
+      try {
+        if (soloUsuariosCarretea) {
+          const { usuarioId } = await buscarUsuarioPorTelefono(tel);
+          if (!usuarioId) {
+            omitidos++;
+            setProgresoImportacion({
+              actual: i + 1,
+              total: contactosParaImportar.length,
+            });
+            continue;
+          }
+        }
+        await createContactoConGrupos(c.name!, tel, []);
+        importados++;
+      } catch {
+        fallidos++;
+      }
+      setProgresoImportacion({
+        actual: i + 1,
+        total: contactosParaImportar.length,
+      });
+    }
+
+    queryClient.invalidateQueries({ queryKey: ["contactos"] });
+    setImportando(false);
+    setModalImportarVisible(false);
+    setContactosParaImportar([]);
+
+    if (fallidos === 0 && omitidos === 0) {
+      Alert.alert("Listo", `${importados} contactos importados.`);
+    } else {
+      const detalle = [
+        omitidos > 0 && `${omitidos} omitidos (sin cuenta en Carretea)`,
+        fallidos > 0 && `${fallidos} fallaron`,
+      ]
+        .filter(Boolean)
+        .join(", ");
+      Alert.alert(
+        "Importación finalizada",
+        `Se importaron ${importados} contactos. ${detalle}.`,
+      );
+    }
+  };
+
+  const contactosFiltrados = contactos.filter((c: any) => {
+    const coincideBusqueda = c.nombre
+      .toLowerCase()
+      .includes(busqueda.toLowerCase());
+    const coincideGrupo =
+      gruposFiltro.length === 0 ||
+      c.gruposAsignados?.some((g: any) => gruposFiltro.includes(g.id));
+    const coincideVinculado =
+      !soloVinculados || Boolean(c.referencia_usuario_id);
+    return coincideBusqueda && coincideGrupo && coincideVinculado;
+  });
+
+  const filtrosActivos = gruposFiltro.length + (soloVinculados ? 1 : 0);
+
+  const todosSeleccionados =
+    contactosFiltrados.length > 0 &&
+    contactosFiltrados.every((c: any) => contactosSeleccionados.includes(c.id));
+
+  const primeraLetraDe = (nombre: string) => {
+    const letra = nombre.trim().charAt(0).toUpperCase();
+    return ALFABETO.includes(letra) ? letra : "#";
+  };
+
+  const letrasConContactos = new Set(
+    contactosFiltrados.map((c: any) => primeraLetraDe(c.nombre)),
   );
 
   const gruposDisponibles = grupos.filter(
@@ -350,185 +447,272 @@ export default function AgendaScreen() {
 
   return (
     <GestureHandlerRootView style={styles.root}>
-      <PantallaConTeclado style={styles.container}>
-          <View style={styles.formCard}>
-            {/* ENCABEZADO */}
-            <View style={styles.headerForm}>
-              <View style={styles.headerTextContainer}>
-                <Text style={styles.title}>Agenda</Text>
-                <Text style={styles.subtitle}>
-                  agregar contactos para gestionar y compartir eventos
-                </Text>
-              </View>
-              <View style={styles.iconCircle}>
-                <Feather name="hash" size={28} color="#FFFFFF" />
-              </View>
+      <View style={styles.container}>
+        <View style={styles.formCard}>
+          {/* ENCABEZADO */}
+          <View style={styles.headerForm}>
+            <View style={styles.headerTextContainer}>
+              <Text style={styles.title}>Agenda</Text>
+              <Text style={styles.subtitle}>
+                agregar contactos para gestionar y compartir eventos
+              </Text>
             </View>
+            <View style={styles.iconCircle}>
+              <Feather name="hash" size={28} color="#FFFFFF" />
+            </View>
+          </View>
 
-            {/* FILA AGREGAR CONTACTO */}
-            <View style={styles.addRow}>
-              <TouchableOpacity style={styles.addBtn} onPress={agregarContacto}>
-                <Feather name="plus" size={18} color="#FFFFFF" />
+          {/* FILA AGREGAR CONTACTO */}
+          <View style={styles.addRow}>
+            <TouchableOpacity style={styles.addBtn} onPress={agregarContacto}>
+              <Feather name="plus" size={18} color="#FFFFFF" />
+            </TouchableOpacity>
+            <View style={styles.miniInputContainer}>
+              <Feather
+                name="user"
+                size={12}
+                color="#AAAAAA"
+                style={styles.miniIcon}
+              />
+              <TextInput
+                style={styles.miniInput}
+                placeholder="Nombre"
+                placeholderTextColor="#666666"
+                value={nuevoNombre}
+                onChangeText={setNuevoNombre}
+              />
+            </View>
+            <View style={styles.miniInputContainer}>
+              <Feather
+                name="phone"
+                size={12}
+                color="#AAAAAA"
+                style={styles.miniIcon}
+              />
+              <TextInput
+                style={styles.miniInput}
+                placeholder="Número"
+                placeholderTextColor="#666666"
+                keyboardType="phone-pad"
+                value={nuevoNumero}
+                onChangeText={(text) => setNuevoNumero(formatearTelefono(text))}
+                maxLength={15}
+              />
+            </View>
+            <TouchableOpacity
+              style={styles.actionBtn}
+              onPress={() => setMenuGruposVisible(true)}
+            >
+              <Feather name="users" size={14} color="#AAAAAA" />
+            </TouchableOpacity>
+          </View>
+
+          {/* BARRA BÚSQUEDA / MODO SELECCIÓN */}
+          {modoSeleccion ? (
+            <View style={styles.selectionModeRow}>
+              <TouchableOpacity
+                style={styles.selectAllRow}
+                onPress={toggleSeleccionarTodos}
+              >
+                <View style={styles.checkbox}>
+                  {todosSeleccionados && (
+                    <Feather name="check" size={12} color="#FFFFFF" />
+                  )}
+                </View>
+                <Text style={styles.selectAllText}>Todos</Text>
               </TouchableOpacity>
-              <View style={styles.miniInputContainer}>
+              <Text style={styles.selectionCountText}>
+                {contactosSeleccionados.length} seleccionados
+              </Text>
+              <TouchableOpacity
+                style={styles.cancelSelectionBtn}
+                onPress={() => {
+                  setModoSeleccion(false);
+                  setContactosSeleccionados([]);
+                }}
+              >
+                <Text style={styles.cancelSelectionText}>Cancelar</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={styles.deleteSelectionBtn}
+                onPress={borrarContactosSeleccionados}
+              >
+                <Feather name="trash-2" size={20} color="#FF5555" />
+              </TouchableOpacity>
+            </View>
+          ) : (
+            <View style={styles.searchRow}>
+              <View style={styles.searchInputContainer}>
                 <Feather
-                  name="user"
-                  size={12}
+                  name="search"
+                  size={18}
                   color="#AAAAAA"
-                  style={styles.miniIcon}
+                  style={styles.searchIcon}
                 />
                 <TextInput
-                  style={styles.miniInput}
-                  placeholder="Nombre"
+                  style={styles.searchInput}
+                  placeholder="Buscar"
                   placeholderTextColor="#666666"
-                  value={nuevoNombre}
-                  onChangeText={setNuevoNombre}
-                />
-              </View>
-              <View style={styles.miniInputContainer}>
-                <Feather
-                  name="phone"
-                  size={12}
-                  color="#AAAAAA"
-                  style={styles.miniIcon}
-                />
-                <TextInput
-                  style={styles.miniInput}
-                  placeholder="Número"
-                  placeholderTextColor="#666666"
-                  keyboardType="phone-pad"
-                  value={nuevoNumero}
-                  onChangeText={(text) =>
-                    setNuevoNumero(formatearTelefono(text))
-                  }
-                  maxLength={15}
+                  value={busqueda}
+                  onChangeText={setBusqueda}
                 />
               </View>
               <TouchableOpacity
-                style={styles.actionBtn}
-                onPress={() => setMenuGruposVisible(true)}
+                style={styles.filterBtn}
+                onPress={() => setMenuFiltroVisible(true)}
               >
-                <Feather name="users" size={14} color="#AAAAAA" />
+                <Feather
+                  name="filter"
+                  size={20}
+                  color={filtrosActivos > 0 ? "#4CAF50" : "#AAAAAA"}
+                />
+                {filtrosActivos > 0 && (
+                  <View style={styles.filterBadge}>
+                    <Text style={styles.filterBadgeText}>{filtrosActivos}</Text>
+                  </View>
+                )}
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={styles.actionBtn}
+                onPress={() => setMenuOpcionesVisible(true)}
+              >
+                <Feather name="more-vertical" size={16} color="#AAAAAA" />
               </TouchableOpacity>
             </View>
+          )}
 
-            {/* BARRA BÚSQUEDA / MODO SELECCIÓN */}
-            {modoSeleccion ? (
-              <View style={styles.selectionModeRow}>
-                <TouchableOpacity
-                  style={styles.cancelSelectionBtn}
-                  onPress={() => {
-                    setModoSeleccion(false);
-                    setContactosSeleccionados([]);
-                  }}
-                >
-                  <Text style={styles.cancelSelectionText}>Cancelar</Text>
-                </TouchableOpacity>
-                <Text style={styles.selectionCountText}>
-                  {contactosSeleccionados.length} seleccionados
+          {/* LISTA + ÍNDICE A-Z */}
+          <View style={styles.listAndIndexContainer}>
+            {loadingContactos || loadingGrupos ? (
+              <View style={styles.estadoVacioContainer}>
+                <ActivityIndicator color="#FFFFFF" />
+              </View>
+            ) : contactosFiltrados.length === 0 ? (
+              <View style={styles.estadoVacioContainer}>
+                <Feather
+                  name={contactos.length === 0 ? "users" : "search"}
+                  size={22}
+                  color="rgba(255,255,255,0.35)"
+                />
+                <Text style={styles.estadoVacioText}>
+                  {contactos.length === 0
+                    ? "Todavía no tienes contactos en tu agenda."
+                    : "Sin resultados para tu búsqueda o filtro."}
                 </Text>
-                <TouchableOpacity
-                  style={styles.deleteSelectionBtn}
-                  onPress={borrarContactosSeleccionados}
-                >
-                  <Feather name="trash-2" size={20} color="#FF5555" />
-                </TouchableOpacity>
               </View>
             ) : (
-              <View style={styles.searchRow}>
-                <View style={styles.searchInputContainer}>
-                  <Feather
-                    name="search"
-                    size={18}
-                    color="#AAAAAA"
-                    style={styles.searchIcon}
-                  />
-                  <TextInput
-                    style={styles.searchInput}
-                    placeholder="Buscar"
-                    placeholderTextColor="#666666"
-                    value={busqueda}
-                    onChangeText={setBusqueda}
-                  />
-                </View>
-                <TouchableOpacity style={styles.filterBtn}>
-                  <Feather name="filter" size={20} color="#AAAAAA" />
-                </TouchableOpacity>
-                <TouchableOpacity
-                  style={styles.actionBtn}
-                  onPress={() => setMenuOpcionesVisible(true)}
+              <>
+                <ScrollView
+                  ref={listaScrollRef}
+                  style={styles.contactsColumn}
+                  showsVerticalScrollIndicator={false}
                 >
-                  <Feather name="more-vertical" size={16} color="#AAAAAA" />
-                </TouchableOpacity>
-              </View>
-            )}
-
-            {/* LISTA + ÍNDICE A-Z */}
-            <View style={styles.listAndIndexContainer}>
-              <View style={styles.contactsColumn}>
-                {contactosFiltrados.map((contacto: any) => (
-                  <View key={contacto.id} style={styles.contactRow}>
-                    <View style={styles.contactInfo}>
-                      {modoSeleccion && (
-                        <TouchableOpacity
-                          style={styles.multiSelectCheckbox}
-                          onPress={() => toggleSeleccionContacto(contacto.id)}
-                        >
-                          {contactosSeleccionados.includes(contacto.id) && (
-                            <Feather name="check" size={14} color="#FFFFFF" />
+                  {contactosFiltrados.map((contacto: any) => {
+                    const letra = primeraLetraDe(contacto.nombre);
+                    return (
+                      <View
+                        key={contacto.id}
+                        style={styles.contactRow}
+                        onLayout={(evento) => {
+                          if (offsetsPorLetra.current[letra] === undefined) {
+                            offsetsPorLetra.current[letra] =
+                              evento.nativeEvent.layout.y;
+                          }
+                        }}
+                      >
+                        <View style={styles.contactInfo}>
+                          {modoSeleccion && (
+                            <TouchableOpacity
+                              style={styles.multiSelectCheckbox}
+                              onPress={() =>
+                                toggleSeleccionContacto(contacto.id)
+                              }
+                            >
+                              {contactosSeleccionados.includes(contacto.id) && (
+                                <Feather
+                                  name="check"
+                                  size={14}
+                                  color="#FFFFFF"
+                                />
+                              )}
+                            </TouchableOpacity>
                           )}
-                        </TouchableOpacity>
-                      )}
-                      <View style={styles.contactAvatar} />
-                      <View style={styles.contactTextContainer}>
-                        <View style={styles.contactNameRow}>
-                          <Text style={styles.contactName}>
-                            {contacto.nombre}
-                          </Text>
-                          {contacto.gruposAsignados?.length > 0 && (
-                            <View style={styles.miniTagsContainer}>
-                              {contacto.gruposAsignados.map((grupo: any) => (
-                                <View key={grupo.id} style={styles.miniTag}>
-                                  <Text style={styles.miniTagText}>
-                                    {grupo.nombre}
-                                  </Text>
+                          <View
+                            style={[
+                              styles.contactAvatar,
+                              contacto.referencia_usuario_id &&
+                                styles.contactAvatarVinculado,
+                            ]}
+                          />
+                          <View style={styles.contactTextContainer}>
+                            <View style={styles.contactNameRow}>
+                              <Text style={styles.contactName}>
+                                {contacto.nombre}
+                              </Text>
+                              {contacto.gruposAsignados?.length > 0 && (
+                                <View style={styles.miniTagsContainer}>
+                                  {contacto.gruposAsignados.map(
+                                    (grupo: any) => (
+                                      <View
+                                        key={grupo.id}
+                                        style={styles.miniTag}
+                                      >
+                                        <Text style={styles.miniTagText}>
+                                          {grupo.nombre}
+                                        </Text>
+                                      </View>
+                                    ),
+                                  )}
                                 </View>
-                              ))}
+                              )}
                             </View>
-                          )}
+                            {contacto.telefono ? (
+                              <Text style={styles.contactPhone}>
+                                {contacto.telefono}
+                              </Text>
+                            ) : (
+                              <Text style={styles.contactPhoneEmpty}>
+                                número (opcional)
+                              </Text>
+                            )}
+                          </View>
                         </View>
-                        {contacto.telefono ? (
-                          <Text style={styles.contactPhone}>
-                            {contacto.telefono}
-                          </Text>
-                        ) : (
-                          <Text style={styles.contactPhoneEmpty}>
-                            número (opcional)
-                          </Text>
+                        {!modoSeleccion && (
+                          <TouchableOpacity
+                            style={styles.editBtn}
+                            onPress={() => abrirModalEditar(contacto)}
+                          >
+                            <Feather name="edit-2" size={16} color="#FFFFFF" />
+                          </TouchableOpacity>
                         )}
                       </View>
-                    </View>
-                    {!modoSeleccion && (
-                      <TouchableOpacity
-                        style={styles.editBtn}
-                        onPress={() => abrirModalEditar(contacto)}
+                    );
+                  })}
+                </ScrollView>
+                <View style={styles.indexColumn}>
+                  {ALFABETO.map((letra) => (
+                    <TouchableOpacity
+                      key={letra}
+                      onPress={() => irALetra(letra)}
+                      hitSlop={{ top: 1, bottom: 1, left: 4, right: 4 }}
+                    >
+                      <Text
+                        style={[
+                          styles.indexLetter,
+                          !letrasConContactos.has(letra) &&
+                            styles.indexLetterVacia,
+                        ]}
                       >
-                        <Feather name="edit-2" size={16} color="#FFFFFF" />
-                      </TouchableOpacity>
-                    )}
-                  </View>
-                ))}
-              </View>
-              <View style={styles.indexColumn}>
-                {ALFABETO.map((letra) => (
-                  <Text key={letra} style={styles.indexLetter}>
-                    {letra}
-                  </Text>
-                ))}
-              </View>
-            </View>
+                        {letra}
+                      </Text>
+                    </TouchableOpacity>
+                  ))}
+                </View>
+              </>
+            )}
           </View>
-      </PantallaConTeclado>
+        </View>
+      </View>
 
       {/* MODAL GRUPOS */}
       <Modal visible={menuGruposVisible} transparent animationType="fade">
@@ -593,6 +777,121 @@ export default function AgendaScreen() {
             ))}
           </TouchableOpacity>
         </TouchableOpacity>
+      </Modal>
+
+      {/* MODAL FILTRO POR GRUPOS */}
+      <Modal visible={menuFiltroVisible} transparent animationType="fade">
+        <TouchableOpacity
+          style={styles.modalOverlay}
+          activeOpacity={1}
+          onPress={() => setMenuFiltroVisible(false)}
+        >
+          <TouchableOpacity activeOpacity={1} style={styles.groupDropdown}>
+            <View style={styles.filterHeaderRow}>
+              <Text style={styles.createGroupText}>Filtrar</Text>
+              {filtrosActivos > 0 && (
+                <TouchableOpacity
+                  onPress={() => {
+                    setGruposFiltro([]);
+                    setSoloVinculados(false);
+                  }}
+                >
+                  <Text style={styles.filterClearText}>Limpiar</Text>
+                </TouchableOpacity>
+              )}
+            </View>
+            <View style={styles.groupDivider} />
+            <TouchableOpacity
+              style={styles.groupCheckRow}
+              onPress={() => setSoloVinculados((prev) => !prev)}
+            >
+              <View style={styles.checkbox}>
+                {soloVinculados && (
+                  <Feather name="check" size={12} color="#FFFFFF" />
+                )}
+              </View>
+              <Text style={styles.groupText}>Agrupar por Vinculados</Text>
+            </TouchableOpacity>
+            <View style={styles.groupDivider} />
+            <Text style={styles.filtroGruposLabel}>Por grupo</Text>
+            {grupos.length === 0 ? (
+              <Text style={styles.noMoreGroupsText}>
+                Todavía no creaste grupos.
+              </Text>
+            ) : (
+              grupos.map((grupo: any) => (
+                <TouchableOpacity
+                  key={grupo.id}
+                  style={styles.groupCheckRow}
+                  onPress={() => toggleGrupoFiltro(grupo.id)}
+                >
+                  <View style={styles.checkbox}>
+                    {gruposFiltro.includes(grupo.id) && (
+                      <Feather name="check" size={12} color="#FFFFFF" />
+                    )}
+                  </View>
+                  <Text style={styles.groupText}>{grupo.nombre}</Text>
+                </TouchableOpacity>
+              ))
+            )}
+          </TouchableOpacity>
+        </TouchableOpacity>
+      </Modal>
+
+      {/* MODAL IMPORTAR CONTACTOS */}
+      <Modal
+        visible={modalImportarVisible}
+        transparent
+        animationType="fade"
+        onRequestClose={cancelarImportacion}
+      >
+        <View style={styles.modalOverlay}>
+          <View style={styles.importCard}>
+            <Text style={styles.editTitle}>Importar contactos</Text>
+            {importando ? (
+              <View style={styles.importProgresoContainer}>
+                <ActivityIndicator color="#FFFFFF" />
+                <Text style={styles.importProgresoText}>
+                  Importando {progresoImportacion.actual} de{" "}
+                  {progresoImportacion.total}...
+                </Text>
+              </View>
+            ) : (
+              <>
+                <Text style={styles.importSubtitle}>
+                  Se importarán {contactosParaImportar.length} contactos nuevos.
+                </Text>
+                <TouchableOpacity
+                  style={styles.importCheckboxRow}
+                  onPress={() => setSoloUsuariosCarretea((prev) => !prev)}
+                >
+                  <View style={styles.checkbox}>
+                    {soloUsuariosCarretea && (
+                      <Feather name="check" size={12} color="#FFFFFF" />
+                    )}
+                  </View>
+                  <Text style={styles.importCheckboxLabel}>
+                    Solo importar contactos usuarios de Carretea
+                  </Text>
+                </TouchableOpacity>
+                <View style={styles.importBotonesRow}>
+                  <TouchableOpacity
+                    style={styles.cancelSelectionBtn}
+                    onPress={cancelarImportacion}
+                  >
+                    <Text style={styles.cancelSelectionText}>Cancelar</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity
+                    style={styles.saveBtn}
+                    onPress={ejecutarImportacion}
+                  >
+                    <Text style={styles.saveBtnText}>Importar</Text>
+                  </TouchableOpacity>
+                </View>
+              </>
+            )}
+          </View>
+        </View>
       </Modal>
 
       {/* MODAL EDITAR CONTACTO */}
@@ -746,7 +1045,7 @@ export default function AgendaScreen() {
               style={styles.optionsRow}
               onPress={() => {
                 setMenuOpcionesVisible(false);
-                setTimeout(() => confirmarImportacion(), 300);
+                setTimeout(() => prepararImportacion(), 300);
               }}
             >
               <Feather
@@ -766,15 +1065,16 @@ export default function AgendaScreen() {
 
 const styles = StyleSheet.create({
   root: { flex: 1, backgroundColor: "transparent" },
-  container: { flex: 1, justifyContent: "center", padding: 20 },
+  container: { flex: 1, padding: 20 },
   formCard: {
+    flex: 1,
     backgroundColor: "rgba(25, 25, 25, 0.5)",
     borderRadius: 30,
     padding: 20,
     borderWidth: 1,
     borderColor: "rgba(255, 255, 255, 0.05)",
     marginTop: 20,
-    marginBottom: 40,
+    marginBottom: 20,
   },
   headerForm: {
     flexDirection: "row",
@@ -860,15 +1160,55 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
   },
+  filterBadge: {
+    position: "absolute",
+    top: 4,
+    right: 4,
+    minWidth: 15,
+    height: 15,
+    borderRadius: 8,
+    backgroundColor: "#4CAF50",
+    alignItems: "center",
+    justifyContent: "center",
+    paddingHorizontal: 3,
+  },
+  filterBadgeText: { color: "#FFFFFF", fontSize: 9, fontWeight: "bold" },
+  filterHeaderRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+  },
+  filterClearText: { color: "#4CAF50", fontSize: 12, fontWeight: "600" },
+  filtroGruposLabel: {
+    color: "rgba(255,255,255,0.45)",
+    fontSize: 11,
+    fontWeight: "600",
+    marginBottom: 4,
+  },
   listAndIndexContainer: {
+    flex: 1,
     flexDirection: "row",
     backgroundColor: "rgba(0, 0, 0, 0.3)",
     borderRadius: 15,
     padding: 15,
     borderWidth: 1,
     borderColor: "rgba(255, 255, 255, 0.05)",
+    minHeight: 120,
   },
   contactsColumn: { flex: 1, paddingRight: 10 },
+  estadoVacioContainer: {
+    flex: 1,
+    alignItems: "center",
+    justifyContent: "center",
+    paddingVertical: 30,
+    gap: 10,
+  },
+  estadoVacioText: {
+    color: "rgba(255,255,255,0.45)",
+    fontSize: 13,
+    textAlign: "center",
+    paddingHorizontal: 20,
+  },
   contactRow: {
     flexDirection: "row",
     justifyContent: "space-between",
@@ -884,6 +1224,10 @@ const styles = StyleSheet.create({
     borderRadius: 18,
     backgroundColor: "rgba(255, 255, 255, 0.2)",
     marginRight: 12,
+  },
+  contactAvatarVinculado: {
+    borderWidth: 2,
+    borderColor: "#4CAF50",
   },
   contactName: { color: "#FFFFFF", fontSize: 14, fontWeight: "600" },
   contactPhone: { color: "#AAAAAA", fontSize: 11, marginTop: 2 },
@@ -902,6 +1246,7 @@ const styles = StyleSheet.create({
     borderLeftColor: "rgba(255, 255, 255, 0.1)",
   },
   indexLetter: { color: "#AAAAAA", fontSize: 9, marginVertical: 1 },
+  indexLetterVacia: { color: "rgba(255,255,255,0.15)" },
   modalOverlay: {
     flex: 1,
     backgroundColor: "transparent",
@@ -1035,9 +1380,48 @@ const styles = StyleSheet.create({
     backgroundColor: "#FFFFFF",
     borderRadius: 12,
     paddingVertical: 12,
+    paddingHorizontal: 20,
     alignItems: "center",
   },
   saveBtnText: { color: "#000000", fontSize: 15, fontWeight: "bold" },
+  importCard: {
+    width: "85%",
+    backgroundColor: "rgba(25, 25, 25, 0.95)",
+    borderRadius: 20,
+    padding: 20,
+    borderWidth: 1,
+    borderColor: "rgba(255, 255, 255, 0.1)",
+  },
+  importSubtitle: {
+    color: "#AAAAAA",
+    fontSize: 13,
+    marginTop: 10,
+    marginBottom: 15,
+  },
+  importCheckboxRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    paddingVertical: 8,
+  },
+  importCheckboxLabel: {
+    color: "#FFFFFF",
+    fontSize: 14,
+    flexShrink: 1,
+  },
+  importBotonesRow: {
+    flexDirection: "row",
+    justifyContent: "flex-end",
+    alignItems: "center",
+    gap: 12,
+    marginTop: 20,
+  },
+  importProgresoContainer: {
+    alignItems: "center",
+    justifyContent: "center",
+    paddingVertical: 25,
+    gap: 12,
+  },
+  importProgresoText: { color: "#AAAAAA", fontSize: 13 },
   availableGroupsScroll: { marginBottom: 25, maxHeight: 40 },
   availableGroupBadge: {
     flexDirection: "row",
@@ -1130,5 +1514,7 @@ const styles = StyleSheet.create({
   cancelSelectionBtn: { paddingVertical: 5, paddingHorizontal: 10 },
   cancelSelectionText: { color: "#AAAAAA", fontSize: 14 },
   selectionCountText: { color: "#FFFFFF", fontSize: 14, fontWeight: "bold" },
+  selectAllRow: { flexDirection: "row", alignItems: "center" },
+  selectAllText: { color: "#AAAAAA", fontSize: 13 },
   deleteSelectionBtn: { padding: 5 },
 });
