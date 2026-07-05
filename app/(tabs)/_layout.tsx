@@ -1,16 +1,13 @@
 import { HapticTab } from "@/components/haptic-tab";
 import Header from "@/components/ui/Header";
 import Feather from "@expo/vector-icons/Feather";
-import { useNavigation } from "@react-navigation/native";
 import { router, Tabs } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 const HeaderConVolver = () => {
-  const navigation = useNavigation();
-
   const volver = () => {
-    if (navigation.canGoBack()) {
-      navigation.goBack();
+    if (router.canGoBack()) {
+      router.back();
       return;
     }
 
@@ -25,6 +22,7 @@ export default function TabLayout() {
 
   return (
     <Tabs
+      backBehavior="history"
       screenOptions={{
         header: () => <Header />,
         tabBarButton: HapticTab,
