@@ -34,11 +34,13 @@ export const useEventoRealtime = (eventoId: string) => {
       refrescarResumenes();
     };
 
-    // NUEVO: Función para refrescar el Feed del evento
+    // Función unificada para refrescar el Feed del evento y las notificaciones globales
     const refrescarFeedEvento = () => {
       queryClient.invalidateQueries({
         queryKey: ["notificaciones-evento", eventoId],
       });
+      queryClient.invalidateQueries({ queryKey: ["notificaciones"] });
+      queryClient.invalidateQueries({ queryKey: ["notificaciones-no-leidas"] });
     };
 
     const refrescarEventoCompleto = () => {
@@ -115,16 +117,14 @@ export const useEventoRealtime = (eventoId: string) => {
       .on(
         "postgres_changes",
         {
-          event: "INSERT",
+          event: "INSERT", // Mantenemos la optimización de tu rama (inmediatez)
           schema: "public",
           table: "notificaciones",
           filter: `evento_id=eq.${eventoId}`,
         },
         () => {
-          // Refrescamos inmediatamente el feed visual sin esperar
-          queryClient.invalidateQueries({
-            queryKey: ["notificaciones-evento", eventoId],
-          });
+          // Refrescamos inmediatamente el feed visual y contadores sin el delay de 500ms
+          refrescarFeedEvento();
         },
       )
       .subscribe();
