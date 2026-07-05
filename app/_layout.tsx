@@ -1,7 +1,6 @@
+import { Alert, AppAlertProvider } from "@/components/ui/AppAlert";
 import { registrarParaNotificacionesPush } from "@/lib/api/pushNotifications";
 import { useNotificationRouter } from "@/lib/hooks/useNotificationRouter";
-import { AppAlertProvider, Alert } from "@/components/ui/AppAlert";
-import { supabase } from "@/lib/supabase";
 import { useAppRealtime } from "@/lib/realtime/useAppRealtime";
 import { supabase } from "@/lib/supabase";
 import { useAuthStore } from "@/store/auth";
