@@ -1,3 +1,4 @@
+import { Alert } from "@/components/ui/AppAlert";
 import GlassCard from "@/components/ui/GlassCard";
 import Feather from "@expo/vector-icons/Feather";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
@@ -5,7 +6,6 @@ import { router } from "expo-router";
 import React, { useState } from "react";
 import {
   ActivityIndicator,
-  Alert,
   KeyboardAvoidingView,
   Modal,
   Platform,

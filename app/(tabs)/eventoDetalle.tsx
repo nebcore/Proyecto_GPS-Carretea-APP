@@ -5,6 +5,7 @@ import {
     obtenerPagosReportadosEvento,
     reportarPago,
 } from "@/lib/api/pagos";
+import { Alert } from "@/components/ui/AppAlert";
 import Feather from "@expo/vector-icons/Feather";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import * as ImagePicker from "expo-image-picker";
@@ -12,7 +13,6 @@ import { router, useLocalSearchParams } from "expo-router";
 import { useMemo, useState } from "react";
 import {
     ActivityIndicator,
-    Alert,
     Image,
     Modal,
     ScrollView,
