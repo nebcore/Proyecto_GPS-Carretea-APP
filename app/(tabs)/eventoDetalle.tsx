@@ -5,6 +5,7 @@ import {
     obtenerPagosReportadosEvento,
     reportarPago,
 } from "@/lib/api/pagos";
+import DateTimePicker from "@react-native-community/datetimepicker";
 import Feather from "@expo/vector-icons/Feather";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import * as ImagePicker from "expo-image-picker";
@@ -15,15 +16,24 @@ import {
     Alert,
     Image,
     Modal,
+    Platform,
     ScrollView,
     StyleSheet,
     Text,
+    TextInput,
     TouchableOpacity,
     View,
 } from "react-native";
 
 import GlassCard from "@/components/ui/GlassCard";
-import { actualizarEstadoEvento, getEvento } from "@/lib/api/eventos";
+import { getContactosParaInvitar } from "@/lib/api/contactos";
+import {
+  actualizarEstadoEvento,
+  eliminarParticipanteDelEvento,
+  getEvento,
+  invitarContactoAlEvento,
+  updateEvento,
+} from "@/lib/api/eventos";
 import {
   agregarComprobanteGasto,
   borrarGasto,
@@ -75,6 +85,14 @@ export default function EventoDetalleScreen() {
     useState(false);
   const [gastoSeleccionado, setGastoSeleccionado] = useState<any | null>(null);
   const [avisoPago, setAvisoPago] = useState<AvisoPago | null>(null);
+  const [modalEditarEventoVisible, setModalEditarEventoVisible] =
+    useState(false);
+  const [editNombre, setEditNombre] = useState("");
+  const [editDescripcion, setEditDescripcion] = useState("");
+  const [editUbicacion, setEditUbicacion] = useState("");
+  const [editFecha, setEditFecha] = useState(new Date());
+  const [showEditDatePicker, setShowEditDatePicker] = useState(false);
+  const [editModoFecha, setEditModoFecha] = useState<"date" | "time">("date");
   const queryClient = useQueryClient();
 
   const { data: evento, isLoading: loadingEvento } = useQuery({
@@ -95,6 +113,15 @@ export default function EventoDetalleScreen() {
       queryFn: () => obtenerParticipantesEvento(eventoId),
       enabled: Boolean(eventoId),
     });
+
+  const {
+    data: contactosParaInvitar = [],
+    isLoading: loadingContactosInvitar,
+  } = useQuery({
+    queryKey: ["contactos-invitar"],
+    queryFn: getContactosParaInvitar,
+    enabled: modalEditarEventoVisible,
+  });
 
   const { balances, deudas, detalleParticipantes } =
     useBalancesEvento(eventoId);
@@ -127,6 +154,9 @@ export default function EventoDetalleScreen() {
 
     return contacto.nombre ?? fallback;
   };
+
+  const yaEsParticipante = (contactoId: string) =>
+    participantes.some((p: any) => p.contacto_id === contactoId);
 
   const participantesPorId = useMemo(() => {
     const mapa = new Map<string, string>();
@@ -234,6 +264,80 @@ export default function EventoDetalleScreen() {
       );
     },
   });
+
+  const actualizarEventoMutation = useMutation({
+    mutationFn: () =>
+      updateEvento(eventoId, {
+        titulo: editNombre.trim(),
+        descripcion: editDescripcion.trim(),
+        ubicacion: editUbicacion.trim(),
+        fechaEvento: editFecha.toISOString(),
+      }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["evento", eventoId] });
+      queryClient.invalidateQueries({ queryKey: ["eventos"] });
+      setModalEditarEventoVisible(false);
+    },
+    onError: (error: any) => {
+      Alert.alert(
+        "Error",
+        error?.message ?? "No se pudo actualizar el evento.",
+      );
+    },
+  });
+
+  const invitarParticipanteMutation = useMutation({
+    mutationFn: (contactoId: string) =>
+      invitarContactoAlEvento(eventoId, contactoId),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["participantes", eventoId] });
+      queryClient.invalidateQueries({ queryKey: ["evento", eventoId] });
+      queryClient.invalidateQueries({ queryKey: ["eventos"] });
+    },
+    onError: (error: any) => {
+      Alert.alert("Error", error?.message ?? "No se pudo invitar al contacto.");
+    },
+  });
+
+  const eliminarParticipanteMutation = useMutation({
+    mutationFn: (contactoId: string) =>
+      eliminarParticipanteDelEvento(eventoId, contactoId),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["participantes", eventoId] });
+      queryClient.invalidateQueries({ queryKey: ["evento", eventoId] });
+      queryClient.invalidateQueries({ queryKey: ["eventos"] });
+    },
+    onError: (error: any) => {
+      Alert.alert(
+        "Error",
+        error?.message ?? "No se pudo quitar al participante.",
+      );
+    },
+  });
+
+  const abrirModalEditarEvento = () => {
+    if (!evento) return;
+    setEditNombre(evento.titulo ?? "");
+    setEditDescripcion(evento.descripcion ?? "");
+    setEditUbicacion(evento.ubicacion ?? "");
+    setEditFecha(evento.fecha_evento ? new Date(evento.fecha_evento) : new Date());
+    setModalEditarEventoVisible(true);
+  };
+
+  const cerrarModalEditarEvento = () => {
+    setModalEditarEventoVisible(false);
+  };
+
+  const confirmarQuitarParticipante = (contactoId: string, nombre: string) => {
+    Alert.alert("Quitar participante", `¿Quitar a ${nombre} del evento?`, [
+      { text: "Cancelar", style: "cancel" },
+      {
+        text: "Quitar",
+        style: "destructive",
+        onPress: () => eliminarParticipanteMutation.mutate(contactoId),
+      },
+    ]);
+  };
 
   const confirmarCambioEstado = () => {
     const finalizando = evento?.estado !== "finalizado";
@@ -647,53 +751,65 @@ export default function EventoDetalleScreen() {
                   {evento?.estado}
                 </Text>
               </View>
-              <TouchableOpacity>
-                <Feather
-                  name="edit-3"
-                  size={16}
-                  color="rgba(255,255,255,0.5)"
-                />
-              </TouchableOpacity>
             </View>
             {evento?.descripcion ? (
               <Text style={styles.eventoDesc} numberOfLines={2}>
                 {evento.descripcion}
               </Text>
             ) : null}
-            <View style={styles.infoPills}>
-              <View style={styles.pill}>
-                <Feather
-                  name="calendar"
-                  size={11}
-                  color="rgba(255,255,255,0.5)"
-                />
-                <Text style={styles.pillText}>
-                  {formatearFecha(evento?.fecha_evento)}
-                </Text>
-              </View>
-              <View style={styles.pill}>
-                <Feather name="users" size={11} color="rgba(255,255,255,0.5)" />
-                <Text style={styles.pillText}>
-                  {participantes.length} personas
-                </Text>
-              </View>
-              {esCreador ? (
-                <TouchableOpacity
-                  style={styles.pill}
-                  onPress={confirmarCambioEstado}
-                  disabled={actualizarEstadoMutation.isPending}
-                >
+            <View style={styles.infoPillsWrap}>
+              <View style={styles.infoPills}>
+                <View style={styles.pill}>
                   <Feather
-                    name={evento?.estado === "finalizado" ? "rotate-ccw" : "check-circle"}
+                    name="calendar"
                     size={11}
                     color="rgba(255,255,255,0.5)"
                   />
                   <Text style={styles.pillText}>
-                    {evento?.estado === "finalizado"
-                      ? "Reabrir evento"
-                      : "Finalizar evento"}
+                    {formatearFecha(evento?.fecha_evento)}
                   </Text>
-                </TouchableOpacity>
+                </View>
+                <View style={styles.pill}>
+                  <Feather
+                    name="users"
+                    size={11}
+                    color="rgba(255,255,255,0.5)"
+                  />
+                  <Text style={styles.pillText}>
+                    {participantes.length} personas
+                  </Text>
+                </View>
+              </View>
+              {esCreador ? (
+                <View style={styles.infoPills}>
+                  <TouchableOpacity
+                    style={[styles.pill, styles.pillBoton]}
+                    onPress={abrirModalEditarEvento}
+                  >
+                    <Feather
+                      name="edit-3"
+                      size={11}
+                      color="rgba(255,255,255,0.5)"
+                    />
+                    <Text style={styles.pillText}>Editar</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity
+                    style={[styles.pill, styles.pillBoton]}
+                    onPress={confirmarCambioEstado}
+                    disabled={actualizarEstadoMutation.isPending}
+                  >
+                    <Feather
+                      name={evento?.estado === "finalizado" ? "rotate-ccw" : "check-circle"}
+                      size={11}
+                      color="rgba(255,255,255,0.5)"
+                    />
+                    <Text style={styles.pillText}>
+                      {evento?.estado === "finalizado"
+                        ? "Reabrir evento"
+                        : "Finalizar evento"}
+                    </Text>
+                  </TouchableOpacity>
+                </View>
               ) : null}
             </View>
           </View>
@@ -1365,6 +1481,201 @@ export default function EventoDetalleScreen() {
           </View>
         </View>
       </Modal>
+
+      <Modal
+        visible={modalEditarEventoVisible}
+        transparent
+        animationType="slide"
+        onRequestClose={cerrarModalEditarEvento}
+      >
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalCard}>
+            <View style={styles.modalHeader}>
+              <Text style={styles.modalTitulo}>Editar evento</Text>
+              <TouchableOpacity
+                style={styles.modalClose}
+                onPress={cerrarModalEditarEvento}
+                disabled={actualizarEventoMutation.isPending}
+              >
+                <Feather name="x" size={20} color="#FFFFFF" />
+              </TouchableOpacity>
+            </View>
+
+            <ScrollView showsVerticalScrollIndicator={false}>
+              <Text style={styles.modalLabel}>Nombre</Text>
+              <View style={styles.editarInputGroup}>
+                <Feather
+                  name="edit-3"
+                  size={16}
+                  color="#AAAAAA"
+                  style={styles.editarIcon}
+                />
+                <TextInput
+                  style={styles.editarInput}
+                  value={editNombre}
+                  onChangeText={setEditNombre}
+                  placeholder="Nombre del evento"
+                  placeholderTextColor="#666666"
+                  maxLength={50}
+                />
+              </View>
+
+              <Text style={styles.modalLabel}>Descripción</Text>
+              <View
+                style={[
+                  styles.editarInputGroup,
+                  styles.editarInputGroupMultiline,
+                ]}
+              >
+                <TextInput
+                  style={[styles.editarInput, styles.editarInputMultiline]}
+                  value={editDescripcion}
+                  onChangeText={setEditDescripcion}
+                  placeholder="Detalles adicionales sobre el evento"
+                  placeholderTextColor="#666666"
+                  multiline
+                  maxLength={200}
+                />
+              </View>
+
+              <Text style={styles.modalLabel}>Ubicación</Text>
+              <View style={styles.editarInputGroup}>
+                <Feather
+                  name="navigation"
+                  size={16}
+                  color="#AAAAAA"
+                  style={styles.editarIcon}
+                />
+                <TextInput
+                  style={styles.editarInput}
+                  value={editUbicacion}
+                  onChangeText={setEditUbicacion}
+                  placeholder="Ubicación (opcional)"
+                  placeholderTextColor="#666666"
+                  maxLength={100}
+                />
+              </View>
+
+              <Text style={styles.modalLabel}>Fecha y hora</Text>
+              <View style={styles.editarDateRow}>
+                <TouchableOpacity
+                  style={styles.editarDateBtn}
+                  onPress={() => {
+                    setEditModoFecha("date");
+                    setShowEditDatePicker(true);
+                  }}
+                >
+                  <Feather name="calendar" size={16} color="#AAAAAA" />
+                  <Text style={styles.editarDateBtnText}>
+                    {editFecha.toLocaleDateString("es-CL")}
+                  </Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={styles.editarDateBtn}
+                  onPress={() => {
+                    setEditModoFecha("time");
+                    setShowEditDatePicker(true);
+                  }}
+                >
+                  <Feather name="clock" size={16} color="#AAAAAA" />
+                  <Text style={styles.editarDateBtnText}>
+                    {editFecha.toLocaleTimeString("es-CL", {
+                      hour: "2-digit",
+                      minute: "2-digit",
+                    })}
+                  </Text>
+                </TouchableOpacity>
+              </View>
+              {showEditDatePicker && (
+                <DateTimePicker
+                  value={editFecha}
+                  mode={editModoFecha}
+                  is24Hour={false}
+                  display="default"
+                  onChange={(_, selected) => {
+                    setShowEditDatePicker(Platform.OS === "ios");
+                    if (selected) setEditFecha(selected);
+                  }}
+                />
+              )}
+
+              <Text style={[styles.modalLabel, styles.editarSeccion]}>
+                Participantes ({participantes.length})
+              </Text>
+              {participantes.map((p: any) => {
+                const nombre = obtenerNombreContacto(p.contactos);
+                const esCreadorFila = p.rol === "creador";
+                return (
+                  <View key={p.contacto_id} style={styles.editarParticipanteRow}>
+                    <Text style={styles.editarParticipanteNombre}>
+                      {nombre}
+                    </Text>
+                    {esCreadorFila ? (
+                      <Text style={styles.editarParticipanteCreadorTag}>
+                        Organizador
+                      </Text>
+                    ) : (
+                      <TouchableOpacity
+                        onPress={() =>
+                          confirmarQuitarParticipante(p.contacto_id, nombre)
+                        }
+                        disabled={eliminarParticipanteMutation.isPending}
+                      >
+                        <Feather name="x" size={18} color="#FF6B6B" />
+                      </TouchableOpacity>
+                    )}
+                  </View>
+                );
+              })}
+
+              <Text style={[styles.modalLabel, styles.editarSeccion]}>
+                Agregar participante
+              </Text>
+              {loadingContactosInvitar ? (
+                <ActivityIndicator color="#FFFFFF" style={{ marginTop: 10 }} />
+              ) : (
+                contactosParaInvitar
+                  .filter((c: any) => !yaEsParticipante(c.id))
+                  .map((c: any) => (
+                    <TouchableOpacity
+                      key={c.id}
+                      style={styles.editarAgregarRow}
+                      onPress={() => invitarParticipanteMutation.mutate(c.id)}
+                      disabled={invitarParticipanteMutation.isPending}
+                    >
+                      <Text style={styles.editarAgregarNombre}>
+                        {c.nombre}
+                      </Text>
+                      <Feather name="plus" size={18} color="#FFFFFF" />
+                    </TouchableOpacity>
+                  ))
+              )}
+
+              <TouchableOpacity
+                style={[
+                  styles.botonReportarFinal,
+                  styles.editarGuardarBtn,
+                  (actualizarEventoMutation.isPending ||
+                    !editNombre.trim()) &&
+                    styles.botonDeshabilitado,
+                ]}
+                onPress={() => actualizarEventoMutation.mutate()}
+                disabled={
+                  actualizarEventoMutation.isPending || !editNombre.trim()
+                }
+              >
+                {actualizarEventoMutation.isPending ? (
+                  <ActivityIndicator color="#000000" />
+                ) : (
+                  <Text style={styles.botonReportarFinalText}>
+                    Guardar cambios
+                  </Text>
+                )}
+              </TouchableOpacity>
+            </ScrollView>
+          </View>
+        </View>
+      </Modal>
     </View>
   );
 }
@@ -1398,7 +1709,7 @@ const styles = StyleSheet.create({
     color: "#FFFFFF",
     fontSize: 20,
     fontWeight: "bold",
-    flex: 1,
+    flexShrink: 1,
   },
   eventoDesc: {
     color: "#AAAAAA",
@@ -1423,6 +1734,9 @@ const styles = StyleSheet.create({
   estadoBadgeTextCerrado: {
     color: "rgba(255,255,255,0.6)",
   },
+  infoPillsWrap: {
+    gap: 8,
+  },
   infoPills: {
     flexDirection: "row",
     gap: 12,
@@ -1432,6 +1746,13 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
     gap: 4,
+  },
+  pillBoton: {
+    borderWidth: 1,
+    borderColor: "rgba(255,255,255,0.18)",
+    borderRadius: 8,
+    paddingHorizontal: 8,
+    paddingVertical: 3,
   },
   pillText: {
     color: "rgba(255,255,255,0.5)",
@@ -1614,6 +1935,89 @@ const styles = StyleSheet.create({
     color: "rgba(255,255,255,0.65)",
     fontSize: 13,
     fontWeight: "600",
+    marginBottom: 8,
+  },
+  editarSeccion: {
+    marginTop: 20,
+  },
+  editarInputGroup: {
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: "rgba(0,0,0,0.5)",
+    borderRadius: 10,
+    paddingHorizontal: 12,
+    height: 45,
+    borderWidth: 1,
+    borderColor: "rgba(255,255,255,0.1)",
+    marginBottom: 16,
+  },
+  editarInputGroupMultiline: {
+    height: 90,
+    alignItems: "flex-start",
+    paddingVertical: 10,
+  },
+  editarIcon: {
+    marginRight: 10,
+  },
+  editarInput: {
+    flex: 1,
+    color: "#FFFFFF",
+    fontSize: 15,
+  },
+  editarInputMultiline: {
+    height: "100%",
+    textAlignVertical: "top",
+  },
+  editarDateRow: {
+    flexDirection: "row",
+    gap: 10,
+    marginBottom: 16,
+  },
+  editarDateBtn: {
+    flex: 1,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+    backgroundColor: "rgba(0,0,0,0.5)",
+    borderRadius: 10,
+    paddingHorizontal: 12,
+    height: 45,
+    borderWidth: 1,
+    borderColor: "rgba(255,255,255,0.1)",
+  },
+  editarDateBtnText: {
+    color: "#FFFFFF",
+    fontSize: 14,
+  },
+  editarParticipanteRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    paddingVertical: 10,
+    borderBottomWidth: 1,
+    borderBottomColor: "rgba(255,255,255,0.08)",
+  },
+  editarParticipanteNombre: {
+    color: "#FFFFFF",
+    fontSize: 14,
+    fontWeight: "600",
+  },
+  editarParticipanteCreadorTag: {
+    color: "rgba(255,255,255,0.4)",
+    fontSize: 12,
+  },
+  editarAgregarRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    paddingVertical: 10,
+  },
+  editarAgregarNombre: {
+    color: "#FFFFFF",
+    fontSize: 14,
+  },
+  editarGuardarBtn: {
+    marginTop: 24,
     marginBottom: 8,
   },
   avisoPagoCard: {
