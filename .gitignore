@@ -43,3 +43,6 @@ app-example
 /ios
 /android
 .npm-cache/
+
+# Firebase
+google-services.json

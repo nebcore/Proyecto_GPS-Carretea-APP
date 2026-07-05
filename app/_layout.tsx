@@ -1,6 +1,8 @@
-import { AppAlertProvider, Alert } from "@/components/ui/AppAlert";
-import { supabase } from "@/lib/supabase";
+import { Alert, AppAlertProvider } from "@/components/ui/AppAlert";
+import { registrarParaNotificacionesPush } from "@/lib/api/pushNotifications";
+import { useNotificationRouter } from "@/lib/hooks/useNotificationRouter";
 import { useAppRealtime } from "@/lib/realtime/useAppRealtime";
+import { supabase } from "@/lib/supabase";
 import { useAuthStore } from "@/store/auth";
 import { DarkTheme, ThemeProvider } from "@react-navigation/native";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
@@ -48,7 +50,8 @@ function AuthGate() {
       if (registroEnProceso) return;
       const telefonoVerificado = session.user?.phone_confirmed_at;
       if (!telefonoVerificado) {
-        const telefono = session.user?.user_metadata?.telefono ?? session.user?.phone;
+        const telefono =
+          session.user?.user_metadata?.telefono ?? session.user?.phone;
         router.replace({
           pathname: "/(auth)/verificarTelefono",
           params: { telefono },
@@ -70,13 +73,24 @@ export const unstable_settings = {
 export default function RootLayout() {
   const initialize = useAuthStore((s) => s.initialize);
   const session = useAuthStore((s) => s.session);
+  const loading = useAuthStore((s) => s.loading);
   const miUsuarioId = session?.user?.id;
+
+  // Enganchamos la escucha de clics en notificaciones push pasando el estado de la sesión
+  useNotificationRouter(!!session, loading);
 
   useEscucharBroadcast(miUsuarioId);
 
   useEffect(() => {
     initialize();
   }, [initialize]);
+
+  // EFECTO DE REGISTRO PUSH
+  useEffect(() => {
+    if (miUsuarioId) {
+      registrarParaNotificacionesPush(miUsuarioId);
+    }
+  }, [miUsuarioId]);
 
   return (
     <QueryClientProvider client={queryClient}>
@@ -118,19 +132,19 @@ export function useEscucharBroadcast(miUsuarioId: string | undefined) {
   useEffect(() => {
     if (!miUsuarioId) return;
 
-    // 1. Nos conectamos a una "radio" global para toda la app
+    // Nos conectamos a una "radio" global para toda la app
     const canalGlobal = supabase.channel("radio_invitaciones");
 
     canalGlobal
       .on("broadcast", { event: "nueva_invitacion" }, (payload) => {
-        // 2. Revisamos si el mensaje es para nosotros
+        // Revisamos si el mensaje es para nosotros
         if (payload.payload.destinatario_id === miUsuarioId) {
           Alert.alert(payload.payload.titulo, payload.payload.mensaje);
         }
       })
       .subscribe();
 
-    // 3. Apagamos la radio si el usuario cierra sesión o sale
+    // Apagamos la radio si el usuario cierra sesión o sale
     return () => {
       supabase.removeChannel(canalGlobal);
     };
