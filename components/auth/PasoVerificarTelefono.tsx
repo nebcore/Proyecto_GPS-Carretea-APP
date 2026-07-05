@@ -1,8 +1,8 @@
+import { Alert } from "@/components/ui/AppAlert";
 import { supabase } from "@/lib/supabase";
 import { useEffect, useState } from "react";
 import {
   ActivityIndicator,
-  Alert,
   StyleSheet,
   Text,
   TextInput,
