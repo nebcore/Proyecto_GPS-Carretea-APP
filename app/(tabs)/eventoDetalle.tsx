@@ -793,7 +793,11 @@ export default function EventoDetalleScreen() {
                   disabled={actualizarEstadoMutation.isPending}
                 >
                   <Feather
-                    name={evento?.estado === "finalizado" ? "rotate-ccw" : "check-circle"}
+                    name={
+                      evento?.estado === "finalizado"
+                        ? "rotate-ccw"
+                        : "check-circle"
+                    }
                     size={11}
                     color="rgba(255,255,255,0.5)"
                   />
