@@ -2,8 +2,6 @@ import { useQueryClient } from "@tanstack/react-query";
 import { useEffect } from "react";
 import { supabase } from "../supabase";
 
-const INTERVALO_RESPALDO_MS = 8000;
-
 export const useAppRealtime = (usuarioId: string | undefined) => {
   const queryClient = useQueryClient();
 
@@ -26,18 +24,6 @@ export const useAppRealtime = (usuarioId: string | undefined) => {
       queryClient.invalidateQueries({ queryKey: ["perfil"] });
       queryClient.invalidateQueries({ queryKey: ["datos-bancarios"] });
       queryClient.invalidateQueries({ queryKey: ["estado-email"] });
-    };
-
-    const refrescarNotificaciones = () => {
-      queryClient.invalidateQueries({ queryKey: ["notificaciones"] });
-      queryClient.invalidateQueries({ queryKey: ["notificaciones-no-leidas"] });
-    };
-
-    const refrescarAppCompleta = () => {
-      refrescarEventos();
-      refrescarAgenda();
-      refrescarPerfil();
-      refrescarNotificaciones();
     };
 
     const channel = supabase
@@ -138,17 +124,13 @@ export const useAppRealtime = (usuarioId: string | undefined) => {
           table: "notificaciones",
           filter: `usuario_id=eq.${usuarioId}`,
         },
-        refrescarNotificaciones,
+        () => {
+          queryClient.invalidateQueries({ queryKey: ["notificaciones"] });
+        },
       )
       .subscribe();
 
-    const intervaloRespaldo = window.setInterval(
-      refrescarAppCompleta,
-      INTERVALO_RESPALDO_MS,
-    );
-
     return () => {
-      window.clearInterval(intervaloRespaldo);
       supabase.removeChannel(channel);
     };
   }, [queryClient, usuarioId]);

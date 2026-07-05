@@ -1,8 +1,7 @@
 import { supabase } from "@/lib/supabase";
 import { getOrCreateContactoPropio } from "./contactos";
-import { crearNotificacionEvento } from "./notificaciones";
 
-// OBTENER EVENTOS DEL USUARIO (como creador o participante)
+// 1. OBTENER EVENTOS DEL USUARIO (como creador o participante)
 export const getEventos = async () => {
   const { data: eventos, error: errorEventos } = await supabase
     .from("eventos")
@@ -29,7 +28,7 @@ export const getEventos = async () => {
   }));
 };
 
-// CREAR EVENTO CON PARTICIPANTES
+// 2. CREAR EVENTO CON PARTICIPANTES
 export const createEventoConParticipantes = async (
   titulo: string,
   descripcion: string,
@@ -78,7 +77,7 @@ export const createEventoConParticipantes = async (
   return nuevoEvento;
 };
 
-// INVITAR UN CONTACTO A UN EVENTO EXISTENTE
+// 3. INVITAR UN CONTACTO A UN EVENTO EXISTENTE
 export const invitarContactoAlEvento = async (
   eventoId: string,
   contactoId: string,
@@ -100,43 +99,16 @@ export const invitarContactoAlEvento = async (
     ]);
 
   if (error) throw error;
-
-  const { data: contacto } = await supabase
-    .from("contactos")
-    .select("nombre")
-    .eq("id", contactoId)
-    .single();
-
-  await crearNotificacionEvento({
-    eventoId,
-    tipo: "nuevo_participante",
-    titulo: "Nuevo integrante",
-    cuerpo: `${contacto?.nombre || "Un contacto"} ha sido agregado al evento.`,
-  });
 };
 
-// ELIMINAR UN PARTICIPANTE DE UN EVENTO
-export const eliminarParticipanteDelEvento = async (
-  eventoId: string,
-  contactoId: string,
-) => {
-  const { error } = await supabase
-    .from("participantes_evento")
-    .delete()
-    .eq("evento_id", eventoId)
-    .eq("contacto_id", contactoId);
-
-  if (error) throw error;
-};
-
-// ELIMINAR UN EVENTO
+// 4. ELIMINAR UN EVENTO
 export const deleteEvento = async (eventoId: string) => {
   const { error } = await supabase.from("eventos").delete().eq("id", eventoId);
 
   if (error) throw error;
 };
 
-// CAMBIAR ESTADO DE UN EVENTO (abierto/finalizado)
+// 5. CAMBIAR ESTADO DE UN EVENTO (abierto/finalizado)
 export const actualizarEstadoEvento = async (
   eventoId: string,
   estado: "abierto" | "finalizado",
@@ -144,29 +116,6 @@ export const actualizarEstadoEvento = async (
   const { error } = await supabase
     .from("eventos")
     .update({ estado })
-    .eq("id", eventoId);
-
-  if (error) throw error;
-};
-
-// ACTUALIZAR DATOS DE UN EVENTO
-export const updateEvento = async (
-  eventoId: string,
-  datos: {
-    titulo: string;
-    descripcion: string;
-    ubicacion: string;
-    fechaEvento: string;
-  },
-) => {
-  const { error } = await supabase
-    .from("eventos")
-    .update({
-      titulo: datos.titulo,
-      descripcion: datos.descripcion,
-      ubicacion: datos.ubicacion,
-      fecha_evento: datos.fechaEvento,
-    })
     .eq("id", eventoId);
 
   if (error) throw error;
@@ -181,7 +130,7 @@ export const getEvento = async (eventoId: string) => {
       participantes_evento(
         contacto_id,
         rol,
-        contactos(id, nombre)
+        contactos(id, nombre, referencia_usuario_id)
       )
     `,
     )
@@ -189,4 +138,65 @@ export const getEvento = async (eventoId: string) => {
     .single();
   if (error) throw error;
   return data;
+};
+
+export const updateEvento = async (
+  eventoId: string,
+  datos: {
+    titulo?: string;
+    descripcion?: string;
+    ubicacion?: string;
+    fecha_evento?: string;
+  },
+) => {
+  const { data, error } = await supabase
+    .from("eventos")
+    .update(datos)
+    .eq("id", eventoId)
+    .select()
+    .single();
+
+  if (error) throw error;
+  return data;
+};
+
+export const obtenerAttendeesParaCalendar = async (
+  participantes: any[],
+  excluirUsuarioId?: string | null,
+): Promise<{ attendees: { email: string }[]; sinEmail: string[] }> => {
+  const idsUsuarios = participantes
+    .map((p) => p.contactos?.referencia_usuario_id)
+    .filter(Boolean);
+
+  let emailsPorUsuarioId: Record<string, string> = {};
+
+  if (idsUsuarios.length > 0) {
+    const { data, error } = await supabase
+      .from("usuarios")
+      .select("id, email")
+      .in("id", idsUsuarios);
+    if (error) throw error;
+    emailsPorUsuarioId = Object.fromEntries(
+      (data ?? []).map((u: any) => [u.id, u.email]),
+    );
+  }
+
+  const attendees: { email: string }[] = [];
+  const sinEmail: string[] = [];
+
+  for (const p of participantes) {
+    const refId = p.contactos?.referencia_usuario_id;
+    if (excluirUsuarioId && refId === excluirUsuarioId) {
+      continue;
+    }
+
+    const email = refId ? emailsPorUsuarioId[refId] : null;
+    if (email) {
+      attendees.push({ email });
+    } else {
+      sinEmail.push(p.contactos?.nombre ?? "Participante");
+    }
+  }
+
+  return { attendees, sinEmail };
 };

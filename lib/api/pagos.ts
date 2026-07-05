@@ -1,5 +1,4 @@
 import { supabase } from "../supabase";
-import { crearNotificacionEvento } from "./notificaciones";
 
 const COMPROBANTES_BUCKET = "comprobantes";
 
@@ -152,20 +151,12 @@ export const reportarPago = async (
     await supabase.from("notificaciones").insert([
       {
         usuario_id: acreedor.referencia_usuario_id,
-        evento_id: eventoId,
         tipo: "pago_reportado",
         titulo: "¡Tienes un pago por confirmar!",
         cuerpo: `${deudor?.nombre || "Alguien"} ha reportado un pago de $${monto} en el evento "${evento?.titulo || ""}".`,
       },
     ]);
   }
-
-  await crearNotificacionEvento({
-    eventoId,
-    tipo: "feed_evento",
-    titulo: "Pago reportado",
-    cuerpo: `${deudor?.nombre || "Un participante"} reportó un pago de $${monto} en ${evento?.titulo || "el evento"}.`,
-  });
 
   return data;
 };
@@ -185,45 +176,6 @@ export const actualizarEstadoPago = async (
     .single();
 
   if (error) throw error;
-
-  const { data: pagoBase, error: errorPagoBase } = await supabase
-    .from("pagos")
-    .select("evento_id, monto, acreedor_id, deudor_id")
-    .eq("id", pagoId)
-    .single();
-
-  if (errorPagoBase) throw errorPagoBase;
-
-  const [{ data: evento }, { data: deudor }, { data: acreedor }] =
-    await Promise.all([
-      supabase
-        .from("eventos")
-        .select("titulo")
-        .eq("id", pagoBase.evento_id)
-        .single(),
-      supabase
-        .from("contactos")
-        .select("nombre")
-        .eq("id", pagoBase.deudor_id)
-        .single(),
-      supabase
-        .from("contactos")
-        .select("nombre")
-        .eq("id", pagoBase.acreedor_id)
-        .single(),
-    ]);
-
-  await crearNotificacionEvento({
-    eventoId: pagoBase.evento_id,
-    tipo: estado === "saldado" ? "pago_confirmado" : "pago_devuelto",
-    titulo:
-      estado === "saldado" ? "Pago confirmado" : "Pago devuelto a pendiente",
-    cuerpo:
-      estado === "saldado"
-        ? `${deudor?.nombre || "Un participante"} confirmó un pago de $${pagoBase.monto} a ${acreedor?.nombre || "otro participante"} en ${evento?.titulo || "el evento"}.`
-        : `${deudor?.nombre || "Un participante"} volvió a dejar pendiente un pago de $${pagoBase.monto} en ${evento?.titulo || "el evento"}.`,
-  });
-
   return data;
 };
 
