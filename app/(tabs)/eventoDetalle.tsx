@@ -1010,50 +1010,57 @@ export default function EventoDetalleScreen() {
                   Aún no hay gastos registrados.
                 </Text>
               ) : (
-                gastos.map((g: any) => {
-                  const pagador =
-                    g.gastos_pagadores?.[0]?.contactos?.nombre ?? "?";
-                  return (
-                    <TouchableOpacity
-                      key={g.id}
-                      style={styles.gastoCard}
-                      onPress={() => abrirOpcionesGasto(g)}
-                      disabled={agregarBoletaGastoMutation.isPending}
-                    >
-                      <View style={styles.avatar}>
-                        <Text style={styles.avatarText}>
-                          {pagador.substring(0, 1).toUpperCase()}
-                        </Text>
-                      </View>
-                      <View style={styles.cardInfo}>
-                        <Text style={styles.cardTitulo}>{g.descripcion}</Text>
-                        <Text style={styles.cardSub}>Pagado por {pagador}</Text>
-                        <View style={styles.fechaRow}>
-                          <Feather
-                            name="calendar"
-                            size={11}
-                            color="rgba(255,255,255,0.3)"
-                          />
-                          <Text style={styles.cardFecha}>
-                            {formatearFecha(g.fecha)}
+                <>
+                  <Text style={styles.listaHint}>
+                    Pulsa un gasto para ver sus boletas asociadas
+                  </Text>
+                  {gastos.map((g: any) => {
+                    const pagador =
+                      g.gastos_pagadores?.[0]?.contactos?.nombre ?? "?";
+                    return (
+                      <TouchableOpacity
+                        key={g.id}
+                        style={styles.gastoCard}
+                        onPress={() => abrirOpcionesGasto(g)}
+                        disabled={agregarBoletaGastoMutation.isPending}
+                      >
+                        <View style={styles.avatar}>
+                          <Text style={styles.avatarText}>
+                            {pagador.substring(0, 1).toUpperCase()}
                           </Text>
                         </View>
-                      </View>
-                      <Text style={styles.gastoMonto}>
-                        {formatearMonto(g.monto_total)}
-                      </Text>
-                      <TouchableOpacity
-                        style={styles.deleteButton}
-                        onPress={() =>
-                          confirmarBorradoGasto(g.id, g.descripcion)
-                        }
-                        disabled={borrarGastoMutation.isPending}
-                      >
-                        <Feather name="trash-2" size={17} color="#FF6B6B" />
+                        <View style={styles.cardInfo}>
+                          <Text style={styles.cardTitulo}>{g.descripcion}</Text>
+                          <Text style={styles.cardSub}>
+                            Pagado por {pagador}
+                          </Text>
+                          <View style={styles.fechaRow}>
+                            <Feather
+                              name="calendar"
+                              size={11}
+                              color="rgba(255,255,255,0.3)"
+                            />
+                            <Text style={styles.cardFecha}>
+                              {formatearFecha(g.fecha)}
+                            </Text>
+                          </View>
+                        </View>
+                        <Text style={styles.gastoMonto}>
+                          {formatearMonto(g.monto_total)}
+                        </Text>
+                        <TouchableOpacity
+                          style={styles.deleteButton}
+                          onPress={() =>
+                            confirmarBorradoGasto(g.id, g.descripcion)
+                          }
+                          disabled={borrarGastoMutation.isPending}
+                        >
+                          <Feather name="trash-2" size={17} color="#FF6B6B" />
+                        </TouchableOpacity>
                       </TouchableOpacity>
-                    </TouchableOpacity>
-                  );
-                })
+                    );
+                  })}
+                </>
               )}
             </>
           )}
@@ -1222,48 +1229,47 @@ export default function EventoDetalleScreen() {
               ) : participantes.length === 0 ? (
                 <Text style={styles.emptyText}>Sin participantes.</Text>
               ) : (
-                participantes.map((p: any) => {
-                  const balance = balances.find(
-                    (b) => b.contactoId === p.contacto_id,
-                  );
-                  const monto = balance?.balance ?? 0;
-                  const nombre = obtenerNombreContacto(p.contactos);
-                  return (
-                    <TouchableOpacity
-                      key={p.contacto_id}
-                      style={styles.gastoCard}
-                      onPress={() => setParticipanteBancarioSeleccionado(p)}
-                      activeOpacity={0.78}
-                    >
-                      <View style={styles.avatar}>
-                        <Text style={styles.avatarText}>
-                          {nombre.substring(0, 1).toUpperCase()}
-                        </Text>
-                      </View>
-                      <View style={styles.cardInfo}>
-                        <Text style={styles.cardTitulo}>{nombre}</Text>
-                        <Text style={styles.cardSub}>
-                          {monto >= 0 ? "Recibe" : "Debe"}
-                        </Text>
-                      </View>
-                      <Text
-                        style={[
-                          styles.gastoMonto,
-                          monto >= 0 ? styles.positivo : styles.negativo,
-                        ]}
+                <>
+                  <Text style={styles.listaHint}>
+                    Pulsa un participante para ver sus datos bancarios
+                  </Text>
+                  {participantes.map((p: any) => {
+                    const balance = balances.find(
+                      (b) => b.contactoId === p.contacto_id,
+                    );
+                    const monto = balance?.balance ?? 0;
+                    const nombre = obtenerNombreContacto(p.contactos);
+                    return (
+                      <TouchableOpacity
+                        key={p.contacto_id}
+                        style={styles.gastoCard}
+                        onPress={() => setParticipanteBancarioSeleccionado(p)}
+                        activeOpacity={0.78}
                       >
-                        {monto >= 0 ? "+" : ""}
-                        {formatearMonto(monto)}
-                      </Text>
-                      <Feather
-                        name="credit-card"
-                        size={18}
-                        color="rgba(255,255,255,0.35)"
-                        style={styles.participanteCardIcon}
-                      />
-                    </TouchableOpacity>
-                  );
-                })
+                        <View style={styles.avatar}>
+                          <Text style={styles.avatarText}>
+                            {nombre.substring(0, 1).toUpperCase()}
+                          </Text>
+                        </View>
+                        <View style={styles.cardInfo}>
+                          <Text style={styles.cardTitulo}>{nombre}</Text>
+                          <Text style={styles.cardSub}>
+                            {monto >= 0 ? "Recibe" : "Debe"}
+                          </Text>
+                        </View>
+                        <Text
+                          style={[
+                            styles.gastoMonto,
+                            monto >= 0 ? styles.positivo : styles.negativo,
+                          ]}
+                        >
+                          {monto >= 0 ? "+" : ""}
+                          {formatearMonto(monto)}
+                        </Text>
+                      </TouchableOpacity>
+                    );
+                  })}
+                </>
               )}
             </>
           )}
@@ -2222,8 +2228,12 @@ const styles = StyleSheet.create({
     fontSize: 15,
     fontWeight: "bold",
   },
-  participanteCardIcon: {
-    marginLeft: 10,
+  listaHint: {
+    color: "rgba(255,255,255,0.46)",
+    fontSize: 12,
+    textAlign: "center",
+    marginBottom: 10,
+    paddingHorizontal: 4,
   },
   deleteButton: {
     width: 36,
