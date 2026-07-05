@@ -1,10 +1,18 @@
+import Constants, { ExecutionEnvironment } from "expo-constants";
 import * as Device from "expo-device";
-import * as Notifications from "expo-notifications";
 import { Platform } from "react-native";
 import { supabase } from "../supabase";
 
+// `expo-notifications` dispara un error apenas se importa cuando la app
+// corre dentro de Expo Go (SDK 53+ ya no soporta push remoto ahí). Por eso
+// se carga de forma dinámica y solo fuera de Expo Go.
+const esExpoGo = Constants.executionEnvironment === ExecutionEnvironment.StoreClient;
+const Notifications = esExpoGo
+  ? null
+  : (require("expo-notifications") as typeof import("expo-notifications"));
+
 // Configura cómo reacciona la app si recibe una notificación estando abierta
-Notifications.setNotificationHandler({
+Notifications?.setNotificationHandler({
   handleNotification: async () => ({
     shouldShowAlert: true,
     shouldPlaySound: true,
@@ -15,6 +23,13 @@ Notifications.setNotificationHandler({
 });
 
 export async function registrarParaNotificacionesPush(usuarioId: string) {
+  if (!Notifications) {
+    console.log(
+      "Las notificaciones push no funcionan en Expo Go. Usa un development build.",
+    );
+    return;
+  }
+
   if (!Device.isDevice) {
     console.log(
       "Debes usar un dispositivo físico para probar las notificaciones push nativas.",

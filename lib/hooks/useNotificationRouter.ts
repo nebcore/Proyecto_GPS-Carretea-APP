@@ -1,6 +1,14 @@
-import * as Notifications from "expo-notifications";
+import Constants, { ExecutionEnvironment } from "expo-constants";
 import { useRouter } from "expo-router";
 import { useEffect } from "react";
+
+// Mismo motivo que en lib/api/pushNotifications.ts: `expo-notifications`
+// rompe apenas se importa dentro de Expo Go, así que se carga dinámicamente
+// y se evita por completo ahí.
+const esExpoGo = Constants.executionEnvironment === ExecutionEnvironment.StoreClient;
+const Notifications = esExpoGo
+  ? null
+  : (require("expo-notifications") as typeof import("expo-notifications"));
 
 export function useNotificationRouter(
   autenticado: boolean,
@@ -11,7 +19,7 @@ export function useNotificationRouter(
   useEffect(() => {
     // Si la autenticación aún se está cargando, esperamos.
     // Esto evita que intentemos navegar antes de que el AuthGate sepa si hay sesión.
-    if (cargandoAuth || !autenticado) return;
+    if (!Notifications || cargandoAuth || !autenticado) return;
 
     // --- La app está abierta o en segundo plano (Background/Foreground Clicks) ---
     const subscription = Notifications.addNotificationResponseReceivedListener(

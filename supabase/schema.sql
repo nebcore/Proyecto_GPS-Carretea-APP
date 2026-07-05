@@ -18,7 +18,7 @@ create table usuarios (
 
 create table datos_bancarios (
     id uuid primary key default gen_random_uuid(),
-    usuario_id uuid not null references usuarios(id) on delete cascade,
+    usuario_id uuid not null unique references usuarios(id) on delete cascade,
     banco text not null,
     tipo_cuenta text not null,
     numero_cuenta text not null,
