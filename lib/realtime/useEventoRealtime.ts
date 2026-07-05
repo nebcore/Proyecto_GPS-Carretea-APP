@@ -28,6 +28,14 @@ export const useEventoRealtime = (eventoId: string) => {
       refrescarResumenes();
     };
 
+    const refrescarFeedEvento = () => {
+      queryClient.invalidateQueries({
+        queryKey: ["notificaciones-evento", eventoId],
+      });
+      queryClient.invalidateQueries({ queryKey: ["notificaciones"] });
+      queryClient.invalidateQueries({ queryKey: ["notificaciones-no-leidas"] });
+    };
+
     const refrescarEvento = () => {
       queryClient.invalidateQueries({ queryKey: ["evento", eventoId] });
       queryClient.invalidateQueries({ queryKey: ["participantes", eventoId] });
@@ -38,6 +46,7 @@ export const useEventoRealtime = (eventoId: string) => {
       refrescarEvento();
       refrescarGastosEvento();
       refrescarPagosEvento();
+      refrescarFeedEvento();
     };
 
     const refrescarConEspera = () => {
@@ -101,6 +110,16 @@ export const useEventoRealtime = (eventoId: string) => {
           schema: "public",
           table: "eventos",
           filter: `id=eq.${eventoId}`,
+        },
+        refrescarConEspera,
+      )
+      .on(
+        "postgres_changes",
+        {
+          event: "*",
+          schema: "public",
+          table: "notificaciones",
+          filter: `evento_id=eq.${eventoId}`,
         },
         refrescarConEspera,
       )
