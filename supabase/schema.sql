@@ -18,7 +18,7 @@ create table usuarios (
 
 create table datos_bancarios (
     id uuid primary key default gen_random_uuid(),
-    usuario_id uuid not null references usuarios(id) on delete cascade,
+    usuario_id uuid not null unique references usuarios(id) on delete cascade,
     banco text not null,
     tipo_cuenta text not null,
     numero_cuenta text not null,
@@ -187,6 +187,20 @@ create policy "usuarios: buscar por telefono" on usuarios for select using (auth
 -- datos_bancarios: solo el dueño edita; acreedores con deuda activa pueden leer
 create policy "datos_bancarios: dueño gestiona" on datos_bancarios
     for all using (auth.uid() = usuario_id);
+
+create policy "datos_bancarios: participantes del evento leen" on datos_bancarios
+    for select using (
+    exists (
+        select 1
+        from participantes_evento pe_objetivo
+        join contactos c_objetivo on c_objetivo.id = pe_objetivo.contacto_id
+        where c_objetivo.referencia_usuario_id = datos_bancarios.usuario_id
+        and (
+            es_participante_evento(pe_objetivo.evento_id)
+            or es_creador_evento(pe_objetivo.evento_id)
+        )
+    )
+    );
 
 create policy "datos_bancarios: acreedor puede leer" on datos_bancarios
     for select using (
