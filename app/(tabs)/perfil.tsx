@@ -20,6 +20,7 @@ import {
   Modal,
   ScrollView,
   StyleSheet,
+  Switch,
   Text,
   TextInput,
   TouchableOpacity,
@@ -54,6 +55,34 @@ export default function PerfilScreen() {
   const [codigoEnviado, setCodigoEnviado] = useState(false);
   const [codigoEmail, setCodigoEmail] = useState("");
   const translateXEmail = useRef(new Animated.Value(width)).current;
+
+  // Estados para el panel de notificaciones
+  const [panelNotifVisible, setPanelNotifVisible] = useState(false);
+  const translateXNotif = useRef(new Animated.Value(width)).current;
+
+  // Preferencias (En un futuro las puedes guardar en Supabase o AsyncStorage)
+  const [prefNotif, setPrefNotif] = useState({
+    nuevosGastos: true,
+    pagosReportados: true,
+    recordatorios: true,
+  });
+
+  const abrirPanelNotif = () => {
+    setPanelNotifVisible(true);
+    Animated.timing(translateXNotif, {
+      toValue: 0,
+      duration: 260,
+      useNativeDriver: true,
+    }).start();
+  };
+
+  const cerrarPanelNotif = () => {
+    Animated.timing(translateXNotif, {
+      toValue: width,
+      duration: 220,
+      useNativeDriver: true,
+    }).start(() => setPanelNotifVisible(false));
+  };
 
   const [editandoBanco, setEditandoBanco] = useState(false);
   const [banco, setBanco] = useState("");
@@ -142,7 +171,8 @@ export default function PerfilScreen() {
       setEditandoBanco(false);
       Alert.alert("Guardado", "Datos bancarios actualizados.");
     },
-    onError: () => Alert.alert("Error", "No se pudieron guardar los datos bancarios."),
+    onError: () =>
+      Alert.alert("Error", "No se pudieron guardar los datos bancarios."),
   });
 
   const iniciarEdicionBanco = () => {
@@ -154,7 +184,12 @@ export default function PerfilScreen() {
   };
 
   const handleGuardarBanco = () => {
-    if (!banco.trim() || !tipoCuenta.trim() || !numeroCuenta.trim() || !rut.trim()) {
+    if (
+      !banco.trim() ||
+      !tipoCuenta.trim() ||
+      !numeroCuenta.trim() ||
+      !rut.trim()
+    ) {
       Alert.alert("Error", "Todos los campos bancarios son obligatorios.");
       return;
     }
@@ -336,15 +371,44 @@ export default function PerfilScreen() {
               {editandoBanco ? (
                 <>
                   {[
-                    { label: "Banco", value: banco, setter: setBanco, placeholder: "Ej: Banco Estado", icon: "credit-card" as const },
-                    { label: "Tipo de cuenta", value: tipoCuenta, setter: setTipoCuenta, placeholder: "Ej: Cuenta Vista", icon: "list" as const },
-                    { label: "Número de cuenta", value: numeroCuenta, setter: setNumeroCuenta, placeholder: "Ej: 12345678", icon: "hash" as const, keyboard: "numeric" as const },
-                    { label: "RUT", value: rut, setter: setRut, placeholder: "Ej: 12.345.678-9", icon: "user" as const },
+                    {
+                      label: "Banco",
+                      value: banco,
+                      setter: setBanco,
+                      placeholder: "Ej: Banco Estado",
+                      icon: "credit-card" as const,
+                    },
+                    {
+                      label: "Tipo de cuenta",
+                      value: tipoCuenta,
+                      setter: setTipoCuenta,
+                      placeholder: "Ej: Cuenta Vista",
+                      icon: "list" as const,
+                    },
+                    {
+                      label: "Número de cuenta",
+                      value: numeroCuenta,
+                      setter: setNumeroCuenta,
+                      placeholder: "Ej: 12345678",
+                      icon: "hash" as const,
+                      keyboard: "numeric" as const,
+                    },
+                    {
+                      label: "RUT",
+                      value: rut,
+                      setter: setRut,
+                      placeholder: "Ej: 12.345.678-9",
+                      icon: "user" as const,
+                    },
                   ].map((campo, i, arr) => (
                     <View key={campo.label}>
                       <View style={styles.campo}>
                         <View style={styles.campoIcon}>
-                          <Feather name={campo.icon} size={16} color="#AAAAAA" />
+                          <Feather
+                            name={campo.icon}
+                            size={16}
+                            color="#AAAAAA"
+                          />
                         </View>
                         <View style={styles.campoBody}>
                           <Text style={styles.campoLabel}>{campo.label}</Text>
@@ -388,15 +452,35 @@ export default function PerfilScreen() {
               ) : datosBancarios ? (
                 <>
                   {[
-                    { label: "Banco", valor: datosBancarios.banco, icon: "credit-card" as const },
-                    { label: "Tipo de cuenta", valor: datosBancarios.tipo_cuenta, icon: "list" as const },
-                    { label: "Número de cuenta", valor: datosBancarios.numero_cuenta, icon: "hash" as const },
-                    { label: "RUT", valor: datosBancarios.rut, icon: "user" as const },
+                    {
+                      label: "Banco",
+                      valor: datosBancarios.banco,
+                      icon: "credit-card" as const,
+                    },
+                    {
+                      label: "Tipo de cuenta",
+                      valor: datosBancarios.tipo_cuenta,
+                      icon: "list" as const,
+                    },
+                    {
+                      label: "Número de cuenta",
+                      valor: datosBancarios.numero_cuenta,
+                      icon: "hash" as const,
+                    },
+                    {
+                      label: "RUT",
+                      valor: datosBancarios.rut,
+                      icon: "user" as const,
+                    },
                   ].map((campo, i, arr) => (
                     <View key={campo.label}>
                       <View style={styles.campo}>
                         <View style={styles.campoIcon}>
-                          <Feather name={campo.icon} size={16} color="#AAAAAA" />
+                          <Feather
+                            name={campo.icon}
+                            size={16}
+                            color="#AAAAAA"
+                          />
                         </View>
                         <View style={styles.campoBody}>
                           <Text style={styles.campoLabel}>{campo.label}</Text>
@@ -437,7 +521,10 @@ export default function PerfilScreen() {
                   )}
                 </TouchableOpacity>
                 <View style={styles.divisor} />
-                <TouchableOpacity style={styles.settingRow}>
+                <TouchableOpacity
+                  style={styles.settingRow}
+                  onPress={abrirPanelNotif}
+                >
                   <View style={styles.settingLeft}>
                     <Feather name="bell" size={18} color="#AAAAAA" />
                     <Text style={styles.settingLabel}>Notificaciones</Text>
@@ -553,6 +640,92 @@ export default function PerfilScreen() {
                 </TouchableOpacity>
               </>
             )}
+          </Animated.View>
+        </View>
+      </Modal>
+      {/* MODAL PREFERENCIAS DE NOTIFICACIONES */}
+      <Modal
+        visible={panelNotifVisible}
+        transparent
+        animationType="fade"
+        onRequestClose={cerrarPanelNotif}
+      >
+        <View style={styles.overlayEmail}>
+          <TouchableOpacity
+            style={StyleSheet.absoluteFill}
+            activeOpacity={1}
+            onPress={cerrarPanelNotif}
+          />
+          <Animated.View
+            style={[
+              styles.panelEmail,
+              { transform: [{ translateX: translateXNotif }] },
+            ]}
+          >
+            <View style={styles.panelEmailHeader}>
+              <Text style={styles.cardTitle}>Notificaciones</Text>
+              <TouchableOpacity onPress={cerrarPanelNotif}>
+                <Feather name="x" size={22} color="#AAAAAA" />
+              </TouchableOpacity>
+            </View>
+
+            <Text style={styles.panelEmailTexto}>
+              Elige qué alertas quieres recibir en tu teléfono.
+            </Text>
+
+            {/* SWITCH 1 */}
+            <View style={styles.switchRow}>
+              <View style={styles.switchInfo}>
+                <Text style={styles.switchTitle}>Nuevos Gastos</Text>
+                <Text style={styles.switchSub}>
+                  Cuando alguien anota una cuenta nueva.
+                </Text>
+              </View>
+              <Switch
+                value={prefNotif.nuevosGastos}
+                onValueChange={(val) =>
+                  setPrefNotif({ ...prefNotif, nuevosGastos: val })
+                }
+                trackColor={{ false: "#333", true: "#4CAF50" }}
+                thumbColor={prefNotif.nuevosGastos ? "#fff" : "#888"}
+              />
+            </View>
+
+            {/* SWITCH 2 */}
+            <View style={styles.switchRow}>
+              <View style={styles.switchInfo}>
+                <Text style={styles.switchTitle}>Pagos y Confirmaciones</Text>
+                <Text style={styles.switchSub}>
+                  Cuando te transfieren o confirman un pago.
+                </Text>
+              </View>
+              <Switch
+                value={prefNotif.pagosReportados}
+                onValueChange={(val) =>
+                  setPrefNotif({ ...prefNotif, pagosReportados: val })
+                }
+                trackColor={{ false: "#333", true: "#4CAF50" }}
+                thumbColor={prefNotif.pagosReportados ? "#fff" : "#888"}
+              />
+            </View>
+
+            {/* SWITCH 3 */}
+            <View style={styles.switchRow}>
+              <View style={styles.switchInfo}>
+                <Text style={styles.switchTitle}>Recordatorios de Deuda</Text>
+                <Text style={styles.switchSub}>
+                  Avisos automáticos si te olvidas de pagar.
+                </Text>
+              </View>
+              <Switch
+                value={prefNotif.recordatorios}
+                onValueChange={(val) =>
+                  setPrefNotif({ ...prefNotif, recordatorios: val })
+                }
+                trackColor={{ false: "#333", true: "#4CAF50" }}
+                thumbColor={prefNotif.recordatorios ? "#fff" : "#888"}
+              />
+            </View>
           </Animated.View>
         </View>
       </Modal>
@@ -732,5 +905,26 @@ const styles = StyleSheet.create({
     textAlign: "center",
     fontSize: 14,
     marginTop: 8,
+  },
+  switchRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    marginBottom: 24,
+  },
+  switchInfo: {
+    flex: 1,
+    paddingRight: 16,
+  },
+  switchTitle: {
+    color: "#FFFFFF",
+    fontSize: 15,
+    fontWeight: "600",
+    marginBottom: 4,
+  },
+  switchSub: {
+    color: "#888888",
+    fontSize: 12,
+    lineHeight: 16,
   },
 });
