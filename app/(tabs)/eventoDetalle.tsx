@@ -2314,7 +2314,21 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: "rgba(66, 133, 244, 0.4)",
   },
-  calendarBtnText: { color: "#FFFFFF", fontSize: 12, fontWeight: "600" },
+
+  calendarBtnSynced: {
+    backgroundColor: "rgba(76, 175, 80, 0.18)",
+    borderColor: "rgba(76, 175, 80, 0.45)",
+  },
+
+  calendarBtnText: {
+    color: "#FFFFFF",
+    fontSize: 12,
+    fontWeight: "600",
+  },
+
+  calendarBtnTextSynced: {
+    color: "#4CAF50",
+  },
 
   // --- MODAL EDITAR ---
   modalOverlayEditar: {
