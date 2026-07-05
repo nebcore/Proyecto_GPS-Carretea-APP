@@ -35,6 +35,7 @@ export const getContactos = async () => {
     `,
     )
     .eq("usuario_id", user.id)
+    .or(`referencia_usuario_id.is.null,referencia_usuario_id.neq.${user.id}`)
     .order("nombre", { ascending: true });
   if (error) throw error;
 
@@ -162,12 +163,40 @@ export const getOrCreateContactoPropio = async () => {
   return contactoCreado;
 };
 
+const validarContactoEditable = async (contactoId: string) => {
+  const {
+    data: { user },
+    error: authError,
+  } = await supabase.auth.getUser();
+
+  if (authError || !user) {
+    throw new Error("Usuario no autenticado");
+  }
+
+  const { data: contacto, error } = await supabase
+    .from("contactos")
+    .select("id, usuario_id, referencia_usuario_id")
+    .eq("id", contactoId)
+    .single();
+
+  if (error) throw error;
+
+  if (
+    contacto.usuario_id === user.id &&
+    contacto.referencia_usuario_id === user.id
+  ) {
+    throw new Error("El contacto propio no se puede modificar desde la agenda.");
+  }
+};
+
 export const updateContactoConGrupos = async (
   contactoId: string,
   nombre: string,
   telefono: string,
   gruposIds: string[],
 ) => {
+  await validarContactoEditable(contactoId);
+
   const { telefonoNormalizado, usuarioId } =
     await buscarUsuarioPorTelefono(telefono);
 
@@ -200,11 +229,15 @@ export const updateContactoConGrupos = async (
 };
 
 export const deleteContacto = async (id: string) => {
+  await validarContactoEditable(id);
+
   const { error } = await supabase.from("contactos").delete().eq("id", id);
   if (error) throw error;
 };
 
 export const deleteContactos = async (ids: string[]) => {
+  await Promise.all(ids.map((id) => validarContactoEditable(id)));
+
   const { error } = await supabase.from("contactos").delete().in("id", ids);
   if (error) throw error;
 };
