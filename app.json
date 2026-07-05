@@ -20,7 +20,8 @@
       },
       "edgeToEdgeEnabled": true,
       "predictiveBackGestureEnabled": false,
-      "package": "com.anonymous.Proyecto_GPSCarreteaAPP"
+      "package": "com.ashcrow.Proyecto_GPSCarreteaAPP",
+      "googleServicesFile": "./google-services.json"
     },
     "web": {
       "output": "static",
@@ -40,8 +41,17 @@
           }
         }
       ],
-      "@react-native-community/datetimepicker",
-      "expo-web-browser"
+      "expo-web-browser",
+      [
+        "@react-native-community/datetimepicker",
+        {
+          "android": {
+            "timePicker": {
+              "numbersSelectorColor": { "light": "#FFFFFF", "dark": "#FFFFFF" }
+            }
+          }
+        }
+      ]
     ],
     "experiments": {
       "typedRoutes": true,
@@ -50,8 +60,9 @@
     "extra": {
       "router": {},
       "eas": {
-        "projectId": "d932fc4c-ad3d-4eb3-a9b4-4f7bbc073687"
+        "projectId": "bfa7d408-cef6-4c7c-916b-d75a55911bb5"
       }
-    }
+    },
+    "owner": "ashcrow"
   }
 }
