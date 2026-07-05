@@ -1,4 +1,5 @@
 import { registrarParaNotificacionesPush } from "@/lib/api/pushNotifications";
+import { useNotificationRouter } from "@/lib/hooks/useNotificationRouter";
 import { useAppRealtime } from "@/lib/realtime/useAppRealtime";
 import { supabase } from "@/lib/supabase";
 import { useAuthStore } from "@/store/auth";
@@ -71,7 +72,11 @@ export const unstable_settings = {
 export default function RootLayout() {
   const initialize = useAuthStore((s) => s.initialize);
   const session = useAuthStore((s) => s.session);
+  const loading = useAuthStore((s) => s.loading);
   const miUsuarioId = session?.user?.id;
+
+  // Enganchamos la escucha de clics en notificaciones push pasando el estado de la sesión
+  useNotificationRouter(!!session, loading);
 
   useEscucharBroadcast(miUsuarioId);
 
