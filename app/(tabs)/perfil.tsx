@@ -67,6 +67,35 @@ export default function PerfilScreen() {
     recordatorios: true,
   });
 
+  // Sincronizar estado local cuando llegan los datos del perfil
+  useEffect(() => {
+    if (perfil?.preferencias_notificaciones) {
+      setPrefNotif(perfil.preferencias_notificaciones);
+    }
+  }, [perfil]);
+
+  // Crear la mutación para guardar silenciosamente en la base de datos
+  const actualizarPreferenciasMutation = useMutation({
+    mutationFn: (nuevasPrefs: any) =>
+      updateUsuarioPerfil({ preferencias_notificaciones: nuevasPrefs }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["perfil"] });
+    },
+    onError: (err) => {
+      Alert.alert(
+        "Error",
+        "No pudimos guardar tus cambios. Revisa tu conexión.",
+      );
+    },
+  });
+
+  // Función auxiliar para manejar el cambio en los switches
+  const togglePreferencia = (llave: keyof typeof prefNotif, valor: boolean) => {
+    const nuevasPrefs = { ...prefNotif, [llave]: valor };
+    setPrefNotif(nuevasPrefs); // Actualiza la UI instantáneamente
+    actualizarPreferenciasMutation.mutate(nuevasPrefs); // Guarda en la nube
+  };
+
   const abrirPanelNotif = () => {
     setPanelNotifVisible(true);
     Animated.timing(translateXNotif, {
@@ -683,9 +712,7 @@ export default function PerfilScreen() {
               </View>
               <Switch
                 value={prefNotif.nuevosGastos}
-                onValueChange={(val) =>
-                  setPrefNotif({ ...prefNotif, nuevosGastos: val })
-                }
+                onValueChange={(val) => togglePreferencia("nuevosGastos", val)}
                 trackColor={{ false: "#333", true: "#4CAF50" }}
                 thumbColor={prefNotif.nuevosGastos ? "#fff" : "#888"}
               />
@@ -702,7 +729,7 @@ export default function PerfilScreen() {
               <Switch
                 value={prefNotif.pagosReportados}
                 onValueChange={(val) =>
-                  setPrefNotif({ ...prefNotif, pagosReportados: val })
+                  togglePreferencia("pagosReportados", val)
                 }
                 trackColor={{ false: "#333", true: "#4CAF50" }}
                 thumbColor={prefNotif.pagosReportados ? "#fff" : "#888"}
@@ -719,9 +746,7 @@ export default function PerfilScreen() {
               </View>
               <Switch
                 value={prefNotif.recordatorios}
-                onValueChange={(val) =>
-                  setPrefNotif({ ...prefNotif, recordatorios: val })
-                }
+                onValueChange={(val) => togglePreferencia("recordatorios", val)}
                 trackColor={{ false: "#333", true: "#4CAF50" }}
                 thumbColor={prefNotif.recordatorios ? "#fff" : "#888"}
               />
