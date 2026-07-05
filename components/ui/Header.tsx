@@ -20,9 +20,7 @@ export default function Header({ mostrarVolver = false, onVolver }: Props) {
         )}
       </TouchableOpacity>
 
-      <Text style={styles.titulo} pointerEvents="none">
-        CARRETEA
-      </Text>
+      <Text style={styles.titulo}>CARRETEA</Text>
 
       <View style={styles.rightIcons}>
         <TouchableOpacity style={styles.iconBtn}>

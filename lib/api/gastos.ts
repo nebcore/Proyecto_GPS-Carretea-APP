@@ -1,7 +1,6 @@
 import { z } from "zod";
 import { supabase } from "../supabase";
 import { getOrCreateContactoPropio } from "./contactos";
-import { crearNotificacionEvento } from "./notificaciones";
 
 export const gastoFormSchema = z.object({
   evento_id: z.string().uuid(),
@@ -251,12 +250,6 @@ export async function crearGasto(data: GastoFormData) {
       })),
     );
 
-  await crearNotificacionEvento({
-    eventoId: gasto.evento_id,
-    tipo: "gasto_creado",
-    titulo: "Nuevo gasto registrado",
-    cuerpo: `${gasto.descripcion} por $${Number(gasto.monto_total).toLocaleString("es-CL")} fue agregado al evento.`,
-  });
   if (errorConsumidores) throw errorConsumidores;
 
   return nuevoGasto;
@@ -282,45 +275,7 @@ export async function obtenerParticipantesEvento(eventoId: string) {
 
   if (error) throw error;
 
-  const participantes = data ?? [];
-  const usuarioIds = Array.from(
-    new Set(
-      participantes
-        .map((participante: any) => {
-          const contacto = Array.isArray(participante.contactos)
-            ? participante.contactos[0]
-            : participante.contactos;
-
-          return contacto?.referencia_usuario_id;
-        })
-        .filter(Boolean),
-    ),
-  );
-
-  if (usuarioIds.length === 0) return participantes;
-
-  const { data: datosBancarios, error: errorDatosBancarios } = await supabase
-    .from("datos_bancarios")
-    .select("id, usuario_id, banco, tipo_cuenta, numero_cuenta, rut")
-    .in("usuario_id", usuarioIds);
-
-  if (errorDatosBancarios) throw errorDatosBancarios;
-
-  const datosPorUsuarioId = new Map(
-    (datosBancarios ?? []).map((datos: any) => [datos.usuario_id, datos]),
-  );
-
-  return participantes.map((participante: any) => {
-    const contacto = Array.isArray(participante.contactos)
-      ? participante.contactos[0]
-      : participante.contactos;
-
-    return {
-      ...participante,
-      datos_bancarios:
-        datosPorUsuarioId.get(contacto?.referencia_usuario_id) ?? null,
-    };
-  });
+  return data;
 }
 
 export async function obtenerGastosxEvento(eventoId: string) {

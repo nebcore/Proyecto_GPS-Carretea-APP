@@ -222,10 +222,6 @@ export default function GastoNuevoScreen() {
         queryClient.invalidateQueries({ queryKey: ["gastos", eventoIdString] }),
         queryClient.invalidateQueries({ queryKey: ["total-gastos"] }),
         queryClient.invalidateQueries({ queryKey: ["actividad-reciente"] }),
-        queryClient.invalidateQueries({ queryKey: ["notificaciones"] }),
-        queryClient.invalidateQueries({
-          queryKey: ["notificaciones-no-leidas"],
-        }),
       ]);
       limpiarFormulario();
       router.back();
