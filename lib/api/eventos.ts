@@ -149,8 +149,8 @@ export const actualizarEstadoEvento = async (
   if (error) throw error;
 };
 
-// ACTUALIZAR DATOS DE UN EVENTO
-export const updateEvento = async (
+// ACTUALIZAR DATOS DE UN EVENTO (versión básica, sin sync a Calendar)
+export const updateEventoBasico = async (
   eventoId: string,
   datos: {
     titulo: string;

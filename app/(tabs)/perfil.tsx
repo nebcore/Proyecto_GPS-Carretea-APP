@@ -633,13 +633,14 @@ export default function PerfilScreen() {
                   )}
                 </TouchableOpacity>
                 <View style={styles.divisor} />
-                <TouchableOpacity style={styles.settingRow} onPress={abrirPanelNotif}>
-  <View style={styles.settingLeft}>
-    <Feather name="bell" size={18} color="#AAAAAA" />
-    <Text style={styles.settingLabel}>Notificaciones</Text>
-  </View>
-  <Feather name="chevron-right" size={18} color="#444444" />
-</TouchableOpacity>
+                <TouchableOpacity
+                  style={styles.settingRow}
+                  onPress={abrirPanelNotif}
+                >
+                  <View style={styles.settingLeft}>
+                    <Feather name="bell" size={18} color="#AAAAAA" />
+                    <Text style={styles.settingLabel}>Notificaciones</Text>
+                  </View>
                   <Feather name="chevron-right" size={18} color="#444444" />
                 </TouchableOpacity>
                 <View style={styles.divisor} />

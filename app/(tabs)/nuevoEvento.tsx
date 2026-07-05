@@ -346,19 +346,6 @@ export default function NuevoEventoScreen() {
                 />
               )}
             </View>
-            {showDatePicker && (
-              <DateTimePicker
-                value={fecha}
-                mode={modoFecha}
-                is24Hour
-                display="default"
-                onChange={(_, selected) => {
-                  setShowDatePicker(Platform.OS === "ios");
-                  if (selected) setFecha(selected);
-                }}
-              />
-            )}
-          </View>
 
           {/* UBICACIÓN */}
           <View style={styles.inputGroup}>

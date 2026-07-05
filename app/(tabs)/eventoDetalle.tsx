@@ -42,6 +42,7 @@ import {
   invitarContactoAlEvento,
   obtenerAttendeesParaCalendar,
   updateEvento,
+  updateEventoBasico,
 } from "@/lib/api/eventos";
 import {
   agregarComprobanteGasto,
@@ -307,7 +308,7 @@ export default function EventoDetalleScreen() {
 
   const actualizarEventoMutation = useMutation({
     mutationFn: () =>
-      updateEvento(eventoId, {
+      updateEventoBasico(eventoId, {
         titulo: editNombre.trim(),
         descripcion: editDescripcion.trim(),
         ubicacion: editUbicacion.trim(),
@@ -1096,11 +1097,6 @@ export default function EventoDetalleScreen() {
               <View style={styles.infoPills}>
                 <View style={styles.pill}>
                   <Feather
-                    name={
-                      evento?.estado === "finalizado"
-                        ? "rotate-ccw"
-                        : "check-circle"
-                    }
                     name="calendar"
                     size={11}
                     color="rgba(255,255,255,0.5)"
@@ -2365,7 +2361,7 @@ export default function EventoDetalleScreen() {
               {loadingContactosInvitar ? (
                 <ActivityIndicator color="#FFFFFF" style={{ marginTop: 10 }} />
               ) : (
-                contactosParaInvitar
+                contactosInvitar
                   .filter((c: any) => !yaEsParticipante(c.id))
                   .map((c: any) => (
                     <TouchableOpacity
@@ -2504,8 +2500,6 @@ const styles = StyleSheet.create({
     fontSize: 12,
     marginTop: 2,
   },
-  totalMonto: { color: "#FFFFFF", fontSize: 20, fontWeight: "bold" },
-  totalLabel: { color: "#AAAAAA", fontSize: 12, marginTop: 2 },
 
   // --- TABS ---
   tabBar: {
