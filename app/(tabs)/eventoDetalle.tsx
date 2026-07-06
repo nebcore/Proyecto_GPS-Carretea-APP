@@ -2,9 +2,7 @@
 import { useMemo, useState } from "react";
 import {
   ActivityIndicator,
-  Alert,
   Image,
-  KeyboardAvoidingView,
   Modal,
   Platform,
   ScrollView,
@@ -25,7 +23,7 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 
 // 3. Componentes UI internos
-import { Alert as AppAlert } from "@/components/ui/AppAlert";
+import { Alert } from "@/components/ui/AppAlert";
 import GlassCard from "@/components/ui/GlassCard";
 
 // 4. APIs, Servicios y Utilidades internas (@/lib y @/services)
@@ -41,7 +39,6 @@ import {
   getEvento,
   invitarContactoAlEvento,
   obtenerAttendeesParaCalendar,
-  updateEvento,
   updateEventoBasico,
 } from "@/lib/api/eventos";
 import {
@@ -117,8 +114,6 @@ export default function EventoDetalleScreen() {
     useState(false);
   const [gastoSeleccionado, setGastoSeleccionado] = useState<any | null>(null);
   const [avisoPago, setAvisoPago] = useState<AvisoPago | null>(null);
-  const [modalEditarVisible, setModalEditarVisible] = useState(false);
-  const [editTitulo, setEditTitulo] = useState("");
   const [modalInvitarVisible, setModalInvitarVisible] = useState(false);
   const [modalEditarEventoVisible, setModalEditarEventoVisible] =
     useState(false);
@@ -307,13 +302,31 @@ export default function EventoDetalleScreen() {
   });
 
   const actualizarEventoMutation = useMutation({
-    mutationFn: () =>
-      updateEventoBasico(eventoId, {
+    mutationFn: async () => {
+      const datos = {
         titulo: editNombre.trim(),
         descripcion: editDescripcion.trim(),
         ubicacion: editUbicacion.trim(),
         fechaEvento: editFecha.toISOString(),
-      }),
+      };
+      if (evento?.google_event_id) {
+        const accessToken = await obtenerGoogleToken();
+        if (accessToken) {
+          const { attendees } = await obtenerAttendeesParaCalendar(
+            evento?.participantes_evento ?? [],
+            evento?.creador_id,
+          );
+          await actualizarEventoCalendar(accessToken, evento.google_event_id, {
+            titulo: datos.titulo,
+            descripcion: datos.descripcion,
+            fechaInicio: datos.fechaEvento,
+            fechaFin: datos.fechaEvento,
+            attendees,
+          });
+        }
+      }
+      return updateEventoBasico(eventoId, datos);
+    },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["evento", eventoId] });
       queryClient.invalidateQueries({ queryKey: ["eventos"] });
@@ -330,7 +343,41 @@ export default function EventoDetalleScreen() {
   const invitarParticipanteMutation = useMutation({
     mutationFn: (contactoId: string) =>
       invitarContactoAlEvento(eventoId, contactoId),
-    onSuccess: () => {
+    onSuccess: async () => {
+      // Traemos el evento actualizado (con el nuevo participante ya incluido)
+      // para poder sincronizar la lista completa de invitados con Calendar.
+      let eventoActualizado: any = null;
+      try {
+        eventoActualizado = await getEvento(eventoId);
+      } catch (e) {
+        console.log("No se pudo refrescar el evento tras invitar:", e);
+      }
+
+      if (eventoActualizado?.google_event_id) {
+        try {
+          const accessToken = await obtenerGoogleToken();
+          if (accessToken) {
+            const { attendees } = await obtenerAttendeesParaCalendar(
+              eventoActualizado?.participantes_evento ?? [],
+              eventoActualizado?.creador_id,
+            );
+            await actualizarEventoCalendar(
+              accessToken,
+              eventoActualizado.google_event_id,
+              {
+                titulo: eventoActualizado.titulo,
+                descripcion: eventoActualizado.descripcion,
+                fechaInicio: eventoActualizado.fecha_evento,
+                fechaFin: eventoActualizado.fecha_evento,
+                attendees,
+              },
+            );
+          }
+        } catch (e) {
+          console.log("Error al sincronizar invitado con Calendar:", e);
+        }
+      }
+
       queryClient.invalidateQueries({ queryKey: ["participantes", eventoId] });
       queryClient.invalidateQueries({ queryKey: ["evento", eventoId] });
       queryClient.invalidateQueries({ queryKey: ["eventos"] });
@@ -343,7 +390,41 @@ export default function EventoDetalleScreen() {
   const eliminarParticipanteMutation = useMutation({
     mutationFn: (contactoId: string) =>
       eliminarParticipanteDelEvento(eventoId, contactoId),
-    onSuccess: () => {
+    onSuccess: async () => {
+      // Traemos el evento actualizado (ya sin el participante quitado)
+      // para poder sincronizar la lista completa de invitados con Calendar.
+      let eventoActualizado: any = null;
+      try {
+        eventoActualizado = await getEvento(eventoId);
+      } catch (e) {
+        console.log("No se pudo refrescar el evento tras quitar participante:", e);
+      }
+
+      if (eventoActualizado?.google_event_id) {
+        try {
+          const accessToken = await obtenerGoogleToken();
+          if (accessToken) {
+            const { attendees } = await obtenerAttendeesParaCalendar(
+              eventoActualizado?.participantes_evento ?? [],
+              eventoActualizado?.creador_id,
+            );
+            await actualizarEventoCalendar(
+              accessToken,
+              eventoActualizado.google_event_id,
+              {
+                titulo: eventoActualizado.titulo,
+                descripcion: eventoActualizado.descripcion,
+                fechaInicio: eventoActualizado.fecha_evento,
+                fechaFin: eventoActualizado.fecha_evento,
+                attendees,
+              },
+            );
+          }
+        } catch (e) {
+          console.log("Error al sincronizar participante quitado con Calendar:", e);
+        }
+      }
+
       queryClient.invalidateQueries({ queryKey: ["participantes", eventoId] });
       queryClient.invalidateQueries({ queryKey: ["evento", eventoId] });
       queryClient.invalidateQueries({ queryKey: ["eventos"] });
@@ -725,35 +806,6 @@ export default function EventoDetalleScreen() {
     },
     onError: (error: any) =>
       Alert.alert("Error", error.message || "No se pudo invitar al contacto."),
-  });
-
-  const editarEventoMutation = useMutation({
-    mutationFn: async (datos: any) => {
-      if (evento?.google_event_id) {
-        const accessToken = await obtenerGoogleToken();
-        if (accessToken) {
-          const { attendees } = await obtenerAttendeesParaCalendar(
-            evento?.participantes_evento ?? [],
-            evento?.creador_id,
-          );
-          await actualizarEventoCalendar(accessToken, evento.google_event_id, {
-            titulo: datos.titulo,
-            descripcion: datos.descripcion,
-            fechaInicio: evento?.fecha_evento,
-            fechaFin: evento?.fecha_evento,
-            attendees,
-          });
-        }
-      }
-      return updateEvento(eventoId, datos);
-    },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["evento", eventoId] });
-      queryClient.invalidateQueries({ queryKey: ["eventos"] });
-      setModalEditarVisible(false);
-      Alert.alert("¡Listo!", "Evento actualizado.");
-    },
-    onError: () => Alert.alert("Error", "No se pudo actualizar el evento."),
   });
 
   const eliminarEventoMutation = useMutation({
@@ -1175,20 +1227,6 @@ export default function EventoDetalleScreen() {
           </View>
           <View style={styles.headerRight}>
             <View style={styles.iconosRow}>
-              <TouchableOpacity
-                onPress={() => {
-                  setEditTitulo(evento?.titulo ?? "");
-                  setEditDescripcion(evento?.descripcion ?? "");
-                  setEditUbicacion(evento?.ubicacion ?? "");
-                  setModalEditarVisible(true);
-                }}
-              >
-                <Feather
-                  name="edit-3"
-                  size={16}
-                  color="rgba(255,255,255,0.5)"
-                />
-              </TouchableOpacity>
               <TouchableOpacity onPress={confirmarEliminar}>
                 <Feather name="trash-2" size={16} color="rgba(255,82,82,0.7)" />
               </TouchableOpacity>
@@ -1812,67 +1850,6 @@ export default function EventoDetalleScreen() {
             </TouchableOpacity>
           </View>
         </View>
-      </Modal>
-
-      {/* MODAL EDITAR EVENTO */}
-      <Modal visible={modalEditarVisible} transparent animationType="slide">
-        <KeyboardAvoidingView
-          behavior={Platform.OS === "ios" ? "padding" : "height"}
-          style={{ flex: 1 }}
-        >
-          <View style={styles.modalOverlay}>
-            <View style={styles.modalCard}>
-              <Text style={styles.modalTitle}>Editar evento</Text>
-
-              <TextInput
-                style={styles.input}
-                value={editTitulo}
-                onChangeText={setEditTitulo}
-                placeholder="Título"
-                placeholderTextColor="#666"
-              />
-              <TextInput
-                style={styles.input}
-                value={editDescripcion}
-                onChangeText={setEditDescripcion}
-                placeholder="Descripción"
-                placeholderTextColor="#666"
-              />
-              <TextInput
-                style={styles.input}
-                value={editUbicacion}
-                onChangeText={setEditUbicacion}
-                placeholder="Ubicación"
-                placeholderTextColor="#666"
-              />
-
-              <TouchableOpacity
-                style={styles.actionBtn}
-                onPress={() =>
-                  editarEventoMutation.mutate({
-                    titulo: editTitulo,
-                    descripcion: editDescripcion,
-                    ubicacion: editUbicacion,
-                  })
-                }
-                disabled={editarEventoMutation.isPending}
-              >
-                {editarEventoMutation.isPending ? (
-                  <ActivityIndicator color="#fff" />
-                ) : (
-                  <Text style={styles.actionBtnText}>Guardar cambios</Text>
-                )}
-              </TouchableOpacity>
-
-              <TouchableOpacity
-                style={styles.cancelBtn}
-                onPress={() => setModalEditarVisible(false)}
-              >
-                <Text style={styles.cancelBtnText}>Cancelar</Text>
-              </TouchableOpacity>
-            </View>
-          </View>
-        </KeyboardAvoidingView>
       </Modal>
 
       {/* MODAL INVITAR PARTICIPANTE */}
