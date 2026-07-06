@@ -1,17 +1,4 @@
-import {
-  confirmarPago,
-  devolverPagoAPendiente,
-  obtenerPagosEvento,
-  obtenerPagosReportadosEvento,
-  reportarPago,
-} from "@/lib/api/pagos";
-import { Alert } from "@/components/ui/AppAlert";
-import DateTimePicker from "@react-native-community/datetimepicker";
-import Feather from "@expo/vector-icons/Feather";
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import * as Clipboard from "expo-clipboard";
-import * as ImagePicker from "expo-image-picker";
-import { router, useLocalSearchParams } from "expo-router";
+// 1. React & React Native
 import { useMemo, useState } from "react";
 import {
   ActivityIndicator,
@@ -25,16 +12,34 @@ import {
   TouchableOpacity,
   View,
 } from "react-native";
-import { useSafeAreaInsets } from "react-native-safe-area-context";
 
+// 2. Librerías de terceros (Expo, TanStack, etc.)
+import * as Clipboard from "expo-clipboard";
+import * as ImagePicker from "expo-image-picker";
+import { router, useLocalSearchParams } from "expo-router";
+import Feather from "@expo/vector-icons/Feather";
+import DateTimePicker from "@react-native-community/datetimepicker";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+
+// 3. Componentes UI internos
+import { Alert } from "@/components/ui/AppAlert";
 import GlassCard from "@/components/ui/GlassCard";
+
+// 4. APIs, Servicios y Utilidades internas (@/lib y @/services)
+import { supabase } from "@/lib/supabase";
+import type { Deuda } from "@/lib/balances";
+import { useBalancesEvento } from "@/lib/realtime/useBalancesEvento";
+
 import { getContactosParaInvitar } from "@/lib/api/contactos";
 import {
   actualizarEstadoEvento,
+  deleteEvento,
   eliminarParticipanteDelEvento,
   getEvento,
   invitarContactoAlEvento,
-  updateEvento,
+  obtenerAttendeesParaCalendar,
+  updateEventoBasico,
 } from "@/lib/api/eventos";
 import {
   agregarComprobanteGasto,
@@ -47,9 +52,20 @@ import {
   enviarRecordatorioManual,
   obtenerNotificacionesEvento,
 } from "@/lib/api/notificaciones";
-import type { Deuda } from "@/lib/balances";
-import { useBalancesEvento } from "@/lib/realtime/useBalancesEvento";
-import { supabase } from "@/lib/supabase";
+import {
+  confirmarPago,
+  devolverPagoAPendiente,
+  obtenerPagosEvento,
+  obtenerPagosReportadosEvento,
+  reportarPago,
+} from "@/lib/api/pagos";
+import { obtenerGoogleToken } from "@/lib/api/usuarios";
+
+import {
+  actualizarEventoCalendar,
+  crearEventoCalendar,
+  eliminarEventoCalendar,
+} from "@/services/googleCalendar";
 
 const formatearFecha = (fechaString: string) => {
   if (!fechaString) return "";
@@ -98,6 +114,7 @@ export default function EventoDetalleScreen() {
     useState(false);
   const [gastoSeleccionado, setGastoSeleccionado] = useState<any | null>(null);
   const [avisoPago, setAvisoPago] = useState<AvisoPago | null>(null);
+  const [modalInvitarVisible, setModalInvitarVisible] = useState(false);
   const [modalEditarEventoVisible, setModalEditarEventoVisible] =
     useState(false);
   const [participanteBancarioSeleccionado, setParticipanteBancarioSeleccionado] =
@@ -129,14 +146,12 @@ export default function EventoDetalleScreen() {
       enabled: Boolean(eventoId),
     });
 
-  const {
-    data: contactosParaInvitar = [],
-    isLoading: loadingContactosInvitar,
-  } = useQuery({
-    queryKey: ["contactos-invitar"],
-    queryFn: getContactosParaInvitar,
-    enabled: modalEditarEventoVisible,
-  });
+  const { data: contactosInvitar = [], isLoading: loadingContactosInvitar } =
+    useQuery({
+      queryKey: ["contactos-invitar"],
+      queryFn: getContactosParaInvitar,
+      enabled: modalInvitarVisible,
+    });
 
   const { balances, deudas, detalleParticipantes } =
     useBalancesEvento(eventoId);
@@ -168,14 +183,14 @@ export default function EventoDetalleScreen() {
 
   const obtenerNombreContacto = (contacto: any, fallback = "Participante") => {
     if (!contacto) return fallback;
-
-    if (Array.isArray(contacto)) {
-      return contacto[0]?.nombre ?? fallback;
-    }
-
+    if (Array.isArray(contacto)) return contacto[0]?.nombre ?? fallback;
     return contacto.nombre ?? fallback;
   };
 
+  const yaEstaInvitado = (contactoId: string) =>
+    evento?.participantes_evento?.some(
+      (p: any) => p.contacto_id === contactoId,
+    );
   const yaEsParticipante = (contactoId: string) =>
     participantes.some((p: any) => p.contacto_id === contactoId);
 
@@ -287,13 +302,31 @@ export default function EventoDetalleScreen() {
   });
 
   const actualizarEventoMutation = useMutation({
-    mutationFn: () =>
-      updateEvento(eventoId, {
+    mutationFn: async () => {
+      const datos = {
         titulo: editNombre.trim(),
         descripcion: editDescripcion.trim(),
         ubicacion: editUbicacion.trim(),
         fechaEvento: editFecha.toISOString(),
-      }),
+      };
+      if (evento?.google_event_id) {
+        const accessToken = await obtenerGoogleToken();
+        if (accessToken) {
+          const { attendees } = await obtenerAttendeesParaCalendar(
+            evento?.participantes_evento ?? [],
+            evento?.creador_id,
+          );
+          await actualizarEventoCalendar(accessToken, evento.google_event_id, {
+            titulo: datos.titulo,
+            descripcion: datos.descripcion,
+            fechaInicio: datos.fechaEvento,
+            fechaFin: datos.fechaEvento,
+            attendees,
+          });
+        }
+      }
+      return updateEventoBasico(eventoId, datos);
+    },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["evento", eventoId] });
       queryClient.invalidateQueries({ queryKey: ["eventos"] });
@@ -310,7 +343,41 @@ export default function EventoDetalleScreen() {
   const invitarParticipanteMutation = useMutation({
     mutationFn: (contactoId: string) =>
       invitarContactoAlEvento(eventoId, contactoId),
-    onSuccess: () => {
+    onSuccess: async () => {
+      // Traemos el evento actualizado (con el nuevo participante ya incluido)
+      // para poder sincronizar la lista completa de invitados con Calendar.
+      let eventoActualizado: any = null;
+      try {
+        eventoActualizado = await getEvento(eventoId);
+      } catch (e) {
+        console.log("No se pudo refrescar el evento tras invitar:", e);
+      }
+
+      if (eventoActualizado?.google_event_id) {
+        try {
+          const accessToken = await obtenerGoogleToken();
+          if (accessToken) {
+            const { attendees } = await obtenerAttendeesParaCalendar(
+              eventoActualizado?.participantes_evento ?? [],
+              eventoActualizado?.creador_id,
+            );
+            await actualizarEventoCalendar(
+              accessToken,
+              eventoActualizado.google_event_id,
+              {
+                titulo: eventoActualizado.titulo,
+                descripcion: eventoActualizado.descripcion,
+                fechaInicio: eventoActualizado.fecha_evento,
+                fechaFin: eventoActualizado.fecha_evento,
+                attendees,
+              },
+            );
+          }
+        } catch (e) {
+          console.log("Error al sincronizar invitado con Calendar:", e);
+        }
+      }
+
       queryClient.invalidateQueries({ queryKey: ["participantes", eventoId] });
       queryClient.invalidateQueries({ queryKey: ["evento", eventoId] });
       queryClient.invalidateQueries({ queryKey: ["eventos"] });
@@ -323,7 +390,41 @@ export default function EventoDetalleScreen() {
   const eliminarParticipanteMutation = useMutation({
     mutationFn: (contactoId: string) =>
       eliminarParticipanteDelEvento(eventoId, contactoId),
-    onSuccess: () => {
+    onSuccess: async () => {
+      // Traemos el evento actualizado (ya sin el participante quitado)
+      // para poder sincronizar la lista completa de invitados con Calendar.
+      let eventoActualizado: any = null;
+      try {
+        eventoActualizado = await getEvento(eventoId);
+      } catch (e) {
+        console.log("No se pudo refrescar el evento tras quitar participante:", e);
+      }
+
+      if (eventoActualizado?.google_event_id) {
+        try {
+          const accessToken = await obtenerGoogleToken();
+          if (accessToken) {
+            const { attendees } = await obtenerAttendeesParaCalendar(
+              eventoActualizado?.participantes_evento ?? [],
+              eventoActualizado?.creador_id,
+            );
+            await actualizarEventoCalendar(
+              accessToken,
+              eventoActualizado.google_event_id,
+              {
+                titulo: eventoActualizado.titulo,
+                descripcion: eventoActualizado.descripcion,
+                fechaInicio: eventoActualizado.fecha_evento,
+                fechaFin: eventoActualizado.fecha_evento,
+                attendees,
+              },
+            );
+          }
+        } catch (e) {
+          console.log("Error al sincronizar participante quitado con Calendar:", e);
+        }
+      }
+
       queryClient.invalidateQueries({ queryKey: ["participantes", eventoId] });
       queryClient.invalidateQueries({ queryKey: ["evento", eventoId] });
       queryClient.invalidateQueries({ queryKey: ["eventos"] });
@@ -660,6 +761,86 @@ export default function EventoDetalleScreen() {
     },
   });
 
+  const invitarMutation = useMutation({
+    mutationFn: (contactoId: string) =>
+      invitarContactoAlEvento(eventoId, contactoId),
+    onSuccess: async () => {
+      // Traemos el evento actualizado (con el nuevo participante ya incluido)
+      // para poder sincronizar la lista completa de invitados con Calendar.
+      let eventoActualizado: any = null;
+      try {
+        eventoActualizado = await getEvento(eventoId);
+      } catch (e) {
+        console.log("No se pudo refrescar el evento tras invitar:", e);
+      }
+
+      if (eventoActualizado?.google_event_id) {
+        try {
+          const accessToken = await obtenerGoogleToken();
+          if (accessToken) {
+            const { attendees } = await obtenerAttendeesParaCalendar(
+              eventoActualizado?.participantes_evento ?? [],
+              eventoActualizado?.creador_id,
+            );
+            await actualizarEventoCalendar(
+              accessToken,
+              eventoActualizado.google_event_id,
+              {
+                titulo: eventoActualizado.titulo,
+                descripcion: eventoActualizado.descripcion,
+                fechaInicio: eventoActualizado.fecha_evento,
+                fechaFin: eventoActualizado.fecha_evento,
+                attendees,
+              },
+            );
+          }
+        } catch (e) {
+          console.log("Error al sincronizar invitado con Calendar:", e);
+        }
+      }
+
+      queryClient.invalidateQueries({ queryKey: ["evento", eventoId] });
+      queryClient.invalidateQueries({ queryKey: ["participantes", eventoId] });
+      setModalInvitarVisible(false);
+      Alert.alert("¡Invitado!", "Contacto agregado al evento.");
+    },
+    onError: (error: any) =>
+      Alert.alert("Error", error.message || "No se pudo invitar al contacto."),
+  });
+
+  const eliminarEventoMutation = useMutation({
+    mutationFn: async () => {
+      console.log("google_event_id:", evento?.google_event_id);
+      console.log("evento completo:", evento);
+      // Eliminar de Google Calendar si tiene google_event_id
+      if (evento?.google_event_id) {
+        const accessToken = await obtenerGoogleToken();
+        console.log("accessToken:", accessToken);
+        if (accessToken) {
+          await eliminarEventoCalendar(accessToken, evento.google_event_id);
+        }
+      }
+      return deleteEvento(eventoId);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["eventos"] });
+      router.back();
+      Alert.alert("Eliminado", "El evento fue borrado.");
+    },
+    onError: () => Alert.alert("Error", "No se pudo eliminar el evento."),
+  });
+
+  const confirmarEliminar = () => {
+    Alert.alert("¿Eliminar evento?", "Esta acción no se puede deshacer.", [
+      { text: "Cancelar", style: "cancel" },
+      {
+        text: "Eliminar",
+        style: "destructive",
+        onPress: () => eliminarEventoMutation.mutate(),
+      },
+    ]);
+  };
+
   const reportarPagoMutation = useMutation({
     mutationFn: ({ eventoId, deudorId, acreedorId, monto, comprobante }: any) =>
       reportarPago(eventoId, deudorId, acreedorId, monto, comprobante),
@@ -711,6 +892,59 @@ export default function EventoDetalleScreen() {
       );
     },
   });
+
+  const agregarACalendar = async () => {
+    try {
+      const accessToken = await obtenerGoogleToken();
+
+      if (!accessToken) {
+        Alert.alert(
+          "Conecta Google",
+          "Ve a tu perfil y conecta Google Calendar primero.",
+        );
+        return;
+      }
+
+      const { attendees, sinEmail } = await obtenerAttendeesParaCalendar(
+        evento?.participantes_evento ?? [],
+        evento?.creador_id,
+      );
+
+      const resultado = await crearEventoCalendar(accessToken, {
+        titulo: evento?.titulo ?? "Evento de prueba",
+        descripcion: evento?.descripcion ?? "",
+        fechaInicio: evento?.fecha_evento,
+        fechaFin: evento?.fecha_evento,
+        attendees,
+      });
+
+      if (resultado?.id) {
+        const { error } = await supabase
+          .from("eventos")
+          .update({ google_event_id: resultado.id })
+          .eq("id", eventoId);
+
+        if (!error) {
+          queryClient.invalidateQueries({ queryKey: ["evento", eventoId] });
+        }
+      }
+
+      if (sinEmail.length > 0) {
+        Alert.alert(
+          "Agregado con aviso",
+          `Evento agregado a Google Calendar. Estos participantes no tienen email y no recibieron invitación: ${sinEmail.join(", ")}`,
+        );
+      } else {
+        Alert.alert(
+          "¡Listo!",
+          "Evento agregado a Google Calendar con invitaciones enviadas.",
+        );
+      }
+    } catch (error) {
+      console.log("Error:", error);
+      Alert.alert("Error", "No se pudo agregar a Google Calendar.");
+    }
+  };
 
   const confirmarPagoMutation = useMutation({
     mutationFn: (pagoId: string) => confirmarPago(pagoId),
@@ -905,6 +1139,7 @@ export default function EventoDetalleScreen() {
                 </Text>
               </View>
             </View>
+
             {evento?.descripcion ? (
               <Text style={styles.eventoDesc} numberOfLines={2}>
                 {evento.descripcion}
@@ -965,10 +1200,49 @@ export default function EventoDetalleScreen() {
                 </View>
               ) : null}
             </View>
+            <TouchableOpacity
+              style={[
+                styles.calendarBtn,
+                evento?.google_event_id && styles.calendarBtnSynced,
+              ]}
+              onPress={agregarACalendar}
+              disabled={Boolean(evento?.google_event_id)}
+            >
+              <Feather
+                name={evento?.google_event_id ? "check-circle" : "calendar"}
+                size={13}
+                color={evento?.google_event_id ? "#4CAF50" : "#FFFFFF"}
+              />
+              <Text
+                style={[
+                  styles.calendarBtnText,
+                  evento?.google_event_id && styles.calendarBtnTextSynced,
+                ]}
+              >
+                {evento?.google_event_id
+                  ? "Agregado a Google Calendar"
+                  : "Agregar a Google Calendar"}
+              </Text>
+            </TouchableOpacity>
           </View>
           <View style={styles.headerRight}>
-            <Text style={styles.totalMonto}>{formatearMonto(montoTotal)}</Text>
-            <Text style={styles.totalLabel}>Total gastado</Text>
+            <View style={styles.iconosRow}>
+              <TouchableOpacity onPress={confirmarEliminar}>
+                <Feather name="trash-2" size={16} color="rgba(255,82,82,0.7)" />
+              </TouchableOpacity>
+            </View>
+            <View
+              style={{
+                alignItems: "flex-end",
+                flex: 1,
+                justifyContent: "center",
+              }}
+            >
+              <Text style={styles.totalMonto}>
+                {formatearMonto(montoTotal)}
+              </Text>
+              <Text style={styles.totalLabel}>Total gastado</Text>
+            </View>
           </View>
         </GlassCard>
 
@@ -1224,6 +1498,18 @@ export default function EventoDetalleScreen() {
           {/* TAB PARTICIPANTES */}
           {tabActivo === "participantes" && (
             <>
+              <TouchableOpacity
+                style={[styles.botonSecundario, { marginBottom: 12 }]}
+                onPress={() => setModalInvitarVisible(true)}
+              >
+                <View style={styles.invitarBtnContent}>
+                  <Feather name="user-plus" size={16} color="#FFFFFF" />
+                  <Text style={styles.botonSecundarioText}>
+                    Invitar participante
+                  </Text>
+                </View>
+              </TouchableOpacity>
+
               {loadingParticipantes ? (
                 <ActivityIndicator color="#FFFFFF" style={{ marginTop: 20 }} />
               ) : participantes.length === 0 ? (
@@ -1561,6 +1847,63 @@ export default function EventoDetalleScreen() {
               ) : (
                 <Text style={styles.botonReportarFinalText}>Reportar</Text>
               )}
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
+
+      {/* MODAL INVITAR PARTICIPANTE */}
+      <Modal visible={modalInvitarVisible} transparent animationType="slide">
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalCard}>
+            <Text style={styles.modalTitle}>Invitar participante</Text>
+
+            {loadingContactosInvitar ? (
+              <ActivityIndicator color="#FFFFFF" />
+            ) : contactosInvitar.length === 0 ? (
+              <Text style={styles.emptyText}>
+                No tienes más contactos disponibles.
+              </Text>
+            ) : (
+              <ScrollView>
+                {contactosInvitar.map((c: any) => {
+                  const invitado = yaEstaInvitado(c.id);
+                  return (
+                    <TouchableOpacity
+                      key={c.id}
+                      style={[
+                        styles.contactRow,
+                        invitado && styles.contactRowDisabled,
+                      ]}
+                      onPress={() => !invitado && invitarMutation.mutate(c.id)}
+                      disabled={invitado || invitarMutation.isPending}
+                    >
+                      <Text
+                        style={[
+                          styles.contactNombre,
+                          invitado && { color: "#555" },
+                        ]}
+                      >
+                        {c.nombre}
+                      </Text>
+                      {invitado ? (
+                        <Text style={styles.yaInvitadoText}>Ya invitado</Text>
+                      ) : invitarMutation.isPending ? (
+                        <ActivityIndicator size="small" color="#FFFFFF" />
+                      ) : (
+                        <Feather name="plus" size={18} color="#FFFFFF" />
+                      )}
+                    </TouchableOpacity>
+                  );
+                })}
+              </ScrollView>
+            )}
+
+            <TouchableOpacity
+              style={[styles.cancelBtn, { marginTop: 12 }]}
+              onPress={() => setModalInvitarVisible(false)}
+            >
+              <Text style={styles.cancelBtnText}>Cerrar</Text>
             </TouchableOpacity>
           </View>
         </View>
@@ -1995,7 +2338,7 @@ export default function EventoDetalleScreen() {
               {loadingContactosInvitar ? (
                 <ActivityIndicator color="#FFFFFF" style={{ marginTop: 10 }} />
               ) : (
-                contactosParaInvitar
+                contactosInvitar
                   .filter((c: any) => !yaEsParticipante(c.id))
                   .map((c: any) => (
                     <TouchableOpacity
@@ -2101,9 +2444,10 @@ const styles = StyleSheet.create({
   infoPills: {
     flexDirection: "row",
     gap: 12,
-    flexWrap: "wrap",
+    alignItems: "center",
   },
-  pill: {
+  pill: { flexDirection: "row", alignItems: "center", gap: 4 },
+  iconosRow: {
     flexDirection: "row",
     alignItems: "center",
     gap: 4,
@@ -2142,12 +2486,7 @@ const styles = StyleSheet.create({
     marginBottom: 16,
     padding: 4,
   },
-  tab: {
-    flex: 1,
-    paddingVertical: 8,
-    borderRadius: 18,
-    alignItems: "center",
-  },
+  tab: { flex: 1, paddingVertical: 8, borderRadius: 18, alignItems: "center" },
   tabActivo: { backgroundColor: "rgba(255,255,255,0.15)" },
   tabText: { color: "rgba(255,255,255,0.5)", fontSize: 14 },
   tabTextActivo: { color: "#FFFFFF", fontWeight: "bold" },
@@ -2184,7 +2523,7 @@ const styles = StyleSheet.create({
     marginVertical: 4,
   },
 
-  // --- CARDS GASTOS / PARTICIPANTES ---
+  // --- CARDS ---
   gastoCard: {
     flexDirection: "row",
     alignItems: "center",
@@ -2204,18 +2543,10 @@ const styles = StyleSheet.create({
     alignItems: "center",
     marginRight: 14,
   },
-  avatarText: {
-    color: "#FFFFFF",
-    fontSize: 16,
-    fontWeight: "bold",
-  },
+  avatarText: { color: "#FFFFFF", fontSize: 16, fontWeight: "bold" },
   cardInfo: { flex: 1 },
   cardTitulo: { color: "#FFFFFF", fontSize: 15, fontWeight: "500" },
-  cardSub: {
-    color: "#888888",
-    fontSize: 12,
-    marginTop: 2,
-  },
+  cardSub: { color: "#888888", fontSize: 12, marginTop: 2 },
   fechaRow: {
     flexDirection: "row",
     alignItems: "center",
@@ -2251,7 +2582,7 @@ const styles = StyleSheet.create({
   positivo: { color: "#4CAF50" },
   negativo: { color: "#FF5252" },
 
-  // --- BOTÓN SECUNDARIO (balances) ---
+  // --- BOTÓN SECUNDARIO ---
   botonSecundario: {
     backgroundColor: "rgba(255,255,255,0.1)",
     borderRadius: 15,
@@ -2266,6 +2597,22 @@ const styles = StyleSheet.create({
     fontWeight: "bold",
     fontSize: 15,
   },
+  invitarBtnContent: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+  },
+  contactRow: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    paddingVertical: 14,
+    borderBottomWidth: 1,
+    borderColor: "rgba(255,255,255,0.06)",
+  },
+  contactRowDisabled: { opacity: 0.4 },
+  contactNombre: { color: "#FFFFFF", fontSize: 15 },
+  yaInvitadoText: { color: "#555", fontSize: 13 },
   modalOverlay: {
     flex: 1,
     justifyContent: "flex-end",
@@ -2726,11 +3073,7 @@ const styles = StyleSheet.create({
   },
 
   // --- FAB ---
-  fabWrapper: {
-    position: "absolute",
-    bottom: 30,
-    right: 20,
-  },
+  fabWrapper: { position: "absolute", bottom: 30, right: 20 },
   mainFab: {
     width: 64,
     height: 64,
@@ -2744,6 +3087,87 @@ const styles = StyleSheet.create({
     shadowRadius: 5,
     elevation: 8,
   },
+  
+  // --- CALENDAR BTN ---
+  calendarBtn: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+    marginTop: 10,
+    backgroundColor: "rgba(66, 133, 244, 0.25)",
+    borderRadius: 10,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    alignSelf: "flex-start",
+    borderWidth: 1,
+    borderColor: "rgba(66, 133, 244, 0.4)",
+  },
+
+  calendarBtnSynced: {
+    backgroundColor: "rgba(76, 175, 80, 0.18)",
+    borderColor: "rgba(76, 175, 80, 0.45)",
+  },
+
+  calendarBtnText: {
+    color: "#FFFFFF",
+    fontSize: 12,
+    fontWeight: "600",
+  },
+
+  calendarBtnTextSynced: {
+    color: "#4CAF50",
+  },
+
+  // --- MODAL EDITAR ---
+  modalOverlayEditar: {
+    flex: 1,
+    backgroundColor: "rgba(0,0,0,0.6)",
+    justifyContent: "flex-end",
+  },
+  modalCardEditar: {
+    backgroundColor: "rgba(25,25,25,0.97)",
+    borderTopLeftRadius: 28,
+    borderTopRightRadius: 28,
+    padding: 24,
+    borderWidth: 1,
+    borderColor: "rgba(255,255,255,0.08)",
+  },
+  modalTitle: {
+    color: "#FFFFFF",
+    fontSize: 22,
+    fontWeight: "bold",
+    marginBottom: 20,
+  },
+  input: {
+    backgroundColor: "rgba(255,255,255,0.07)",
+    borderRadius: 12,
+    padding: 14,
+    color: "#FFFFFF",
+    fontSize: 15,
+    marginBottom: 12,
+    borderWidth: 1,
+    borderColor: "rgba(255,255,255,0.1)",
+  },
+  actionBtn: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: "rgba(255,255,255,0.08)",
+    padding: 14,
+    borderRadius: 12,
+    marginTop: 10,
+  },
+  actionBtnText: { color: "#FFFFFF", fontWeight: "bold", fontSize: 15 },
+  cancelBtn: {
+    padding: 14,
+    borderRadius: 12,
+    alignItems: "center",
+    backgroundColor: "rgba(255,255,255,0.05)",
+    borderWidth: 1,
+    borderColor: "rgba(255,255,255,0.1)",
+    marginTop: 10,
+  },
+  cancelBtnText: { color: "#AAAAAA", fontWeight: "bold" },
   btnRecordatorio: {
     marginTop: 6,
     flexDirection: "row",

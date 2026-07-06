@@ -1,7 +1,7 @@
 {
   "expo": {
     "name": "Carretea",
-    "slug": "Carretea",
+    "slug": "Proyecto_GPS-Carretea-APP",
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/images/icon.png",
@@ -41,6 +41,7 @@
           }
         }
       ],
+      "expo-web-browser",
       [
         "@react-native-community/datetimepicker",
         {

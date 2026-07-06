@@ -10,9 +10,12 @@ import {
   upsertDatosBancarios,
   verificarCodigoEmail,
 } from "@/lib/api/auth";
+import { guardarGoogleToken, obtenerGoogleToken } from "@/lib/api/usuarios";
+import { supabase } from "@/lib/supabase";
 import Feather from "@expo/vector-icons/Feather";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { router } from "expo-router";
+import * as WebBrowser from "expo-web-browser";
 import { useEffect, useRef, useState } from "react";
 import {
   ActivityIndicator,
@@ -42,6 +45,7 @@ const formatearTelefono = (text: string) => {
   return result;
 };
 
+WebBrowser.maybeCompleteAuthSession();
 export default function PerfilScreen() {
   const insets = useSafeAreaInsets();
   const { width } = useWindowDimensions();
@@ -132,6 +136,18 @@ export default function PerfilScreen() {
   const { data: estadoEmail } = useQuery({
     queryKey: ["estado-email"],
     queryFn: getEstadoEmail,
+  });
+
+  const { data: googleCalendarVinculado } = useQuery({
+    queryKey: ["google-calendar-vinculado"],
+    queryFn: async () => {
+      try {
+        const token = await obtenerGoogleToken();
+        return Boolean(token);
+      } catch {
+        return false;
+      }
+    },
   });
 
   useEffect(() => {
@@ -253,6 +269,55 @@ export default function PerfilScreen() {
     ]);
   };
 
+  const handleConectarGoogle = async () => {
+    try {
+      const redirectUrl = "proyectogpscarreteaapp://";
+
+      const { data, error } = await supabase.auth.linkIdentity({
+        provider: "google",
+        options: {
+          scopes: "https://www.googleapis.com/auth/calendar",
+          redirectTo: redirectUrl,
+          skipBrowserRedirect: true,
+          queryParams: {
+            access_type: "offline", // para recibir refresh_token de Google
+            prompt: "consent", // fuerza que Google lo entregue siempre
+          },
+        },
+      });
+
+      if (error) throw error;
+
+      const result = await WebBrowser.openAuthSessionAsync(
+        data.url,
+        redirectUrl,
+      );
+
+      if (result.type === "success" && result.url) {
+        const params = new URLSearchParams(result.url.split("#")[1]);
+        const providerToken = params.get("provider_token");
+        const providerRefreshToken = params.get("provider_refresh_token");
+
+        if (providerToken) {
+          await guardarGoogleToken(providerToken, providerRefreshToken);
+          queryClient.invalidateQueries({
+            queryKey: ["google-calendar-vinculado"],
+          });
+          Alert.alert("¡Listo!", "Google Calendar conectado correctamente.");
+        } else {
+          Alert.alert(
+            "Error",
+            "No se recibió el token de Google. Intenta nuevamente.",
+          );
+        }
+      } else if (result.type === "cancel" || result.type === "dismiss") {
+        // Usuario canceló el flujo, no hacer nada
+      }
+    } catch (error: any) {
+      console.log("Error:", error);
+      Alert.alert("Error", error.message);
+    }
+  };
   return (
     <View style={styles.root}>
       <ScrollView
@@ -547,6 +612,24 @@ export default function PerfilScreen() {
                     </View>
                   ) : (
                     <Text style={styles.settingAction}>Verificar</Text>
+                  )}
+                </TouchableOpacity>
+                <View style={styles.divisor} />
+                <TouchableOpacity
+                  style={styles.settingRow}
+                  onPress={handleConectarGoogle}
+                >
+                  <View style={styles.settingLeft}>
+                    <Feather name="calendar" size={18} color="#4285F4" />
+                    <Text style={styles.settingLabel}>Google Calendar</Text>
+                  </View>
+                  {googleCalendarVinculado ? (
+                    <View style={styles.badgeVerificado}>
+                      <Feather name="check" size={12} color="#50C878" />
+                      <Text style={styles.badgeVerificadoText}>Vinculado</Text>
+                    </View>
+                  ) : (
+                    <Text style={styles.settingAction}>Conectar</Text>
                   )}
                 </TouchableOpacity>
                 <View style={styles.divisor} />
@@ -931,6 +1014,19 @@ const styles = StyleSheet.create({
     fontSize: 14,
     marginTop: 8,
   },
+  botonText: { color: "#FF5252", fontWeight: "bold", fontSize: 15 },
+  botonGoogle: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+    backgroundColor: "rgba(66,133,244,0.1)",
+    borderWidth: 1,
+    borderColor: "rgba(66,133,244,0.3)",
+    borderRadius: 14,
+    paddingVertical: 14,
+    paddingHorizontal: 24,
+  },
+  botonGoogleText: { color: "#4285F4", fontWeight: "bold", fontSize: 15 },
   switchRow: {
     flexDirection: "row",
     alignItems: "center",
