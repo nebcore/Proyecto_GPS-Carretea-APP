@@ -24,7 +24,11 @@ const obtenerUsuariosParticipantesEvento = async (eventoId: string) => {
     { data: evento, error: errorEvento },
     { data: participantes, error: errorParticipantes },
   ] = await Promise.all([
-    supabase.from("eventos").select("creador_id").eq("id", eventoId).single(),
+    supabase
+      .from("eventos")
+      .select("creador_id")
+      .eq("id", eventoId)
+      .maybeSingle(),
     supabase
       .from("participantes_evento")
       .select("contactos(referencia_usuario_id)")

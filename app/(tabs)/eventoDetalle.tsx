@@ -12,7 +12,7 @@ import {
   View,
 } from "react-native";
 
-// Librerías de terceros (Expo, TanStack, etc.)
+// 2. Librerías de terceros (Expo, TanStack, etc.)
 import Feather from "@expo/vector-icons/Feather";
 import DateTimePicker from "@react-native-community/datetimepicker";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
@@ -25,7 +25,7 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Alert } from "@/components/ui/AppAlert";
 import GlassCard from "@/components/ui/GlassCard";
 
-// APIs, Servicios y Utilidades internas (@/lib y @/services)
+// 4. APIs, Servicios y Utilidades internas (@/lib y @/services)
 import type { Deuda } from "@/lib/balances";
 import { useBalancesEvento } from "@/lib/realtime/useBalancesEvento";
 import { supabase } from "@/lib/supabase";
@@ -38,6 +38,7 @@ import {
   getEvento,
   invitarContactoAlEvento,
   obtenerAttendeesParaCalendar,
+  salirDeEvento,
   updateEventoBasico,
 } from "@/lib/api/eventos";
 import {
@@ -60,6 +61,7 @@ import {
 } from "@/lib/api/pagos";
 import { obtenerGoogleToken } from "@/lib/api/usuarios";
 
+import { getGrupos } from "@/lib/api/grupos";
 import {
   actualizarEventoCalendar,
   crearEventoCalendar,
@@ -116,6 +118,7 @@ export default function EventoDetalleScreen() {
   const [gastoSeleccionado, setGastoSeleccionado] = useState<any | null>(null);
   const [avisoPago, setAvisoPago] = useState<AvisoPago | null>(null);
   const [modalInvitarVisible, setModalInvitarVisible] = useState(false);
+  const [modalEliminarVisible, setModalEliminarVisible] = useState(false);
   const [modalEditarEventoVisible, setModalEditarEventoVisible] =
     useState(false);
   const [
@@ -153,8 +156,28 @@ export default function EventoDetalleScreen() {
     useQuery({
       queryKey: ["contactos-invitar"],
       queryFn: getContactosParaInvitar,
-      enabled: modalInvitarVisible,
+      enabled: modalInvitarVisible || modalEditarEventoVisible,
     });
+
+  const { data: grupos = [] } = useQuery({
+    queryKey: ["grupos"],
+    queryFn: getGrupos,
+  });
+
+  const [grupoSeleccionadoEditar, setGrupoSeleccionadoEditar] = useState({
+    id: "todos",
+    nombre: "Todos",
+  });
+
+  const [grupoSeleccionadoInvitar, setGrupoSeleccionadoInvitar] = useState({
+    id: "todos",
+    nombre: "Todos",
+  });
+  const [modalGruposInvitarVisible, setModalGruposInvitarVisible] =
+    useState(false);
+
+  const [modalGruposEditarVisible, setModalGruposEditarVisible] =
+    useState(false);
 
   const { balances, deudas, detalleParticipantes } =
     useBalancesEvento(eventoId);
@@ -164,7 +187,10 @@ export default function EventoDetalleScreen() {
     queryFn: () => obtenerPagosEvento(eventoId),
     enabled: Boolean(eventoId),
   });
-
+  const abrirModalInvitar = () => {
+    setGrupoSeleccionadoInvitar({ id: "todos", nombre: "Todos" });
+    setModalInvitarVisible(true);
+  };
   const { data: feedEvento = [], isLoading: loadingFeedEvento } = useQuery({
     queryKey: ["notificaciones-evento", eventoId],
     queryFn: () => obtenerNotificacionesEvento(eventoId, 40),
@@ -197,6 +223,19 @@ export default function EventoDetalleScreen() {
   const yaEsParticipante = (contactoId: string) =>
     participantes.some((p: any) => p.contacto_id === contactoId);
 
+  const contactosParaAgregar = contactosInvitar.filter((c: any) => {
+    if (yaEsParticipante(c.id)) return false;
+    if (grupoSeleccionadoEditar.id === "todos") return true;
+    return c.gruposAsignados?.some(
+      (g: any) => g.id === grupoSeleccionadoEditar.id,
+    );
+  });
+  const contactosParaInvitarFiltrados = contactosInvitar.filter((c: any) => {
+    if (grupoSeleccionadoInvitar.id === "todos") return true;
+    return c.gruposAsignados?.some(
+      (g: any) => g.id === grupoSeleccionadoInvitar.id,
+    );
+  });
   const participantesPorId = useMemo(() => {
     const mapa = new Map<string, string>();
     for (const participante of participantes as any[]) {
@@ -342,6 +381,30 @@ export default function EventoDetalleScreen() {
     },
   });
 
+  const tieneSaldoPendiente = miResumen.debe > 0 || miResumen.leDeben > 0;
+
+  const confirmarSalirEvento = () => {
+    if (tieneSaldoPendiente) {
+      Alert.alert(
+        "No puedes salir todavía",
+        "Tienes saldos pendientes en este evento (deudas o pagos por recibir). Debes saldarlos antes de salir.",
+      );
+      return;
+    }
+    Alert.alert(
+      "¿Salir del evento?",
+      "Dejarás de ver este evento. Esta acción no se puede deshacer.",
+      [
+        { text: "Cancelar", style: "cancel" },
+        {
+          text: "Salir",
+          style: "destructive",
+          onPress: () => salirEventoMutation.mutate(),
+        },
+      ],
+    );
+  };
+
   const invitarParticipanteMutation = useMutation({
     mutationFn: (contactoId: string) =>
       invitarContactoAlEvento(eventoId, contactoId),
@@ -453,6 +516,7 @@ export default function EventoDetalleScreen() {
     setEditFecha(
       evento.fecha_evento ? new Date(evento.fecha_evento) : new Date(),
     );
+    setGrupoSeleccionadoEditar({ id: "todos", nombre: "Todos" }); // ← nuevo
     setModalEditarEventoVisible(true);
   };
 
@@ -873,6 +937,53 @@ export default function EventoDetalleScreen() {
     onError: () => Alert.alert("Error", "No se pudo eliminar el evento."),
   });
 
+  const salirEventoMutation = useMutation({
+    mutationFn: async () => {
+      if (!miContactoId) {
+        throw new Error(
+          "No pudimos identificar tu participación en este evento.",
+        );
+      }
+      if (evento?.google_event_id) {
+        try {
+          const accessToken = await obtenerGoogleToken();
+          if (accessToken) {
+            const participantesRestantes = (
+              evento?.participantes_evento ?? []
+            ).filter((p: any) => p.contacto_id !== miContactoId);
+            const { attendees } = await obtenerAttendeesParaCalendar(
+              participantesRestantes,
+            );
+            await actualizarEventoCalendar(
+              accessToken,
+              evento.google_event_id,
+              {
+                titulo: evento.titulo,
+                descripcion: evento.descripcion,
+                fechaInicio: evento.fecha_evento,
+                fechaFin: evento.fecha_evento,
+                attendees,
+              },
+            );
+          }
+        } catch (e) {
+          console.log("Error al sincronizar salida con Calendar:", e);
+        }
+      }
+
+      await salirDeEvento(eventoId, miContactoId);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["eventos"] });
+      queryClient.invalidateQueries({ queryKey: ["evento", eventoId] });
+      queryClient.invalidateQueries({ queryKey: ["participantes", eventoId] });
+      router.back();
+      Alert.alert("Listo", "Saliste del evento.");
+    },
+    onError: (error: any) =>
+      Alert.alert("Error", error?.message ?? "No se pudo salir del evento."),
+  });
+
   const confirmarEliminar = () => {
     Alert.alert("¿Eliminar evento?", "Esta acción no se puede deshacer.", [
       { text: "Cancelar", style: "cancel" },
@@ -1146,6 +1257,18 @@ export default function EventoDetalleScreen() {
           color: "#A855F7",
           bg: "rgba(168, 85, 247, 0.15)",
         }; // Morado
+      case "participante_salio":
+        return {
+          icon: "user-x",
+          color: "#EF4444",
+          bg: "rgba(239, 68, 68, 0.15)",
+        }; // Rojo
+      case "participante_eliminado":
+        return {
+          icon: "user-x",
+          color: "#EF4444",
+          bg: "rgba(239, 68, 68, 0.15)",
+        }; // Rojo
       default:
         return {
           icon: "activity",
@@ -1274,9 +1397,26 @@ export default function EventoDetalleScreen() {
           </View>
           <View style={styles.headerRight}>
             <View style={styles.iconosRow}>
-              <TouchableOpacity onPress={confirmarEliminar}>
-                <Feather name="trash-2" size={16} color="rgba(255,82,82,0.7)" />
-              </TouchableOpacity>
+              {esCreador ? (
+                <TouchableOpacity onPress={confirmarEliminar}>
+                  <Feather
+                    name="trash-2"
+                    size={16}
+                    color="rgba(255,82,82,0.7)"
+                  />
+                </TouchableOpacity>
+              ) : (
+                <TouchableOpacity
+                  onPress={confirmarSalirEvento}
+                  disabled={salirEventoMutation.isPending}
+                >
+                  <Feather
+                    name="log-out"
+                    size={16}
+                    color="rgba(255,82,82,0.7)"
+                  />
+                </TouchableOpacity>
+              )}
             </View>
             <View
               style={{
@@ -1545,17 +1685,29 @@ export default function EventoDetalleScreen() {
           {/* TAB PARTICIPANTES */}
           {tabActivo === "participantes" && (
             <>
-              <TouchableOpacity
-                style={[styles.botonSecundario, { marginBottom: 12 }]}
-                onPress={() => setModalInvitarVisible(true)}
-              >
-                <View style={styles.invitarBtnContent}>
-                  <Feather name="user-plus" size={16} color="#FFFFFF" />
-                  <Text style={styles.botonSecundarioText}>
-                    Invitar participante
-                  </Text>
+              {esCreador ? (
+                <View style={styles.participantesBotonesRow}>
+                  <TouchableOpacity
+                    style={[styles.botonMitad, styles.botonVerde]}
+                    onPress={abrirModalInvitar}
+                  >
+                    <View style={styles.invitarBtnContent}>
+                      <Feather name="user-plus" size={16} color="#FFFFFF" />
+                      <Text style={styles.botonSecundarioText}>Invitar</Text>
+                    </View>
+                  </TouchableOpacity>
+
+                  <TouchableOpacity
+                    style={[styles.botonMitad, styles.botonRojo]}
+                    onPress={() => setModalEliminarVisible(true)}
+                  >
+                    <View style={styles.invitarBtnContent}>
+                      <Feather name="user-minus" size={16} color="#FFFFFF" />
+                      <Text style={styles.botonSecundarioText}>Eliminar</Text>
+                    </View>
+                  </TouchableOpacity>
                 </View>
-              </TouchableOpacity>
+              ) : null}
 
               {loadingParticipantes ? (
                 <ActivityIndicator color="#FFFFFF" style={{ marginTop: 20 }} />
@@ -1925,17 +2077,28 @@ export default function EventoDetalleScreen() {
       <Modal visible={modalInvitarVisible} transparent animationType="slide">
         <View style={styles.modalOverlay}>
           <View style={styles.modalCard}>
-            <Text style={styles.modalTitle}>Invitar participante</Text>
+            <View style={styles.agregarPartHeader}>
+              <Text style={styles.modalTitle}>Invitar participante</Text>
+              <TouchableOpacity
+                style={styles.dropdownGrupo}
+                onPress={() => setModalGruposInvitarVisible(true)}
+              >
+                <Text style={styles.dropdownText} numberOfLines={1}>
+                  {grupoSeleccionadoInvitar.nombre}
+                </Text>
+                <Feather name="chevron-down" size={16} color="#AAAAAA" />
+              </TouchableOpacity>
+            </View>
 
             {loadingContactosInvitar ? (
               <ActivityIndicator color="#FFFFFF" />
-            ) : contactosInvitar.length === 0 ? (
+            ) : contactosParaInvitarFiltrados.length === 0 ? (
               <Text style={styles.emptyText}>
-                No tienes más contactos disponibles.
+                No tienes contactos disponibles en este grupo.
               </Text>
             ) : (
               <ScrollView>
-                {contactosInvitar.map((c: any) => {
+                {contactosParaInvitarFiltrados.map((c: any) => {
                   const invitado = yaEstaInvitado(c.id);
                   return (
                     <TouchableOpacity
@@ -1971,6 +2134,59 @@ export default function EventoDetalleScreen() {
             <TouchableOpacity
               style={[styles.cancelBtn, { marginTop: 12 }]}
               onPress={() => setModalInvitarVisible(false)}
+            >
+              <Text style={styles.cancelBtnText}>Cerrar</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
+
+      <Modal visible={modalEliminarVisible} transparent animationType="slide">
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalCard}>
+            <Text style={styles.modalTitle}>Eliminar participante</Text>
+
+            {loadingParticipantes ? (
+              <ActivityIndicator color="#FFFFFF" />
+            ) : participantes.length === 0 ? (
+              <Text style={styles.emptyText}>No hay participantes.</Text>
+            ) : (
+              <ScrollView>
+                {participantes.map((p: any) => {
+                  const nombre = obtenerNombreContacto(p.contactos);
+                  const esCreadorFila = p.rol === "creador";
+
+                  return (
+                    <View
+                      key={p.contacto_id}
+                      style={styles.editarParticipanteRow}
+                    >
+                      <Text style={styles.editarParticipanteNombre}>
+                        {nombre}
+                      </Text>
+                      {esCreadorFila ? (
+                        <Text style={styles.editarParticipanteCreadorTag}>
+                          Organizador
+                        </Text>
+                      ) : (
+                        <TouchableOpacity
+                          onPress={() =>
+                            confirmarQuitarParticipante(p.contacto_id, nombre)
+                          }
+                          disabled={eliminarParticipanteMutation.isPending}
+                        >
+                          <Feather name="x" size={18} color="#FF6B6B" />
+                        </TouchableOpacity>
+                      )}
+                    </View>
+                  );
+                })}
+              </ScrollView>
+            )}
+
+            <TouchableOpacity
+              style={[styles.cancelBtn, { marginTop: 12 }]}
+              onPress={() => setModalEliminarVisible(false)}
             >
               <Text style={styles.cancelBtnText}>Cerrar</Text>
             </TouchableOpacity>
@@ -2448,15 +2664,31 @@ export default function EventoDetalleScreen() {
                 );
               })}
 
-              <Text style={[styles.modalLabel, styles.editarSeccion]}>
-                Agregar participante
-              </Text>
-              {loadingContactosInvitar ? (
-                <ActivityIndicator color="#FFFFFF" style={{ marginTop: 10 }} />
-              ) : (
-                contactosInvitar
-                  .filter((c: any) => !yaEsParticipante(c.id))
-                  .map((c: any) => (
+              <View style={styles.editarSeccion}>
+                <View style={styles.agregarPartHeader}>
+                  <Text style={styles.modalLabel}>Agregar participante</Text>
+                  <TouchableOpacity
+                    style={styles.dropdownGrupo}
+                    onPress={() => setModalGruposEditarVisible(true)}
+                  >
+                    <Text style={styles.dropdownText} numberOfLines={1}>
+                      {grupoSeleccionadoEditar.nombre}
+                    </Text>
+                    <Feather name="chevron-down" size={16} color="#AAAAAA" />
+                  </TouchableOpacity>
+                </View>
+
+                {loadingContactosInvitar ? (
+                  <ActivityIndicator
+                    color="#FFFFFF"
+                    style={{ marginTop: 10 }}
+                  />
+                ) : contactosParaAgregar.length === 0 ? (
+                  <Text style={styles.emptyText}>
+                    No hay contactos disponibles en este grupo.
+                  </Text>
+                ) : (
+                  contactosParaAgregar.map((c: any) => (
                     <TouchableOpacity
                       key={c.id}
                       style={styles.editarAgregarRow}
@@ -2467,7 +2699,8 @@ export default function EventoDetalleScreen() {
                       <Feather name="plus" size={18} color="#FFFFFF" />
                     </TouchableOpacity>
                   ))
-              )}
+                )}
+              </View>
 
               <TouchableOpacity
                 style={[
@@ -2492,6 +2725,124 @@ export default function EventoDetalleScreen() {
             </ScrollView>
           </View>
         </View>
+      </Modal>
+      <Modal
+        visible={modalGruposEditarVisible}
+        transparent
+        animationType="fade"
+      >
+        <TouchableOpacity
+          style={styles.dropdownOverlay}
+          activeOpacity={1}
+          onPress={() => setModalGruposEditarVisible(false)}
+        >
+          <View style={styles.dropdownModalContainer}>
+            <TouchableOpacity
+              style={styles.dropdownItem}
+              onPress={() => {
+                setGrupoSeleccionadoEditar({ id: "todos", nombre: "Todos" });
+                setModalGruposEditarVisible(false);
+              }}
+            >
+              <Text
+                style={[
+                  styles.dropdownItemText,
+                  grupoSeleccionadoEditar.id === "todos" && {
+                    color: "#FFFFFF",
+                    fontWeight: "bold",
+                  },
+                ]}
+              >
+                Todos
+              </Text>
+            </TouchableOpacity>
+            <View style={styles.divisorDropdown} />
+            {grupos.map((grupo: any) => (
+              <TouchableOpacity
+                key={grupo.id}
+                style={styles.dropdownItem}
+                onPress={() => {
+                  setGrupoSeleccionadoEditar({
+                    id: grupo.id,
+                    nombre: grupo.nombre,
+                  });
+                  setModalGruposEditarVisible(false);
+                }}
+              >
+                <Text
+                  style={[
+                    styles.dropdownItemText,
+                    grupoSeleccionadoEditar.id === grupo.id && {
+                      color: "#FFFFFF",
+                      fontWeight: "bold",
+                    },
+                  ]}
+                >
+                  {grupo.nombre}
+                </Text>
+              </TouchableOpacity>
+            ))}
+          </View>
+        </TouchableOpacity>
+      </Modal>
+      <Modal
+        visible={modalGruposInvitarVisible}
+        transparent
+        animationType="fade"
+      >
+        <TouchableOpacity
+          style={styles.dropdownOverlay}
+          activeOpacity={1}
+          onPress={() => setModalGruposInvitarVisible(false)}
+        >
+          <View style={styles.dropdownModalContainer}>
+            <TouchableOpacity
+              style={styles.dropdownItem}
+              onPress={() => {
+                setGrupoSeleccionadoInvitar({ id: "todos", nombre: "Todos" });
+                setModalGruposInvitarVisible(false);
+              }}
+            >
+              <Text
+                style={[
+                  styles.dropdownItemText,
+                  grupoSeleccionadoInvitar.id === "todos" && {
+                    color: "#FFFFFF",
+                    fontWeight: "bold",
+                  },
+                ]}
+              >
+                Todos
+              </Text>
+            </TouchableOpacity>
+            <View style={styles.divisorDropdown} />
+            {grupos.map((grupo: any) => (
+              <TouchableOpacity
+                key={grupo.id}
+                style={styles.dropdownItem}
+                onPress={() => {
+                  setGrupoSeleccionadoInvitar({
+                    id: grupo.id,
+                    nombre: grupo.nombre,
+                  });
+                  setModalGruposInvitarVisible(false);
+                }}
+              >
+                <Text
+                  style={[
+                    styles.dropdownItemText,
+                    grupoSeleccionadoInvitar.id === grupo.id && {
+                      color: "#FFFFFF",
+                      fontWeight: "bold",
+                    },
+                  ]}
+                >
+                  {grupo.nombre}
+                </Text>
+              </TouchableOpacity>
+            ))}
+          </View>
+        </TouchableOpacity>
       </Modal>
     </View>
   );
@@ -2714,6 +3065,26 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
     gap: 8,
+  },
+  participantesBotonesRow: {
+    flexDirection: "row",
+    gap: 10,
+    marginBottom: 12,
+  },
+  botonMitad: {
+    flex: 1,
+    borderRadius: 15,
+    padding: 16,
+    alignItems: "center",
+    borderWidth: 1,
+  },
+  botonVerde: {
+    backgroundColor: "rgba(76,175,80,0.18)",
+    borderColor: "rgba(76,175,80,0.45)",
+  },
+  botonRojo: {
+    backgroundColor: "rgba(255,82,82,0.18)",
+    borderColor: "rgba(255,107,107,0.45)",
   },
   contactRow: {
     flexDirection: "row",
@@ -3339,5 +3710,50 @@ const styles = StyleSheet.create({
     color: "#AAAAAA",
     fontSize: 11,
     fontWeight: "600",
+  },
+  dropdownOverlay: {
+    flex: 1,
+    backgroundColor: "transparent",
+    justifyContent: "center",
+    alignItems: "center",
+  },
+  dropdownModalContainer: {
+    width: 200,
+    backgroundColor: "rgba(25, 25, 25, 0.95)",
+    borderRadius: 15,
+    padding: 15,
+    borderWidth: 1,
+    borderColor: "rgba(255, 255, 255, 0.1)",
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 5 },
+    shadowOpacity: 0.5,
+    shadowRadius: 10,
+    elevation: 10,
+  },
+  dropdownItem: { paddingVertical: 10 },
+  dropdownItemText: { color: "#AAAAAA", fontSize: 15 },
+  divisorDropdown: {
+    height: 1,
+    backgroundColor: "rgba(255, 255, 255, 0.1)",
+    marginVertical: 5,
+  },
+  dropdownGrupo: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+    backgroundColor: "rgba(0, 0, 0, 0.5)",
+    borderWidth: 1,
+    borderColor: "rgba(255, 255, 255, 0.1)",
+    borderRadius: 10,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    maxWidth: 150,
+  },
+  dropdownText: { color: "#FFFFFF", fontSize: 13 },
+  agregarPartHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    marginBottom: 8,
   },
 });
