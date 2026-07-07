@@ -83,7 +83,33 @@ export const obtenerGoogleToken = async () => {
   // Sin refresh_token disponible: devolvemos lo que haya guardado (comportamiento anterior)
   return data?.google_calendar_token ?? null;
 };
+export const obtenerGoogleTokenDeEvento = async (eventoId: string) => {
+  const { data, error } = await supabase.rpc("obtener_calendar_tokens_evento", {
+    p_evento_id: eventoId,
+  });
+  if (error) throw error;
 
+  const fila = data?.[0];
+  if (!fila) return null;
+
+  const refreshToken = fila.refresh_token;
+
+  if (refreshToken) {
+    try {
+      const accessTokenNuevo = await refrescarAccessTokenGoogle(refreshToken);
+      await supabase.rpc("actualizar_calendar_token_evento", {
+        p_evento_id: eventoId,
+        p_token: accessTokenNuevo,
+      });
+      return accessTokenNuevo;
+    } catch (e) {
+      console.log("No se pudo refrescar el token del creador:", e);
+      return fila.token ?? null;
+    }
+  }
+
+  return fila.token ?? null;
+};
 export const obtenerGoogleRefreshToken = async () => {
   const {
     data: { user },

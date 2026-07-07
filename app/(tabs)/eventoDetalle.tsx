@@ -34,6 +34,7 @@ import { supabase } from "@/lib/supabase";
 import { getContactosParaInvitar } from "@/lib/api/contactos";
 import {
   actualizarEstadoEvento,
+  actualizarRolParticipante,
   deleteEvento,
   eliminarParticipanteDelEvento,
   getEvento,
@@ -60,7 +61,10 @@ import {
   obtenerPagosReportadosEvento,
   reportarPago,
 } from "@/lib/api/pagos";
-import { obtenerGoogleToken } from "@/lib/api/usuarios";
+import {
+  obtenerGoogleToken,
+  obtenerGoogleTokenDeEvento,
+} from "@/lib/api/usuarios";
 
 import { getGrupos } from "@/lib/api/grupos";
 import {
@@ -326,6 +330,10 @@ export default function EventoDetalleScreen() {
   );
 
   const esCreador = evento?.creador_id === usuarioActualId;
+  const esAdministrador = participantes.some(
+    (p: any) => p.contacto_id === miContactoId && p.rol === "administrador",
+  );
+  const puedeGestionar = esCreador || esAdministrador;
 
   const actualizarEstadoMutation = useMutation({
     mutationFn: (estado: "abierto" | "finalizado") =>
@@ -351,7 +359,7 @@ export default function EventoDetalleScreen() {
         fechaEvento: editFecha.toISOString(),
       };
       if (evento?.google_event_id) {
-        const accessToken = await obtenerGoogleToken();
+        const accessToken = await obtenerGoogleTokenDeEvento(eventoId);
         if (accessToken) {
           const { attendees } = await obtenerAttendeesParaCalendar(
             evento?.participantes_evento ?? [],
@@ -408,9 +416,7 @@ export default function EventoDetalleScreen() {
   const invitarParticipanteMutation = useMutation({
     mutationFn: (contactoId: string) =>
       invitarContactoAlEvento(eventoId, contactoId),
-    onSuccess: async () => {
-      // Traemos el evento actualizado (con el nuevo participante ya incluido)
-      // para poder sincronizar la lista completa de invitados con Calendar.
+    onSuccess: async (_data, contactoId) => {
       let eventoActualizado: any = null;
       try {
         eventoActualizado = await getEvento(eventoId);
@@ -420,22 +426,47 @@ export default function EventoDetalleScreen() {
 
       if (eventoActualizado?.google_event_id) {
         try {
-          const accessToken = await obtenerGoogleToken();
+          const accessToken = await obtenerGoogleTokenDeEvento(eventoId);
           if (accessToken) {
+            const participantesTodos =
+              eventoActualizado?.participantes_evento ?? [];
+            const participantesSinNuevo = participantesTodos.filter(
+              (p: any) => p.contacto_id !== contactoId,
+            );
+
+            const { attendees: attendeesSinNuevo } =
+              await obtenerAttendeesParaCalendar(
+                participantesSinNuevo,
+                eventoActualizado?.creador_id,
+              );
             const { attendees } = await obtenerAttendeesParaCalendar(
-              eventoActualizado?.participantes_evento ?? [],
+              participantesTodos,
               eventoActualizado?.creador_id,
             );
+
+            const datosEvento = {
+              titulo: eventoActualizado.titulo,
+              descripcion: eventoActualizado.descripcion,
+              fechaInicio: eventoActualizado.fecha_evento,
+              fechaFin: eventoActualizado.fecha_evento,
+            };
+
+            // Paso 1: PATCH silencioso sin el nuevo invitado, por si Google
+            // todavía lo tenía como asistente "viejo" de una invitación anterior.
             await actualizarEventoCalendar(
               accessToken,
               eventoActualizado.google_event_id,
-              {
-                titulo: eventoActualizado.titulo,
-                descripcion: eventoActualizado.descripcion,
-                fechaInicio: eventoActualizado.fecha_evento,
-                fechaFin: eventoActualizado.fecha_evento,
-                attendees,
-              },
+              { ...datosEvento, attendees: attendeesSinNuevo },
+              "none",
+            );
+
+            // Paso 2: PATCH real con la lista completa, notificando a todos
+            // (incluyendo la invitación fresca al nuevo participante).
+            await actualizarEventoCalendar(
+              accessToken,
+              eventoActualizado.google_event_id,
+              { ...datosEvento, attendees },
+              "all",
             );
           }
         } catch (e) {
@@ -449,6 +480,26 @@ export default function EventoDetalleScreen() {
     },
     onError: (error: any) => {
       Alert.alert("Error", error?.message ?? "No se pudo invitar al contacto.");
+    },
+  });
+
+  const cambiarRolParticipanteMutation = useMutation({
+    mutationFn: ({
+      contactoId,
+      rol,
+    }: {
+      contactoId: string;
+      rol: "invitado" | "administrador";
+    }) => actualizarRolParticipante(eventoId, contactoId, rol),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["participantes", eventoId] });
+    },
+    onError: (error: any) => {
+      Alert.alert(
+        "Error",
+        error?.message ??
+          "No se pudo actualizar los privilegios del participante.",
+      );
     },
   });
 
@@ -470,7 +521,7 @@ export default function EventoDetalleScreen() {
 
       if (eventoActualizado?.google_event_id) {
         try {
-          const accessToken = await obtenerGoogleToken();
+          const accessToken = await obtenerGoogleTokenDeEvento(eventoId);
           if (accessToken) {
             const { attendees } = await obtenerAttendeesParaCalendar(
               eventoActualizado?.participantes_evento ?? [],
@@ -838,9 +889,7 @@ export default function EventoDetalleScreen() {
   const invitarMutation = useMutation({
     mutationFn: (contactoId: string) =>
       invitarContactoAlEvento(eventoId, contactoId),
-    onSuccess: async () => {
-      // Traemos el evento actualizado (con el nuevo participante ya incluido)
-      // para poder sincronizar la lista completa de invitados con Calendar.
+    onSuccess: async (_data, contactoId) => {
       let eventoActualizado: any = null;
       try {
         eventoActualizado = await getEvento(eventoId);
@@ -850,22 +899,42 @@ export default function EventoDetalleScreen() {
 
       if (eventoActualizado?.google_event_id) {
         try {
-          const accessToken = await obtenerGoogleToken();
+          const accessToken = await obtenerGoogleTokenDeEvento(eventoId);
           if (accessToken) {
+            const participantesTodos =
+              eventoActualizado?.participantes_evento ?? [];
+            const participantesSinNuevo = participantesTodos.filter(
+              (p: any) => p.contacto_id !== contactoId,
+            );
+
+            const { attendees: attendeesSinNuevo } =
+              await obtenerAttendeesParaCalendar(
+                participantesSinNuevo,
+                eventoActualizado?.creador_id,
+              );
             const { attendees } = await obtenerAttendeesParaCalendar(
-              eventoActualizado?.participantes_evento ?? [],
+              participantesTodos,
               eventoActualizado?.creador_id,
+            );
+
+            const datosEvento = {
+              titulo: eventoActualizado.titulo,
+              descripcion: eventoActualizado.descripcion,
+              fechaInicio: eventoActualizado.fecha_evento,
+              fechaFin: eventoActualizado.fecha_evento,
+            };
+
+            await actualizarEventoCalendar(
+              accessToken,
+              eventoActualizado.google_event_id,
+              { ...datosEvento, attendees: attendeesSinNuevo },
+              "none",
             );
             await actualizarEventoCalendar(
               accessToken,
               eventoActualizado.google_event_id,
-              {
-                titulo: eventoActualizado.titulo,
-                descripcion: eventoActualizado.descripcion,
-                fechaInicio: eventoActualizado.fecha_evento,
-                fechaFin: eventoActualizado.fecha_evento,
-                attendees,
-              },
+              { ...datosEvento, attendees },
+              "all",
             );
           }
         } catch (e) {
@@ -911,30 +980,18 @@ export default function EventoDetalleScreen() {
           "No pudimos identificar tu participación en este evento.",
         );
       }
+
       if (evento?.google_event_id) {
         try {
-          const accessToken = await obtenerGoogleToken();
-          if (accessToken) {
-            const participantesRestantes = (
-              evento?.participantes_evento ?? []
-            ).filter((p: any) => p.contacto_id !== miContactoId);
-            const { attendees } = await obtenerAttendeesParaCalendar(
-              participantesRestantes,
-            );
-            await actualizarEventoCalendar(
-              accessToken,
-              evento.google_event_id,
-              {
-                titulo: evento.titulo,
-                descripcion: evento.descripcion,
-                fechaInicio: evento.fecha_evento,
-                fechaFin: evento.fecha_evento,
-                attendees,
-              },
-            );
+          const miAccessToken = await obtenerGoogleToken();
+          if (miAccessToken) {
+            await eliminarEventoCalendar(miAccessToken, evento.google_event_id);
           }
         } catch (e) {
-          console.log("Error al sincronizar salida con Calendar:", e);
+          console.log(
+            "No se pudo quitar el evento del calendar propio al salir:",
+            e,
+          );
         }
       }
 
@@ -1016,7 +1073,7 @@ export default function EventoDetalleScreen() {
 
   const agregarACalendar = async () => {
     try {
-      const accessToken = await obtenerGoogleToken();
+      const accessToken = await obtenerGoogleTokenDeEvento(eventoId);
 
       if (!accessToken) {
         Alert.alert(
@@ -1301,7 +1358,7 @@ export default function EventoDetalleScreen() {
                   </Text>
                 </View>
               </View>
-              {esCreador ? (
+              {puedeGestionar ? (
                 <View style={styles.infoPills}>
                   <TouchableOpacity
                     style={[styles.pill, styles.pillBoton]}
@@ -1314,26 +1371,28 @@ export default function EventoDetalleScreen() {
                     />
                     <Text style={styles.pillText}>Editar</Text>
                   </TouchableOpacity>
-                  <TouchableOpacity
-                    style={[styles.pill, styles.pillBoton]}
-                    onPress={confirmarCambioEstado}
-                    disabled={actualizarEstadoMutation.isPending}
-                  >
-                    <Feather
-                      name={
-                        evento?.estado === "finalizado"
-                          ? "rotate-ccw"
-                          : "check-circle"
-                      }
-                      size={11}
-                      color="rgba(255,255,255,0.5)"
-                    />
-                    <Text style={styles.pillText}>
-                      {evento?.estado === "finalizado"
-                        ? "Reabrir evento"
-                        : "Finalizar evento"}
-                    </Text>
-                  </TouchableOpacity>
+                  {esCreador ? (
+                    <TouchableOpacity
+                      style={[styles.pill, styles.pillBoton]}
+                      onPress={confirmarCambioEstado}
+                      disabled={actualizarEstadoMutation.isPending}
+                    >
+                      <Feather
+                        name={
+                          evento?.estado === "finalizado"
+                            ? "rotate-ccw"
+                            : "check-circle"
+                        }
+                        size={11}
+                        color="rgba(255,255,255,0.5)"
+                      />
+                      <Text style={styles.pillText}>
+                        {evento?.estado === "finalizado"
+                          ? "Reabrir evento"
+                          : "Finalizar evento"}
+                      </Text>
+                    </TouchableOpacity>
+                  ) : null}
                 </View>
               ) : null}
             </View>
@@ -1652,7 +1711,7 @@ export default function EventoDetalleScreen() {
           {/* TAB PARTICIPANTES */}
           {tabActivo === "participantes" && (
             <>
-              {esCreador ? (
+              {puedeGestionar ? (
                 <View style={styles.participantesBotonesRow}>
                   <TouchableOpacity
                     style={[styles.botonMitad, styles.botonVerde]}
@@ -1691,6 +1750,9 @@ export default function EventoDetalleScreen() {
                     );
                     const monto = balance?.balance ?? 0;
                     const nombre = obtenerNombreContacto(p.contactos);
+                    const esAdminFila = p.rol === "administrador";
+                    const esCreadorFila = p.rol === "creador";
+
                     return (
                       <TouchableOpacity
                         key={p.contacto_id}
@@ -1704,11 +1766,46 @@ export default function EventoDetalleScreen() {
                           </Text>
                         </View>
                         <View style={styles.cardInfo}>
-                          <Text style={styles.cardTitulo}>{nombre}</Text>
+                          <View style={styles.nombreConBadgeRow}>
+                            <Text style={styles.cardTitulo}>{nombre}</Text>
+                            {esCreadorFila ? (
+                              <Feather name="star" size={12} color="#FFD54F" />
+                            ) : esAdminFila ? (
+                              <Feather
+                                name="shield"
+                                size={12}
+                                color="#4CAF50"
+                              />
+                            ) : null}
+                          </View>
                           <Text style={styles.cardSub}>
                             {monto >= 0 ? "Recibe" : "Debe"}
                           </Text>
                         </View>
+
+                        {esCreador && !esCreadorFila ? (
+                          <TouchableOpacity
+                            style={styles.adminToggleBtn}
+                            onPress={() =>
+                              cambiarRolParticipanteMutation.mutate({
+                                contactoId: p.contacto_id,
+                                rol: esAdminFila ? "invitado" : "administrador",
+                              })
+                            }
+                            disabled={cambiarRolParticipanteMutation.isPending}
+                          >
+                            <Feather
+                              name={esAdminFila ? "user-minus" : "shield"}
+                              size={16}
+                              color={
+                                esAdminFila
+                                  ? "#FF6B6B"
+                                  : "rgba(255,255,255,0.4)"
+                              }
+                            />
+                          </TouchableOpacity>
+                        ) : null}
+
                         <Text
                           style={[
                             styles.gastoMonto,
@@ -3614,5 +3711,27 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "space-between",
     marginBottom: 8,
+  },
+  editarParticipanteInfo: {
+    flex: 1,
+    gap: 2,
+  },
+  adminTag: {
+    color: "#4CAF50",
+    fontSize: 11,
+    fontWeight: "600",
+  },
+  participanteAccionesRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 14,
+  },
+  adminToggleBtn: {
+    padding: 2,
+  },
+  nombreConBadgeRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
   },
 });

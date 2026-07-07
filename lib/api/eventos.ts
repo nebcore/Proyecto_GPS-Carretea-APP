@@ -293,3 +293,18 @@ export const salirDeEvento = async (eventoId: string, contactoId: string) => {
     );
   }
 };
+
+// CAMBIAR ROL DE UN PARTICIPANTE (otorgar o quitar privilegios de administrador)
+export const actualizarRolParticipante = async (
+  eventoId: string,
+  contactoId: string,
+  rol: "invitado" | "administrador",
+) => {
+  const { error } = await supabase
+    .from("participantes_evento")
+    .update({ rol })
+    .eq("evento_id", eventoId)
+    .eq("contacto_id", contactoId);
+
+  if (error) throw error;
+};

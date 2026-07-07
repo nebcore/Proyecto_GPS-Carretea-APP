@@ -72,9 +72,10 @@ export const actualizarEventoCalendar = async (
   accessToken: string,
   googleEventId: string,
   evento: Evento,
+  sendUpdates: "all" | "none" = "all",
 ): Promise<any> => {
   const response = await fetch(
-    `https://www.googleapis.com/calendar/v3/calendars/primary/events/${googleEventId}?sendUpdates=all`,
+    `https://www.googleapis.com/calendar/v3/calendars/primary/events/${googleEventId}?sendUpdates=${sendUpdates}`,
     {
       method: "PATCH",
       headers: {
@@ -84,6 +85,8 @@ export const actualizarEventoCalendar = async (
       body: JSON.stringify({
         summary: evento.titulo,
         description: evento.descripcion,
+        start: { dateTime: evento.fechaInicio },
+        end: { dateTime: evento.fechaFin },
         attendees: evento.attendees ?? [],
       }),
     },
