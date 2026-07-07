@@ -251,3 +251,19 @@ export const obtenerAttendeesParaCalendar = async (
 
   return { attendees, sinEmail };
 };
+
+export const salirDeEvento = async (eventoId: string, contactoId: string) => {
+  const { data, error } = await supabase
+    .from("participantes_evento")
+    .delete()
+    .eq("evento_id", eventoId)
+    .eq("contacto_id", contactoId)
+    .select();
+
+  if (error) throw error;
+  if (!data || data.length === 0) {
+    throw new Error(
+      "No se pudo salir del evento. Puede faltar un permiso (RLS) para esta acción.",
+    );
+  }
+};

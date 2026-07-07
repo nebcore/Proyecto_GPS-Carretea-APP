@@ -14,22 +14,22 @@ import {
 } from "react-native";
 
 // 2. Librerías de terceros (Expo, TanStack, etc.)
+import Feather from "@expo/vector-icons/Feather";
+import DateTimePicker from "@react-native-community/datetimepicker";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import * as Clipboard from "expo-clipboard";
 import * as ImagePicker from "expo-image-picker";
 import { router, useLocalSearchParams } from "expo-router";
-import Feather from "@expo/vector-icons/Feather";
-import DateTimePicker from "@react-native-community/datetimepicker";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 
 // 3. Componentes UI internos
 import { Alert } from "@/components/ui/AppAlert";
 import GlassCard from "@/components/ui/GlassCard";
 
 // 4. APIs, Servicios y Utilidades internas (@/lib y @/services)
-import { supabase } from "@/lib/supabase";
 import type { Deuda } from "@/lib/balances";
 import { useBalancesEvento } from "@/lib/realtime/useBalancesEvento";
+import { supabase } from "@/lib/supabase";
 
 import { getContactosParaInvitar } from "@/lib/api/contactos";
 import {
@@ -39,6 +39,7 @@ import {
   getEvento,
   invitarContactoAlEvento,
   obtenerAttendeesParaCalendar,
+  salirDeEvento,
   updateEventoBasico,
 } from "@/lib/api/eventos";
 import {
@@ -117,8 +118,10 @@ export default function EventoDetalleScreen() {
   const [modalInvitarVisible, setModalInvitarVisible] = useState(false);
   const [modalEditarEventoVisible, setModalEditarEventoVisible] =
     useState(false);
-  const [participanteBancarioSeleccionado, setParticipanteBancarioSeleccionado] =
-    useState<any | null>(null);
+  const [
+    participanteBancarioSeleccionado,
+    setParticipanteBancarioSeleccionado,
+  ] = useState<any | null>(null);
   const [editNombre, setEditNombre] = useState("");
   const [editDescripcion, setEditDescripcion] = useState("");
   const [editUbicacion, setEditUbicacion] = useState("");
@@ -340,6 +343,30 @@ export default function EventoDetalleScreen() {
     },
   });
 
+  const tieneSaldoPendiente = miResumen.debe > 0 || miResumen.leDeben > 0;
+
+  const confirmarSalirEvento = () => {
+    if (tieneSaldoPendiente) {
+      Alert.alert(
+        "No puedes salir todavía",
+        "Tienes saldos pendientes en este evento (deudas o pagos por recibir). Debes saldarlos antes de salir.",
+      );
+      return;
+    }
+    Alert.alert(
+      "¿Salir del evento?",
+      "Dejarás de ver este evento. Esta acción no se puede deshacer.",
+      [
+        { text: "Cancelar", style: "cancel" },
+        {
+          text: "Salir",
+          style: "destructive",
+          onPress: () => salirEventoMutation.mutate(),
+        },
+      ],
+    );
+  };
+
   const invitarParticipanteMutation = useMutation({
     mutationFn: (contactoId: string) =>
       invitarContactoAlEvento(eventoId, contactoId),
@@ -397,7 +424,10 @@ export default function EventoDetalleScreen() {
       try {
         eventoActualizado = await getEvento(eventoId);
       } catch (e) {
-        console.log("No se pudo refrescar el evento tras quitar participante:", e);
+        console.log(
+          "No se pudo refrescar el evento tras quitar participante:",
+          e,
+        );
       }
 
       if (eventoActualizado?.google_event_id) {
@@ -421,7 +451,10 @@ export default function EventoDetalleScreen() {
             );
           }
         } catch (e) {
-          console.log("Error al sincronizar participante quitado con Calendar:", e);
+          console.log(
+            "Error al sincronizar participante quitado con Calendar:",
+            e,
+          );
         }
       }
 
@@ -442,7 +475,9 @@ export default function EventoDetalleScreen() {
     setEditNombre(evento.titulo ?? "");
     setEditDescripcion(evento.descripcion ?? "");
     setEditUbicacion(evento.ubicacion ?? "");
-    setEditFecha(evento.fecha_evento ? new Date(evento.fecha_evento) : new Date());
+    setEditFecha(
+      evento.fecha_evento ? new Date(evento.fecha_evento) : new Date(),
+    );
     setModalEditarEventoVisible(true);
   };
 
@@ -830,6 +865,53 @@ export default function EventoDetalleScreen() {
     onError: () => Alert.alert("Error", "No se pudo eliminar el evento."),
   });
 
+  const salirEventoMutation = useMutation({
+    mutationFn: async () => {
+      if (!miContactoId) {
+        throw new Error(
+          "No pudimos identificar tu participación en este evento.",
+        );
+      }
+      if (evento?.google_event_id) {
+        try {
+          const accessToken = await obtenerGoogleToken();
+          if (accessToken) {
+            const participantesRestantes = (
+              evento?.participantes_evento ?? []
+            ).filter((p: any) => p.contacto_id !== miContactoId);
+            const { attendees } = await obtenerAttendeesParaCalendar(
+              participantesRestantes,
+            );
+            await actualizarEventoCalendar(
+              accessToken,
+              evento.google_event_id,
+              {
+                titulo: evento.titulo,
+                descripcion: evento.descripcion,
+                fechaInicio: evento.fecha_evento,
+                fechaFin: evento.fecha_evento,
+                attendees,
+              },
+            );
+          }
+        } catch (e) {
+          console.log("Error al sincronizar salida con Calendar:", e);
+        }
+      }
+
+      await salirDeEvento(eventoId, miContactoId);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["eventos"] });
+      queryClient.invalidateQueries({ queryKey: ["evento", eventoId] });
+      queryClient.invalidateQueries({ queryKey: ["participantes", eventoId] });
+      router.back();
+      Alert.alert("Listo", "Saliste del evento.");
+    },
+    onError: (error: any) =>
+      Alert.alert("Error", error?.message ?? "No se pudo salir del evento."),
+  });
+
   const confirmarEliminar = () => {
     Alert.alert("¿Eliminar evento?", "Esta acción no se puede deshacer.", [
       { text: "Cancelar", style: "cancel" },
@@ -1187,7 +1269,11 @@ export default function EventoDetalleScreen() {
                     disabled={actualizarEstadoMutation.isPending}
                   >
                     <Feather
-                      name={evento?.estado === "finalizado" ? "rotate-ccw" : "check-circle"}
+                      name={
+                        evento?.estado === "finalizado"
+                          ? "rotate-ccw"
+                          : "check-circle"
+                      }
                       size={11}
                       color="rgba(255,255,255,0.5)"
                     />
@@ -1227,9 +1313,26 @@ export default function EventoDetalleScreen() {
           </View>
           <View style={styles.headerRight}>
             <View style={styles.iconosRow}>
-              <TouchableOpacity onPress={confirmarEliminar}>
-                <Feather name="trash-2" size={16} color="rgba(255,82,82,0.7)" />
-              </TouchableOpacity>
+              {esCreador ? (
+                <TouchableOpacity onPress={confirmarEliminar}>
+                  <Feather
+                    name="trash-2"
+                    size={16}
+                    color="rgba(255,82,82,0.7)"
+                  />
+                </TouchableOpacity>
+              ) : (
+                <TouchableOpacity
+                  onPress={confirmarSalirEvento}
+                  disabled={salirEventoMutation.isPending}
+                >
+                  <Feather
+                    name="log-out"
+                    size={16}
+                    color="rgba(255,82,82,0.7)"
+                  />
+                </TouchableOpacity>
+              )}
             </View>
             <View
               style={{
@@ -1649,20 +1752,22 @@ export default function EventoDetalleScreen() {
                 {[
                   {
                     label: "Banco",
-                    value: participanteBancarioSeleccionado.datos_bancarios
-                      .banco,
+                    value:
+                      participanteBancarioSeleccionado.datos_bancarios.banco,
                     icon: "credit-card" as const,
                   },
                   {
                     label: "Tipo de cuenta",
-                    value: participanteBancarioSeleccionado.datos_bancarios
-                      .tipo_cuenta,
+                    value:
+                      participanteBancarioSeleccionado.datos_bancarios
+                        .tipo_cuenta,
                     icon: "list" as const,
                   },
                   {
                     label: "Numero de cuenta",
-                    value: participanteBancarioSeleccionado.datos_bancarios
-                      .numero_cuenta,
+                    value:
+                      participanteBancarioSeleccionado.datos_bancarios
+                        .numero_cuenta,
                     icon: "hash" as const,
                   },
                   {
@@ -1691,16 +1796,14 @@ export default function EventoDetalleScreen() {
                   onPress={copiarDatosBancarios}
                 >
                   <Feather name="copy" size={17} color="#000000" />
-                  <Text style={styles.botonReportarFinalText}>Copiar datos</Text>
+                  <Text style={styles.botonReportarFinalText}>
+                    Copiar datos
+                  </Text>
                 </TouchableOpacity>
               </>
             ) : (
               <View style={styles.datosBancoVacios}>
-                <Feather
-                  name="lock"
-                  size={24}
-                  color="rgba(255,255,255,0.45)"
-                />
+                <Feather name="lock" size={24} color="rgba(255,255,255,0.45)" />
                 <Text style={styles.emptyText}>
                   No hay datos bancarios disponibles para este participante.
                 </Text>
@@ -2310,7 +2413,10 @@ export default function EventoDetalleScreen() {
                 const nombre = obtenerNombreContacto(p.contactos);
                 const esCreadorFila = p.rol === "creador";
                 return (
-                  <View key={p.contacto_id} style={styles.editarParticipanteRow}>
+                  <View
+                    key={p.contacto_id}
+                    style={styles.editarParticipanteRow}
+                  >
                     <Text style={styles.editarParticipanteNombre}>
                       {nombre}
                     </Text>
@@ -2347,9 +2453,7 @@ export default function EventoDetalleScreen() {
                       onPress={() => invitarParticipanteMutation.mutate(c.id)}
                       disabled={invitarParticipanteMutation.isPending}
                     >
-                      <Text style={styles.editarAgregarNombre}>
-                        {c.nombre}
-                      </Text>
+                      <Text style={styles.editarAgregarNombre}>{c.nombre}</Text>
                       <Feather name="plus" size={18} color="#FFFFFF" />
                     </TouchableOpacity>
                   ))
@@ -2359,8 +2463,7 @@ export default function EventoDetalleScreen() {
                 style={[
                   styles.botonReportarFinal,
                   styles.editarGuardarBtn,
-                  (actualizarEventoMutation.isPending ||
-                    !editNombre.trim()) &&
+                  (actualizarEventoMutation.isPending || !editNombre.trim()) &&
                     styles.botonDeshabilitado,
                 ]}
                 onPress={() => actualizarEventoMutation.mutate()}
@@ -3087,7 +3190,7 @@ const styles = StyleSheet.create({
     shadowRadius: 5,
     elevation: 8,
   },
-  
+
   // --- CALENDAR BTN ---
   calendarBtn: {
     flexDirection: "row",
