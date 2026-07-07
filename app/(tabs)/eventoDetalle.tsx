@@ -110,6 +110,7 @@ export default function EventoDetalleScreen() {
   const [gastoBoletas, setGastoBoletas] = useState<any | null>(null);
   const [boletasGasto, setBoletasGasto] = useState<any[]>([]);
   const [cargandoBoletas, setCargandoBoletas] = useState(false);
+  const [imagenAmpliada, setImagenAmpliada] = useState<string | null>(null);
   const [modalOpcionesGastoVisible, setModalOpcionesGastoVisible] =
     useState(false);
   const [gastoSeleccionado, setGastoSeleccionado] = useState<any | null>(null);
@@ -2035,11 +2036,21 @@ export default function EventoDetalleScreen() {
 
                       <View style={styles.comprobanteLecturaBox}>
                         {pago.comprobanteUrl ? (
-                          <Image
-                            source={{ uri: pago.comprobanteUrl }}
-                            style={styles.comprobantePreview}
-                            resizeMode="contain"
-                          />
+                          <TouchableOpacity
+                            style={styles.imagenTocable}
+                            onPress={() => setImagenAmpliada(pago.comprobanteUrl)}
+                            activeOpacity={0.88}
+                          >
+                            <Image
+                              source={{ uri: pago.comprobanteUrl }}
+                              style={styles.comprobantePreview}
+                              resizeMode="contain"
+                            />
+                            <View style={styles.verImagenBadge}>
+                              <Feather name="maximize-2" size={14} color="#FFFFFF" />
+                              <Text style={styles.verImagenText}>Ampliar</Text>
+                            </View>
+                          </TouchableOpacity>
                         ) : (
                           <View style={styles.comprobanteVacio}>
                             <Feather
@@ -2221,11 +2232,21 @@ export default function EventoDetalleScreen() {
               <ScrollView style={styles.boletasLista}>
                 {boletasGasto.map((boleta) => (
                   <View key={boleta.id} style={styles.boletaCard}>
-                    <Image
-                      source={{ uri: boleta.url }}
-                      style={styles.comprobantePreview}
-                      resizeMode="contain"
-                    />
+                    <TouchableOpacity
+                      style={styles.imagenTocable}
+                      onPress={() => setImagenAmpliada(boleta.url)}
+                      activeOpacity={0.88}
+                    >
+                      <Image
+                        source={{ uri: boleta.url }}
+                        style={styles.comprobantePreview}
+                        resizeMode="contain"
+                      />
+                      <View style={styles.verImagenBadge}>
+                        <Feather name="maximize-2" size={14} color="#FFFFFF" />
+                        <Text style={styles.verImagenText}>Ampliar</Text>
+                      </View>
+                    </TouchableOpacity>
                   </View>
                 ))}
               </ScrollView>
@@ -2251,6 +2272,30 @@ export default function EventoDetalleScreen() {
               </TouchableOpacity>
             ) : null}
           </View>
+        </View>
+      </Modal>
+
+      <Modal
+        visible={Boolean(imagenAmpliada)}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setImagenAmpliada(null)}
+      >
+        <View style={styles.imagenAmpliadaOverlay}>
+          <TouchableOpacity
+            style={[styles.imagenAmpliadaCerrar, { top: 18 + insets.top }]}
+            onPress={() => setImagenAmpliada(null)}
+          >
+            <Feather name="x" size={24} color="#FFFFFF" />
+          </TouchableOpacity>
+
+          {imagenAmpliada ? (
+            <Image
+              source={{ uri: imagenAmpliada }}
+              style={styles.imagenAmpliada}
+              resizeMode="contain"
+            />
+          ) : null}
         </View>
       </Modal>
 
@@ -2953,6 +2998,48 @@ const styles = StyleSheet.create({
   comprobantePreview: {
     width: "100%",
     height: "100%",
+  },
+  imagenTocable: {
+    flex: 1,
+  },
+  verImagenBadge: {
+    position: "absolute",
+    right: 12,
+    bottom: 12,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+    paddingHorizontal: 11,
+    paddingVertical: 7,
+    borderRadius: 14,
+    backgroundColor: "rgba(0,0,0,0.68)",
+  },
+  verImagenText: {
+    color: "#FFFFFF",
+    fontSize: 12,
+    fontWeight: "700",
+  },
+  imagenAmpliadaOverlay: {
+    flex: 1,
+    alignItems: "center",
+    justifyContent: "center",
+    padding: 16,
+    backgroundColor: "rgba(0,0,0,0.94)",
+  },
+  imagenAmpliadaCerrar: {
+    position: "absolute",
+    right: 18,
+    zIndex: 2,
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: "rgba(255,255,255,0.14)",
+  },
+  imagenAmpliada: {
+    width: "100%",
+    height: "86%",
   },
   comprobanteOverlay: {
     position: "absolute",
