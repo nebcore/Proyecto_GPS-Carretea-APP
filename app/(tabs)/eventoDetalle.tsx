@@ -160,7 +160,7 @@ export default function EventoDetalleScreen() {
     useQuery({
       queryKey: ["contactos-invitar"],
       queryFn: getContactosParaInvitar,
-      enabled: modalInvitarVisible || modalEditarEventoVisible,
+      //enabled: modalInvitarVisible || modalEditarEventoVisible,
     });
 
   const { data: grupos = [] } = useQuery({
@@ -214,9 +214,35 @@ export default function EventoDetalleScreen() {
     },
   });
 
-  const obtenerNombreContacto = (contacto: any, fallback = "Participante") => {
+  // --- NUEVA LÓGICA DE NOMBRES ---
+  const obtenerNombreContacto = (
+    participante: any,
+    fallback = "Participante",
+  ) => {
+    if (!participante) return fallback;
+    const contacto = Array.isArray(participante.contactos)
+      ? participante.contactos[0]
+      : participante.contactos;
     if (!contacto) return fallback;
-    if (Array.isArray(contacto)) return contacto[0]?.nombre ?? fallback;
+
+    const userId = contacto.referencia_usuario_id;
+
+    if (userId) {
+      // Si el participante eres tú mismo
+      if (userId === usuarioActualId) return "Tú";
+
+      // Si lo tienes guardado en TU agenda personal
+      const miContacto = contactosInvitar.find(
+        (c: any) => c.referencia_usuario_id === userId,
+      );
+      if (miContacto && miContacto.nombre) return miContacto.nombre;
+
+      // Si no lo tienes en tu agenda, usa su nombre de cuenta registrado
+      if (participante.usuario_nombre_real)
+        return participante.usuario_nombre_real;
+    }
+
+    // Si es un invitado sin cuenta, usa el nombre que le puso el organizador
     return contacto.nombre ?? fallback;
   };
 
@@ -243,11 +269,11 @@ export default function EventoDetalleScreen() {
   const participantesPorId = useMemo(() => {
     const mapa = new Map<string, string>();
     for (const participante of participantes as any[]) {
-      const nombre = obtenerNombreContacto(participante["contactos"]);
-      mapa.set(participante["contacto_id"], nombre);
+      const nombre = obtenerNombreContacto(participante);
+      mapa.set(participante.contacto_id, nombre);
     }
     return mapa;
-  }, [participantes]);
+  }, [participantes, contactosInvitar, usuarioActualId]);
 
   const usuariosPorContactoId = useMemo(() => {
     const mapa = new Map<string, string>();
@@ -878,9 +904,7 @@ export default function EventoDetalleScreen() {
 
     if (!datos) return;
 
-    const nombre = obtenerNombreContacto(
-      participanteBancarioSeleccionado.contactos,
-    );
+    const nombre = obtenerNombreContacto(participanteBancarioSeleccionado);
     const texto = [
       nombre,
       `Banco: ${datos.banco}`,
@@ -1535,8 +1559,12 @@ export default function EventoDetalleScreen() {
                     Pulsa un gasto para ver sus boletas asociadas
                   </Text>
                   {gastos.map((g: any) => {
-                    const pagador =
+                    const pagadorId = g.gastos_pagadores?.[0]?.contacto_id;
+                    const pagadorOriginal =
                       g.gastos_pagadores?.[0]?.contactos?.nombre ?? "?";
+                    const pagador = pagadorId
+                      ? (participantesPorId.get(pagadorId) ?? pagadorOriginal)
+                      : pagadorOriginal;
                     return (
                       <TouchableOpacity
                         key={g.id}
@@ -1782,7 +1810,7 @@ export default function EventoDetalleScreen() {
                       (b) => b.contactoId === p.contacto_id,
                     );
                     const monto = balance?.balance ?? 0;
-                    const nombre = obtenerNombreContacto(p.contactos);
+                    const nombre = obtenerNombreContacto(p);
                     const esAdminFila = p.rol === "administrador";
                     const esCreadorFila = p.rol === "creador";
 
@@ -1935,9 +1963,7 @@ export default function EventoDetalleScreen() {
               <View style={styles.deudaOptionInfo}>
                 <Text style={styles.modalTitulo}>Datos bancarios</Text>
                 <Text style={styles.deudaOptionSub}>
-                  {obtenerNombreContacto(
-                    participanteBancarioSeleccionado?.contactos,
-                  )}
+                  {obtenerNombreContacto(participanteBancarioSeleccionado)}
                 </Text>
               </View>
               <TouchableOpacity
@@ -2258,7 +2284,7 @@ export default function EventoDetalleScreen() {
             ) : (
               <ScrollView>
                 {participantes.map((p: any) => {
-                  const nombre = obtenerNombreContacto(p.contactos);
+                  const nombre = obtenerNombreContacto(p);
                   const esCreadorFila = p.rol === "creador";
 
                   return (
@@ -2359,7 +2385,9 @@ export default function EventoDetalleScreen() {
                         {pago.comprobanteUrl ? (
                           <TouchableOpacity
                             style={styles.imagenTocable}
-                            onPress={() => setImagenAmpliada(pago.comprobanteUrl)}
+                            onPress={() =>
+                              setImagenAmpliada(pago.comprobanteUrl)
+                            }
                             activeOpacity={0.88}
                           >
                             <Image
@@ -2368,7 +2396,11 @@ export default function EventoDetalleScreen() {
                               resizeMode="contain"
                             />
                             <View style={styles.verImagenBadge}>
-                              <Feather name="maximize-2" size={14} color="#FFFFFF" />
+                              <Feather
+                                name="maximize-2"
+                                size={14}
+                                color="#FFFFFF"
+                              />
                               <Text style={styles.verImagenText}>Ampliar</Text>
                             </View>
                           </TouchableOpacity>
@@ -2741,7 +2773,7 @@ export default function EventoDetalleScreen() {
                 Participantes ({participantes.length})
               </Text>
               {participantes.map((p: any) => {
-                const nombre = obtenerNombreContacto(p.contactos);
+                const nombre = obtenerNombreContacto(p);
                 const esCreadorFila = p.rol === "creador";
                 return (
                   <View

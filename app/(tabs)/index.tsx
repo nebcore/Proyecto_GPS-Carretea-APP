@@ -1,6 +1,8 @@
 import GlassCard from "@/components/ui/GlassCard";
-import { getActividadReciente, getTotalGastos } from "@/lib/api/gastos";
+import { getContactosParaInvitar } from "@/lib/api/contactos";
 import { getEventos } from "@/lib/api/eventos";
+import { getActividadReciente, getTotalGastos } from "@/lib/api/gastos";
+import { supabase } from "@/lib/supabase";
 import Feather from "@expo/vector-icons/Feather";
 import { useQuery } from "@tanstack/react-query";
 import { router } from "expo-router";
@@ -13,8 +15,7 @@ import {
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
-const formatearMonto = (monto: number) =>
-  `$${monto.toLocaleString("es-CL")}`;
+const formatearMonto = (monto: number) => `$${monto.toLocaleString("es-CL")}`;
 
 const formatearTiempoRelativo = (fechaString: string) => {
   const fecha = new Date(fechaString);
@@ -34,6 +35,44 @@ const formatearTiempoRelativo = (fechaString: string) => {
 export default function InicioScreen() {
   const insets = useSafeAreaInsets();
 
+  const { data: contactos = [] } = useQuery({
+    queryKey: ["contactos-invitar"],
+    queryFn: getContactosParaInvitar,
+  });
+
+  const { data: usuarioActualId } = useQuery({
+    queryKey: ["usuario-actual-id"],
+    queryFn: async () => {
+      const {
+        data: { user },
+      } = await supabase.auth.getUser();
+      return user?.id ?? null;
+    },
+  });
+
+  // Función lógica para resolver el nombre
+  const obtenerNombreContacto = (
+    pagadorInfo: any,
+    fallback = "Desconocido",
+  ) => {
+    if (!pagadorInfo) return fallback;
+
+    const userId = pagadorInfo.referencia_usuario_id;
+    if (userId) {
+      if (userId === usuarioActualId) return "Tú";
+
+      // Busca en TU agenda
+      const miContacto = contactos.find(
+        (c: any) => c.referencia_usuario_id === userId,
+      );
+      if (miContacto && miContacto.nombre) return miContacto.nombre;
+
+      // Usa el nombre de cuenta si no está en agenda
+      return pagadorInfo.nombre ?? fallback;
+    }
+    return pagadorInfo.nombre ?? fallback;
+  };
+
   const { data: eventos = [] } = useQuery({
     queryKey: ["eventos"],
     queryFn: getEventos,
@@ -49,7 +88,9 @@ export default function InicioScreen() {
     queryFn: () => getActividadReciente(8),
   });
 
-  const eventosActivos = eventos.filter((e: any) => e.estado === "abierto").length;
+  const eventosActivos = eventos.filter(
+    (e: any) => e.estado === "abierto",
+  ).length;
 
   return (
     <View style={styles.root}>
@@ -80,8 +121,10 @@ export default function InicioScreen() {
         ) : (
           actividad.map((item: any) => {
             const eventoTitulo = (item.eventos as any)?.titulo ?? "Sin evento";
-            const pagador =
-              item.gastos_pagadores?.[0]?.contactos?.nombre ?? "Desconocido";
+            const pagador = obtenerNombreContacto(
+              item.pagador_info,
+              "Desconocido",
+            );
 
             return (
               <TouchableOpacity
@@ -97,11 +140,7 @@ export default function InicioScreen() {
               >
                 {/* ICONO */}
                 <View style={styles.iconCircle}>
-                  <Feather
-                    name="arrow-up-right"
-                    size={18}
-                    color="#FF5252"
-                  />
+                  <Feather name="arrow-up-right" size={18} color="#FF5252" />
                 </View>
 
                 {/* INFO */}
@@ -112,9 +151,7 @@ export default function InicioScreen() {
                   <Text style={styles.actividadEvento} numberOfLines={1}>
                     {eventoTitulo}
                   </Text>
-                  <Text style={styles.actividadParticipante}>
-                    {pagador}
-                  </Text>
+                  <Text style={styles.actividadParticipante}>{pagador}</Text>
                   <Text style={styles.actividadHora}>
                     {formatearTiempoRelativo(item.fecha)}
                   </Text>
