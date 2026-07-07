@@ -75,6 +75,32 @@ export const createEventoConParticipantes = async (
 
   if (errorParticipantes) throw errorParticipantes;
 
+  if (contactosIds.length > 0) {
+    // Solo si hay contactos invitados, enviamos notificaciones
+    // Buscamos cuáles de esos contactos corresponden a usuarios reales (tienen referencia_usuario_id)
+    const { data: contactosUsuarios } = await supabase
+      .from("contactos")
+      .select("referencia_usuario_id")
+      .in("id", contactosIds)
+      .not("referencia_usuario_id", "is", null);
+
+    // Extraemos los IDs asegurándonos de no auto-notificarnos
+    const idsUsuariosANotificar = (contactosUsuarios || [])
+      .map((c) => c.referencia_usuario_id)
+      .filter((id) => id !== user.id) as string[];
+
+    // Enviamos la notificación directa solo a ellos
+    if (idsUsuariosANotificar.length > 0) {
+      await crearNotificacionEvento({
+        eventoId: nuevoEvento.id,
+        tipo: "nueva_invitacion",
+        titulo: "¡Te han invitado!",
+        cuerpo: `Has sido agregado al evento: ${titulo}`,
+        usuarioIds: idsUsuariosANotificar, // Al pasar esto, la notificación es privada para ellos
+      });
+    }
+  }
+
   return nuevoEvento;
 };
 
@@ -101,18 +127,38 @@ export const invitarContactoAlEvento = async (
 
   if (error) throw error;
 
+  // Obtenemos la información del contacto (nombre y ID de usuario)
   const { data: contacto } = await supabase
     .from("contactos")
-    .select("nombre")
+    .select("nombre, referencia_usuario_id")
     .eq("id", contactoId)
     .single();
 
+  // Avisa AL GRUPO (Feed del evento)
   await crearNotificacionEvento({
     eventoId,
     tipo: "nuevo_participante",
     titulo: "Nuevo integrante",
     cuerpo: `${contacto?.nombre || "Un contacto"} ha sido agregado al evento.`,
   });
+
+  // Avisa AL USUARIO de forma directa a su bandeja
+  if (contacto?.referencia_usuario_id) {
+    const { data: eventoInfo } = await supabase
+      .from("eventos")
+      .select("titulo")
+      .eq("id", eventoId)
+      .single();
+
+    await crearNotificacionEvento({
+      // Notificación privada para el usuario invitado
+      eventoId,
+      tipo: "nueva_invitacion",
+      titulo: "¡Te han invitado!",
+      cuerpo: `Has sido agregado al evento: ${eventoInfo?.titulo || "Nuevo evento"}`,
+      usuarioIds: [contacto.referencia_usuario_id],
+    });
+  }
 };
 
 // ELIMINAR UN PARTICIPANTE DE UN EVENTO
