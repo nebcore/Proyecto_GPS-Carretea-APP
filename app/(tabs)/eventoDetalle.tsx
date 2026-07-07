@@ -855,12 +855,9 @@ export default function EventoDetalleScreen() {
 
   const eliminarEventoMutation = useMutation({
     mutationFn: async () => {
-      console.log("google_event_id:", evento?.google_event_id);
-      console.log("evento completo:", evento);
       // Eliminar de Google Calendar si tiene google_event_id
       if (evento?.google_event_id) {
         const accessToken = await obtenerGoogleToken();
-        console.log("accessToken:", accessToken);
         if (accessToken) {
           await eliminarEventoCalendar(accessToken, evento.google_event_id);
         }
