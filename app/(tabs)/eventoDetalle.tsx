@@ -1,4 +1,3 @@
-// 1. React & React Native
 import { useMemo, useState } from "react";
 import {
   ActivityIndicator,
@@ -22,7 +21,7 @@ import * as ImagePicker from "expo-image-picker";
 import { router, useLocalSearchParams } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
-// 3. Componentes UI internos
+// Componentes UI internos
 import { Alert } from "@/components/ui/AppAlert";
 import GlassCard from "@/components/ui/GlassCard";
 
@@ -104,6 +103,7 @@ export default function EventoDetalleScreen() {
   const [deudaSeleccionada, setDeudaSeleccionada] = useState<Deuda | null>(
     null,
   );
+  const [montoAReportar, setMontoAReportar] = useState<string>("");
   const [comprobante, setComprobante] =
     useState<ImagePicker.ImagePickerAsset | null>(null);
   const [pagosReportados, setPagosReportados] = useState<any[]>([]);
@@ -112,6 +112,7 @@ export default function EventoDetalleScreen() {
   const [gastoBoletas, setGastoBoletas] = useState<any | null>(null);
   const [boletasGasto, setBoletasGasto] = useState<any[]>([]);
   const [cargandoBoletas, setCargandoBoletas] = useState(false);
+  const [imagenAmpliada, setImagenAmpliada] = useState<string | null>(null);
   const [modalOpcionesGastoVisible, setModalOpcionesGastoVisible] =
     useState(false);
   const [gastoSeleccionado, setGastoSeleccionado] = useState<any | null>(null);
@@ -321,7 +322,6 @@ export default function EventoDetalleScreen() {
       usuarioActualId,
       usuariosPorContactoId,
       evento,
-      participantes,
     ],
   );
 
@@ -559,6 +559,7 @@ export default function EventoDetalleScreen() {
     setModalReporteVisible(false);
     setDeudaSeleccionada(null);
     setComprobante(null);
+    setMontoAReportar("");
   };
 
   const cerrarModalBoletas = () => {
@@ -615,6 +616,7 @@ export default function EventoDetalleScreen() {
     }
 
     setDeudaSeleccionada(deudasDelUsuario[0]);
+    setMontoAReportar(deudasDelUsuario[0].monto.toString());
     setComprobante(null);
     setModalReporteVisible(true);
   };
@@ -690,11 +692,34 @@ export default function EventoDetalleScreen() {
       return;
     }
 
+    const montoFinal = parseFloat(montoAReportar.replace(/[^0-9.]/g, "")); // Parseamos el monto ingresado, eliminando cualquier carácter que no sea un número o un punto decimal
+    if (isNaN(montoFinal) || montoFinal <= 0) {
+      // Validamos que el monto sea un número válido y mayor a 0
+      mostrarAvisoPago(
+        "Monto inválido",
+        "Ingresa un monto válido mayor a 0.",
+        "alert-circle",
+        "#FF6B6B",
+      );
+      return;
+    }
+    if (montoFinal > deudaSeleccionada.monto) {
+      // Validamos que el monto no exceda la deuda seleccionada
+      mostrarAvisoPago(
+        "Monto excedido",
+        "No puedes reportar un pago mayor a tu deuda actual.",
+        "alert-circle",
+        "#FF6B6B",
+      );
+      return;
+    }
+
     reportarPagoMutation.mutate({
+      // Llamamos a la mutación para reportar el pago con el monto final validado
       eventoId,
       deudorId: deudaSeleccionada.deudorId,
       acreedorId: deudaSeleccionada.acreedorId,
-      monto: deudaSeleccionada.monto,
+      monto: montoFinal,
       comprobante: {
         uri: comprobante.uri,
         mimeType: comprobante.mimeType,
@@ -717,16 +742,27 @@ export default function EventoDetalleScreen() {
 
     try {
       const pagos = await obtenerPagosReportadosEvento(eventoId);
-      const pagosDelAcreedor = pagos.filter(
-        (pago: any) =>
-          usuariosPorContactoId.get(pago.acreedor_id) === usuarioActualId,
-      );
+
+      // LÓGICA PARA INVITADOS
+      const pagosDelAcreedor = pagos.filter((pago: any) => {
+        const acreedorUsuarioId = usuariosPorContactoId.get(pago.acreedor_id);
+        const esInvitado = !acreedorUsuarioId; // Si no hay ID, es un invitado
+        const soyOrganizador = evento?.creador_id === usuarioActualId;
+
+        // Puede revisar y confirmar el pago si:
+        // 1. El usuario actual es el acreedor real
+        // 2. O el acreedor es un invitado y el usuario actual es el organizador del evento
+        return (
+          acreedorUsuarioId === usuarioActualId ||
+          (esInvitado && soyOrganizador)
+        );
+      });
 
       if (pagosDelAcreedor.length === 0) {
         setPagosReportados([]);
         mostrarAvisoPago(
           "No hay reportes",
-          "No hay pagos reportados donde aparezcas como acreedor.",
+          "No hay pagos reportados donde aparezcas como acreedor (o responsable de un invitado).",
           "inbox",
         );
         return;
@@ -884,12 +920,9 @@ export default function EventoDetalleScreen() {
 
   const eliminarEventoMutation = useMutation({
     mutationFn: async () => {
-      console.log("google_event_id:", evento?.google_event_id);
-      console.log("evento completo:", evento);
       // Eliminar de Google Calendar si tiene google_event_id
       if (evento?.google_event_id) {
         const accessToken = await obtenerGoogleToken();
-        console.log("accessToken:", accessToken);
         if (accessToken) {
           await eliminarEventoCalendar(accessToken, evento.google_event_id);
         }
@@ -1953,7 +1986,10 @@ export default function EventoDetalleScreen() {
                       styles.deudaOption,
                       seleccionada && styles.deudaOptionActiva,
                     ]}
-                    onPress={() => setDeudaSeleccionada(deuda)}
+                    onPress={() => {
+                      setDeudaSeleccionada(deuda);
+                      setMontoAReportar(deuda.monto.toString()); // Actualizamos el monto a reportar al seleccionar una deuda
+                    }}
                     disabled={reportarPagoMutation.isPending}
                   >
                     <View style={styles.deudaOptionInfo}>
@@ -1974,6 +2010,25 @@ export default function EventoDetalleScreen() {
                 );
               })}
             </ScrollView>
+
+            {/* --- NUEVO INPUT DE MONTO --- */}
+            <Text style={styles.modalLabel}>Monto a pagar</Text>
+            <View style={styles.editarInputGroup}>
+              <Text style={{ color: "#AAAAAA", fontSize: 18, marginRight: 8 }}>
+                $
+              </Text>
+              <TextInput
+                style={styles.editarInput}
+                value={montoAReportar}
+                onChangeText={(text) =>
+                  setMontoAReportar(text.replace(/[^0-9]/g, ""))
+                }
+                keyboardType="numeric"
+                placeholder="0"
+                placeholderTextColor="#666666"
+              />
+            </View>
+            {/* ---------------------------- */}
 
             <Text style={styles.modalLabel}>Comprobante</Text>
             <TouchableOpacity
@@ -2197,11 +2252,21 @@ export default function EventoDetalleScreen() {
 
                       <View style={styles.comprobanteLecturaBox}>
                         {pago.comprobanteUrl ? (
-                          <Image
-                            source={{ uri: pago.comprobanteUrl }}
-                            style={styles.comprobantePreview}
-                            resizeMode="contain"
-                          />
+                          <TouchableOpacity
+                            style={styles.imagenTocable}
+                            onPress={() => setImagenAmpliada(pago.comprobanteUrl)}
+                            activeOpacity={0.88}
+                          >
+                            <Image
+                              source={{ uri: pago.comprobanteUrl }}
+                              style={styles.comprobantePreview}
+                              resizeMode="contain"
+                            />
+                            <View style={styles.verImagenBadge}>
+                              <Feather name="maximize-2" size={14} color="#FFFFFF" />
+                              <Text style={styles.verImagenText}>Ampliar</Text>
+                            </View>
+                          </TouchableOpacity>
                         ) : (
                           <View style={styles.comprobanteVacio}>
                             <Feather
@@ -2383,11 +2448,21 @@ export default function EventoDetalleScreen() {
               <ScrollView style={styles.boletasLista}>
                 {boletasGasto.map((boleta) => (
                   <View key={boleta.id} style={styles.boletaCard}>
-                    <Image
-                      source={{ uri: boleta.url }}
-                      style={styles.comprobantePreview}
-                      resizeMode="contain"
-                    />
+                    <TouchableOpacity
+                      style={styles.imagenTocable}
+                      onPress={() => setImagenAmpliada(boleta.url)}
+                      activeOpacity={0.88}
+                    >
+                      <Image
+                        source={{ uri: boleta.url }}
+                        style={styles.comprobantePreview}
+                        resizeMode="contain"
+                      />
+                      <View style={styles.verImagenBadge}>
+                        <Feather name="maximize-2" size={14} color="#FFFFFF" />
+                        <Text style={styles.verImagenText}>Ampliar</Text>
+                      </View>
+                    </TouchableOpacity>
                   </View>
                 ))}
               </ScrollView>
@@ -2413,6 +2488,30 @@ export default function EventoDetalleScreen() {
               </TouchableOpacity>
             ) : null}
           </View>
+        </View>
+      </Modal>
+
+      <Modal
+        visible={Boolean(imagenAmpliada)}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setImagenAmpliada(null)}
+      >
+        <View style={styles.imagenAmpliadaOverlay}>
+          <TouchableOpacity
+            style={[styles.imagenAmpliadaCerrar, { top: 18 + insets.top }]}
+            onPress={() => setImagenAmpliada(null)}
+          >
+            <Feather name="x" size={24} color="#FFFFFF" />
+          </TouchableOpacity>
+
+          {imagenAmpliada ? (
+            <Image
+              source={{ uri: imagenAmpliada }}
+              style={styles.imagenAmpliada}
+              resizeMode="contain"
+            />
+          ) : null}
         </View>
       </Modal>
 
@@ -3270,6 +3369,48 @@ const styles = StyleSheet.create({
   comprobantePreview: {
     width: "100%",
     height: "100%",
+  },
+  imagenTocable: {
+    flex: 1,
+  },
+  verImagenBadge: {
+    position: "absolute",
+    right: 12,
+    bottom: 12,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+    paddingHorizontal: 11,
+    paddingVertical: 7,
+    borderRadius: 14,
+    backgroundColor: "rgba(0,0,0,0.68)",
+  },
+  verImagenText: {
+    color: "#FFFFFF",
+    fontSize: 12,
+    fontWeight: "700",
+  },
+  imagenAmpliadaOverlay: {
+    flex: 1,
+    alignItems: "center",
+    justifyContent: "center",
+    padding: 16,
+    backgroundColor: "rgba(0,0,0,0.94)",
+  },
+  imagenAmpliadaCerrar: {
+    position: "absolute",
+    right: 18,
+    zIndex: 2,
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: "rgba(255,255,255,0.14)",
+  },
+  imagenAmpliada: {
+    width: "100%",
+    height: "86%",
   },
   comprobanteOverlay: {
     position: "absolute",
