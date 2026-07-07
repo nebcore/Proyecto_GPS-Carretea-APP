@@ -1185,6 +1185,18 @@ export default function EventoDetalleScreen() {
           color: "#A855F7",
           bg: "rgba(168, 85, 247, 0.15)",
         }; // Morado
+      case "participante_salio":
+        return {
+          icon: "user-x",
+          color: "#EF4444",
+          bg: "rgba(239, 68, 68, 0.15)",
+        }; // Rojo
+      case "participante_eliminado":
+        return {
+          icon: "user-x",
+          color: "#EF4444",
+          bg: "rgba(239, 68, 68, 0.15)",
+        }; // Rojo
       default:
         return {
           icon: "activity",

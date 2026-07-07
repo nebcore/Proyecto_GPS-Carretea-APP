@@ -120,6 +120,12 @@ export const eliminarParticipanteDelEvento = async (
   eventoId: string,
   contactoId: string,
 ) => {
+  const { data: contacto } = await supabase
+    .from("contactos")
+    .select("nombre")
+    .eq("id", contactoId)
+    .single();
+
   const { error } = await supabase
     .from("participantes_evento")
     .delete()
@@ -127,6 +133,13 @@ export const eliminarParticipanteDelEvento = async (
     .eq("contacto_id", contactoId);
 
   if (error) throw error;
+
+  await crearNotificacionEvento({
+    eventoId,
+    tipo: "participante_eliminado",
+    titulo: "Participante eliminado",
+    cuerpo: `${contacto?.nombre || "Un participante"} fue eliminado del evento.`,
+  });
 };
 
 // ELIMINAR UN EVENTO
@@ -253,6 +266,19 @@ export const obtenerAttendeesParaCalendar = async (
 };
 
 export const salirDeEvento = async (eventoId: string, contactoId: string) => {
+  const { data: contacto } = await supabase
+    .from("contactos")
+    .select("nombre")
+    .eq("id", contactoId)
+    .maybeSingle();
+
+  await crearNotificacionEvento({
+    eventoId,
+    tipo: "participante_salio",
+    titulo: "Participante salió del evento",
+    cuerpo: `${contacto?.nombre || "Un participante"} salió del evento.`,
+  });
+
   const { data, error } = await supabase
     .from("participantes_evento")
     .delete()
