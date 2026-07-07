@@ -10,16 +10,22 @@ import {
   upsertDatosBancarios,
   verificarCodigoEmail,
 } from "@/lib/api/auth";
-import { guardarGoogleToken, obtenerGoogleToken } from "@/lib/api/usuarios";
+import {
+  guardarGoogleToken,
+  obtenerGoogleToken,
+  subirFotoPerfil,
+} from "@/lib/api/usuarios";
 import { supabase } from "@/lib/supabase";
 import Feather from "@expo/vector-icons/Feather";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import * as ImagePicker from "expo-image-picker";
 import { router } from "expo-router";
 import * as WebBrowser from "expo-web-browser";
 import { useEffect, useRef, useState } from "react";
 import {
   ActivityIndicator,
   Animated,
+  Image,
   Modal,
   ScrollView,
   StyleSheet,
@@ -203,6 +209,19 @@ export default function PerfilScreen() {
     onError: () => Alert.alert("Error", "No se pudo actualizar el perfil."),
   });
 
+  const fotoPerfilMutation = useMutation({
+    mutationFn: subirFotoPerfil,
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["perfil"] });
+      Alert.alert("Listo", "Tu foto de perfil fue actualizada.");
+    },
+    onError: (error: any) =>
+      Alert.alert(
+        "Error",
+        error?.message ?? "No se pudo actualizar la foto de perfil.",
+      ),
+  });
+
   const guardarBancoMutation = useMutation({
     mutationFn: () =>
       upsertDatosBancarios({
@@ -253,6 +272,36 @@ export default function PerfilScreen() {
       return;
     }
     actualizarMutation.mutate();
+  };
+
+  const handleCambiarFoto = async () => {
+    const permiso = await ImagePicker.requestMediaLibraryPermissionsAsync();
+
+    if (!permiso.granted) {
+      Alert.alert(
+        "Permiso necesario",
+        "Necesitamos acceso a tus fotos para cambiar la foto de perfil.",
+      );
+      return;
+    }
+
+    const resultado = await ImagePicker.launchImageLibraryAsync({
+      mediaTypes: ["images"],
+      allowsEditing: true,
+      aspect: [1, 1],
+      legacy: true,
+      presentationStyle: ImagePicker.UIImagePickerPresentationStyle.FULL_SCREEN,
+      quality: 0.85,
+    });
+
+    if (resultado.canceled || !resultado.assets[0]) return;
+
+    const foto = resultado.assets[0];
+    fotoPerfilMutation.mutate({
+      uri: foto.uri,
+      mimeType: foto.mimeType,
+      fileName: foto.fileName,
+    });
   };
 
   const handleCerrarSesion = () => {
@@ -333,11 +382,34 @@ export default function PerfilScreen() {
           <>
             {/* AVATAR */}
             <View style={styles.avatarContainer}>
-              <View style={styles.avatar}>
-                <Text style={styles.avatarText}>
-                  {perfil?.nombre?.substring(0, 1).toUpperCase() ?? "?"}
-                </Text>
-              </View>
+              <TouchableOpacity
+                style={styles.avatarButton}
+                onPress={handleCambiarFoto}
+                disabled={fotoPerfilMutation.isPending}
+                activeOpacity={0.85}
+              >
+                <View style={styles.avatar}>
+                  {perfil?.foto_url ? (
+                    <Image
+                      source={{ uri: perfil.foto_url }}
+                      style={styles.avatarImage}
+                      resizeMode="cover"
+                    />
+                  ) : (
+                    <Text style={styles.avatarText}>
+                      {perfil?.nombre?.substring(0, 1).toUpperCase() ?? "?"}
+                    </Text>
+                  )}
+                  {fotoPerfilMutation.isPending && (
+                    <View style={styles.avatarLoading}>
+                      <ActivityIndicator size="small" color="#FFFFFF" />
+                    </View>
+                  )}
+                </View>
+                <View style={styles.avatarEditBadge}>
+                  <Feather name="camera" size={14} color="#000000" />
+                </View>
+              </TouchableOpacity>
               <Text style={styles.nombreDisplay}>{perfil?.nombre}</Text>
               <Text style={styles.emailDisplay}>{perfil?.email}</Text>
             </View>
@@ -846,6 +918,11 @@ const styles = StyleSheet.create({
   container: { paddingHorizontal: 24, paddingTop: 16 },
 
   avatarContainer: { alignItems: "center", marginBottom: 24, marginTop: 8 },
+  avatarButton: {
+    width: 88,
+    height: 88,
+    marginBottom: 12,
+  },
   avatar: {
     width: 80,
     height: 80,
@@ -855,7 +932,27 @@ const styles = StyleSheet.create({
     borderColor: "rgba(255,255,255,0.15)",
     alignItems: "center",
     justifyContent: "center",
-    marginBottom: 12,
+    overflow: "hidden",
+  },
+  avatarImage: { width: "100%", height: "100%" },
+  avatarLoading: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: "rgba(0,0,0,0.45)",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  avatarEditBadge: {
+    position: "absolute",
+    right: 0,
+    bottom: 4,
+    width: 30,
+    height: 30,
+    borderRadius: 15,
+    backgroundColor: "#FFFFFF",
+    borderWidth: 2,
+    borderColor: "#0A0A0A",
+    alignItems: "center",
+    justifyContent: "center",
   },
   avatarText: { color: "#FFFFFF", fontSize: 32, fontWeight: "bold" },
   nombreDisplay: { color: "#FFFFFF", fontSize: 20, fontWeight: "bold" },

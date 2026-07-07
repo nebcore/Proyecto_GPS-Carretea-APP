@@ -1,7 +1,90 @@
 import { supabase } from "@/lib/supabase";
 
+const AVATARS_BUCKET = "avatars";
 const GOOGLE_CLIENT_ID = process.env.EXPO_PUBLIC_GOOGLE_CLIENT_ID!;
 const GOOGLE_CLIENT_SECRET = process.env.EXPO_PUBLIC_GOOGLE_CLIENT_SECRET!;
+
+type FotoPerfil = {
+  uri: string;
+  mimeType?: string | null;
+  fileName?: string | null;
+};
+
+const obtenerExtensionFoto = (foto: FotoPerfil) => {
+  const nombre = foto.fileName ?? foto.uri;
+  const extension = nombre.split(".").pop()?.split("?")[0]?.toLowerCase();
+
+  if (extension && extension.length <= 5) {
+    return extension;
+  }
+
+  if (foto.mimeType?.includes("png")) return "png";
+  if (foto.mimeType?.includes("webp")) return "webp";
+
+  return "jpg";
+};
+
+export const subirFotoPerfil = async (foto: FotoPerfil) => {
+  const {
+    data: { user },
+    error: authError,
+  } = await supabase.auth.getUser();
+  if (authError || !user) throw new Error("Usuario no autenticado");
+
+  const extension = obtenerExtensionFoto(foto);
+  const storagePath = `${user.id}/avatar-${Date.now()}.${extension}`;
+  const archivo = await fetch(foto.uri);
+  const arrayBuffer = await archivo.arrayBuffer();
+
+  const { error: uploadError } = await supabase.storage
+    .from(AVATARS_BUCKET)
+    .upload(storagePath, arrayBuffer, {
+      contentType: foto.mimeType ?? "image/jpeg",
+      upsert: false,
+    });
+
+  if (uploadError) throw uploadError;
+
+  const { data: publicUrlData } = supabase.storage
+    .from(AVATARS_BUCKET)
+    .getPublicUrl(storagePath);
+
+  const { data, error } = await supabase
+    .from("usuarios")
+    .update({ foto_url: publicUrlData.publicUrl })
+    .eq("id", user.id)
+    .select()
+    .single();
+
+  if (error) throw error;
+
+  const { data: archivos, error: listError } = await supabase.storage
+    .from(AVATARS_BUCKET)
+    .list(user.id);
+
+  if (listError) {
+    console.log("No se pudieron listar las fotos de perfil:", listError);
+  } else {
+    const archivosABorrar = (archivos ?? [])
+      .map((archivo) => `${user.id}/${archivo.name}`)
+      .filter((path) => path !== storagePath);
+
+    if (archivosABorrar.length > 0) {
+      const { error: removeError } = await supabase.storage
+        .from(AVATARS_BUCKET)
+        .remove(archivosABorrar);
+
+      if (removeError) {
+        console.log(
+          "No se pudieron borrar las fotos de perfil anteriores:",
+          removeError,
+        );
+      }
+    }
+  }
+
+  return data;
+};
 
 export const guardarGoogleToken = async (
   token: string,
