@@ -1,4 +1,3 @@
-// 1. React & React Native
 import { useMemo, useState } from "react";
 import {
   ActivityIndicator,
@@ -13,23 +12,23 @@ import {
   View,
 } from "react-native";
 
-// 2. Librerías de terceros (Expo, TanStack, etc.)
+// Librerías de terceros (Expo, TanStack, etc.)
+import Feather from "@expo/vector-icons/Feather";
+import DateTimePicker from "@react-native-community/datetimepicker";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import * as Clipboard from "expo-clipboard";
 import * as ImagePicker from "expo-image-picker";
 import { router, useLocalSearchParams } from "expo-router";
-import Feather from "@expo/vector-icons/Feather";
-import DateTimePicker from "@react-native-community/datetimepicker";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 
-// 3. Componentes UI internos
+// Componentes UI internos
 import { Alert } from "@/components/ui/AppAlert";
 import GlassCard from "@/components/ui/GlassCard";
 
-// 4. APIs, Servicios y Utilidades internas (@/lib y @/services)
-import { supabase } from "@/lib/supabase";
+// APIs, Servicios y Utilidades internas (@/lib y @/services)
 import type { Deuda } from "@/lib/balances";
 import { useBalancesEvento } from "@/lib/realtime/useBalancesEvento";
+import { supabase } from "@/lib/supabase";
 
 import { getContactosParaInvitar } from "@/lib/api/contactos";
 import {
@@ -117,8 +116,10 @@ export default function EventoDetalleScreen() {
   const [modalInvitarVisible, setModalInvitarVisible] = useState(false);
   const [modalEditarEventoVisible, setModalEditarEventoVisible] =
     useState(false);
-  const [participanteBancarioSeleccionado, setParticipanteBancarioSeleccionado] =
-    useState<any | null>(null);
+  const [
+    participanteBancarioSeleccionado,
+    setParticipanteBancarioSeleccionado,
+  ] = useState<any | null>(null);
   const [editNombre, setEditNombre] = useState("");
   const [editDescripcion, setEditDescripcion] = useState("");
   const [editUbicacion, setEditUbicacion] = useState("");
@@ -280,7 +281,6 @@ export default function EventoDetalleScreen() {
       usuarioActualId,
       usuariosPorContactoId,
       evento,
-      participantes,
     ],
   );
 
@@ -397,7 +397,10 @@ export default function EventoDetalleScreen() {
       try {
         eventoActualizado = await getEvento(eventoId);
       } catch (e) {
-        console.log("No se pudo refrescar el evento tras quitar participante:", e);
+        console.log(
+          "No se pudo refrescar el evento tras quitar participante:",
+          e,
+        );
       }
 
       if (eventoActualizado?.google_event_id) {
@@ -421,7 +424,10 @@ export default function EventoDetalleScreen() {
             );
           }
         } catch (e) {
-          console.log("Error al sincronizar participante quitado con Calendar:", e);
+          console.log(
+            "Error al sincronizar participante quitado con Calendar:",
+            e,
+          );
         }
       }
 
@@ -442,7 +448,9 @@ export default function EventoDetalleScreen() {
     setEditNombre(evento.titulo ?? "");
     setEditDescripcion(evento.descripcion ?? "");
     setEditUbicacion(evento.ubicacion ?? "");
-    setEditFecha(evento.fecha_evento ? new Date(evento.fecha_evento) : new Date());
+    setEditFecha(
+      evento.fecha_evento ? new Date(evento.fecha_evento) : new Date(),
+    );
     setModalEditarEventoVisible(true);
   };
 
@@ -643,16 +651,27 @@ export default function EventoDetalleScreen() {
 
     try {
       const pagos = await obtenerPagosReportadosEvento(eventoId);
-      const pagosDelAcreedor = pagos.filter(
-        (pago: any) =>
-          usuariosPorContactoId.get(pago.acreedor_id) === usuarioActualId,
-      );
+
+      // LÓGICA PARA INVITADOS
+      const pagosDelAcreedor = pagos.filter((pago: any) => {
+        const acreedorUsuarioId = usuariosPorContactoId.get(pago.acreedor_id);
+        const esInvitado = !acreedorUsuarioId; // Si no hay ID, es un invitado
+        const soyOrganizador = evento?.creador_id === usuarioActualId;
+
+        // Puede revisar y confirmar el pago si:
+        // 1. El usuario actual es el acreedor real
+        // 2. O el acreedor es un invitado y el usuario actual es el organizador del evento
+        return (
+          acreedorUsuarioId === usuarioActualId ||
+          (esInvitado && soyOrganizador)
+        );
+      });
 
       if (pagosDelAcreedor.length === 0) {
         setPagosReportados([]);
         mostrarAvisoPago(
           "No hay reportes",
-          "No hay pagos reportados donde aparezcas como acreedor.",
+          "No hay pagos reportados donde aparezcas como acreedor (o responsable de un invitado).",
           "inbox",
         );
         return;
@@ -1187,7 +1206,11 @@ export default function EventoDetalleScreen() {
                     disabled={actualizarEstadoMutation.isPending}
                   >
                     <Feather
-                      name={evento?.estado === "finalizado" ? "rotate-ccw" : "check-circle"}
+                      name={
+                        evento?.estado === "finalizado"
+                          ? "rotate-ccw"
+                          : "check-circle"
+                      }
                       size={11}
                       color="rgba(255,255,255,0.5)"
                     />
@@ -1649,20 +1672,22 @@ export default function EventoDetalleScreen() {
                 {[
                   {
                     label: "Banco",
-                    value: participanteBancarioSeleccionado.datos_bancarios
-                      .banco,
+                    value:
+                      participanteBancarioSeleccionado.datos_bancarios.banco,
                     icon: "credit-card" as const,
                   },
                   {
                     label: "Tipo de cuenta",
-                    value: participanteBancarioSeleccionado.datos_bancarios
-                      .tipo_cuenta,
+                    value:
+                      participanteBancarioSeleccionado.datos_bancarios
+                        .tipo_cuenta,
                     icon: "list" as const,
                   },
                   {
                     label: "Numero de cuenta",
-                    value: participanteBancarioSeleccionado.datos_bancarios
-                      .numero_cuenta,
+                    value:
+                      participanteBancarioSeleccionado.datos_bancarios
+                        .numero_cuenta,
                     icon: "hash" as const,
                   },
                   {
@@ -1691,16 +1716,14 @@ export default function EventoDetalleScreen() {
                   onPress={copiarDatosBancarios}
                 >
                   <Feather name="copy" size={17} color="#000000" />
-                  <Text style={styles.botonReportarFinalText}>Copiar datos</Text>
+                  <Text style={styles.botonReportarFinalText}>
+                    Copiar datos
+                  </Text>
                 </TouchableOpacity>
               </>
             ) : (
               <View style={styles.datosBancoVacios}>
-                <Feather
-                  name="lock"
-                  size={24}
-                  color="rgba(255,255,255,0.45)"
-                />
+                <Feather name="lock" size={24} color="rgba(255,255,255,0.45)" />
                 <Text style={styles.emptyText}>
                   No hay datos bancarios disponibles para este participante.
                 </Text>
@@ -2310,7 +2333,10 @@ export default function EventoDetalleScreen() {
                 const nombre = obtenerNombreContacto(p.contactos);
                 const esCreadorFila = p.rol === "creador";
                 return (
-                  <View key={p.contacto_id} style={styles.editarParticipanteRow}>
+                  <View
+                    key={p.contacto_id}
+                    style={styles.editarParticipanteRow}
+                  >
                     <Text style={styles.editarParticipanteNombre}>
                       {nombre}
                     </Text>
@@ -2347,9 +2373,7 @@ export default function EventoDetalleScreen() {
                       onPress={() => invitarParticipanteMutation.mutate(c.id)}
                       disabled={invitarParticipanteMutation.isPending}
                     >
-                      <Text style={styles.editarAgregarNombre}>
-                        {c.nombre}
-                      </Text>
+                      <Text style={styles.editarAgregarNombre}>{c.nombre}</Text>
                       <Feather name="plus" size={18} color="#FFFFFF" />
                     </TouchableOpacity>
                   ))
@@ -2359,8 +2383,7 @@ export default function EventoDetalleScreen() {
                 style={[
                   styles.botonReportarFinal,
                   styles.editarGuardarBtn,
-                  (actualizarEventoMutation.isPending ||
-                    !editNombre.trim()) &&
+                  (actualizarEventoMutation.isPending || !editNombre.trim()) &&
                     styles.botonDeshabilitado,
                 ]}
                 onPress={() => actualizarEventoMutation.mutate()}
@@ -3087,7 +3110,7 @@ const styles = StyleSheet.create({
     shadowRadius: 5,
     elevation: 8,
   },
-  
+
   // --- CALENDAR BTN ---
   calendarBtn: {
     flexDirection: "row",
