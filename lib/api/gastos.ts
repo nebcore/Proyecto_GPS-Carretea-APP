@@ -313,7 +313,10 @@ export async function obtenerParticipantesEvento(eventoId: string) {
       .from("datos_bancarios")
       .select("id, usuario_id, banco, tipo_cuenta, numero_cuenta, rut")
       .in("usuario_id", usuarioIds),
-    supabase.from("usuarios").select("id, foto_url").in("id", usuarioIds),
+    supabase
+      .from("usuarios")
+      .select("id, foto_url, nombre")
+      .in("id", usuarioIds),
   ]);
 
   if (errorDatosBancarios) throw errorDatosBancarios;
@@ -326,6 +329,10 @@ export async function obtenerParticipantesEvento(eventoId: string) {
     (usuarios ?? []).map((usuario: any) => [usuario.id, usuario.foto_url]),
   );
 
+  const nombresPorUsuarioId = new Map(
+    (usuarios ?? []).map((usuario: any) => [usuario.id, usuario.nombre]),
+  );
+
   return participantes.map((participante: any) => {
     const contacto = Array.isArray(participante.contactos)
       ? participante.contactos[0]
@@ -334,6 +341,8 @@ export async function obtenerParticipantesEvento(eventoId: string) {
     return {
       ...participante,
       foto_url: fotosPorUsuarioId.get(contacto?.referencia_usuario_id) ?? null,
+      usuario_nombre_real:
+        nombresPorUsuarioId.get(contacto?.referencia_usuario_id) ?? null,
       datos_bancarios:
         datosPorUsuarioId.get(contacto?.referencia_usuario_id) ?? null,
     };
@@ -480,15 +489,24 @@ export const getActividadReciente = async (limit = 8) => {
       fecha,
       eventos(titulo),
       gastos_pagadores(
+        contacto_id,
         monto_aportado,
-        contactos(nombre)
+        contactos(id, nombre, referencia_usuario_id)
       )
     `,
     )
     .order("fecha", { ascending: false })
     .limit(limit);
   if (error) throw error;
-  return data ?? [];
+  return (data ?? []).map((gasto: any) => {
+    const pagadorData = gasto.gastos_pagadores?.[0];
+    const pagadorContacto = pagadorData?.contactos;
+
+    return {
+      ...gasto,
+      pagador_info: pagadorContacto, // Pasamos toda la info del contacto
+    };
+  });
 };
 
 export const getTotalGastos = async () => {
@@ -507,6 +525,7 @@ export const getGastosConPagador = async (eventoId: string) => {
       `
       *,
       gastos_pagadores(
+        contacto_id,
         monto_aportado,
         contactos(id, nombre)
       )
