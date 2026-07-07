@@ -301,51 +301,51 @@ export default function NuevoEventoScreen() {
             </View>
           </View>
 
-          {/* FECHA Y HORA */}
-          <View style={styles.inputGroup}>
-            <Text style={styles.label}>Fecha y Hora</Text>
-            <View style={styles.dateRow}>
-              <TouchableOpacity
-                style={styles.dateBtn}
-                onPress={() => {
-                  setModoFecha("date");
-                  setShowDatePicker(true);
-                }}
-              >
-                <Feather name="calendar" size={16} color="#AAAAAA" />
-                <Text style={styles.dateBtnText}>
-                  {fecha.toLocaleDateString("es-CL")}
-                </Text>
-              </TouchableOpacity>
-              <TouchableOpacity
-                style={styles.dateBtn}
-                onPress={() => {
-                  setModoFecha("time");
-                  setShowDatePicker(true);
-                }}
-              >
-                <Feather name="clock" size={16} color="#AAAAAA" />
-                <Text style={styles.dateBtnText}>
-                  {fecha.toLocaleTimeString("es-CL", {
-                    hour: "2-digit",
-                    minute: "2-digit",
-                  })}
-                </Text>
-              </TouchableOpacity>
+            {/* FECHA Y HORA */}
+            <View style={styles.inputGroup}>
+              <Text style={styles.label}>Fecha y Hora</Text>
+              <View style={styles.dateRow}>
+                <TouchableOpacity
+                  style={styles.dateBtn}
+                  onPress={() => {
+                    setModoFecha("date");
+                    setShowDatePicker(true);
+                  }}
+                >
+                  <Feather name="calendar" size={16} color="#AAAAAA" />
+                  <Text style={styles.dateBtnText}>
+                    {fecha.toLocaleDateString("es-CL")}
+                  </Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={styles.dateBtn}
+                  onPress={() => {
+                    setModoFecha("time");
+                    setShowDatePicker(true);
+                  }}
+                >
+                  <Feather name="clock" size={16} color="#AAAAAA" />
+                  <Text style={styles.dateBtnText}>
+                    {fecha.toLocaleTimeString("es-CL", {
+                      hour: "2-digit",
+                      minute: "2-digit",
+                    })}
+                  </Text>
+                </TouchableOpacity>
+              </View>
+              {showDatePicker && (
+                <DateTimePicker
+                  value={fecha}
+                  mode={modoFecha}
+                  is24Hour={false}
+                  display="default"
+                  onChange={(_, selected) => {
+                    setShowDatePicker(Platform.OS === "ios");
+                    if (selected) setFecha(selected);
+                  }}
+                />
+              )}
             </View>
-            {showDatePicker && (
-              <DateTimePicker
-                value={fecha}
-                mode={modoFecha}
-                is24Hour
-                display="default"
-                onChange={(_, selected) => {
-                  setShowDatePicker(Platform.OS === "ios");
-                  if (selected) setFecha(selected);
-                }}
-              />
-            )}
-          </View>
 
           {/* UBICACIÓN */}
           <View style={styles.inputGroup}>

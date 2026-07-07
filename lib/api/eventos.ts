@@ -1,7 +1,8 @@
 import { supabase } from "@/lib/supabase";
 import { getOrCreateContactoPropio } from "./contactos";
+import { crearNotificacionEvento } from "./notificaciones";
 
-// 1. OBTENER EVENTOS DEL USUARIO (como creador o participante)
+// OBTENER EVENTOS DEL USUARIO (como creador o participante)
 export const getEventos = async () => {
   const { data: eventos, error: errorEventos } = await supabase
     .from("eventos")
@@ -28,7 +29,7 @@ export const getEventos = async () => {
   }));
 };
 
-// 2. CREAR EVENTO CON PARTICIPANTES
+// CREAR EVENTO CON PARTICIPANTES
 export const createEventoConParticipantes = async (
   titulo: string,
   descripcion: string,
@@ -77,7 +78,7 @@ export const createEventoConParticipantes = async (
   return nuevoEvento;
 };
 
-// 3. INVITAR UN CONTACTO A UN EVENTO EXISTENTE
+// INVITAR UN CONTACTO A UN EVENTO EXISTENTE
 export const invitarContactoAlEvento = async (
   eventoId: string,
   contactoId: string,
@@ -99,16 +100,43 @@ export const invitarContactoAlEvento = async (
     ]);
 
   if (error) throw error;
+
+  const { data: contacto } = await supabase
+    .from("contactos")
+    .select("nombre")
+    .eq("id", contactoId)
+    .single();
+
+  await crearNotificacionEvento({
+    eventoId,
+    tipo: "nuevo_participante",
+    titulo: "Nuevo integrante",
+    cuerpo: `${contacto?.nombre || "Un contacto"} ha sido agregado al evento.`,
+  });
 };
 
-// 4. ELIMINAR UN EVENTO
+// ELIMINAR UN PARTICIPANTE DE UN EVENTO
+export const eliminarParticipanteDelEvento = async (
+  eventoId: string,
+  contactoId: string,
+) => {
+  const { error } = await supabase
+    .from("participantes_evento")
+    .delete()
+    .eq("evento_id", eventoId)
+    .eq("contacto_id", contactoId);
+
+  if (error) throw error;
+};
+
+// ELIMINAR UN EVENTO
 export const deleteEvento = async (eventoId: string) => {
   const { error } = await supabase.from("eventos").delete().eq("id", eventoId);
 
   if (error) throw error;
 };
 
-// 5. CAMBIAR ESTADO DE UN EVENTO (abierto/finalizado)
+// CAMBIAR ESTADO DE UN EVENTO (abierto/finalizado)
 export const actualizarEstadoEvento = async (
   eventoId: string,
   estado: "abierto" | "finalizado",
@@ -116,6 +144,29 @@ export const actualizarEstadoEvento = async (
   const { error } = await supabase
     .from("eventos")
     .update({ estado })
+    .eq("id", eventoId);
+
+  if (error) throw error;
+};
+
+// ACTUALIZAR DATOS DE UN EVENTO (versión básica, sin sync a Calendar)
+export const updateEventoBasico = async (
+  eventoId: string,
+  datos: {
+    titulo: string;
+    descripcion: string;
+    ubicacion: string;
+    fechaEvento: string;
+  },
+) => {
+  const { error } = await supabase
+    .from("eventos")
+    .update({
+      titulo: datos.titulo,
+      descripcion: datos.descripcion,
+      ubicacion: datos.ubicacion,
+      fecha_evento: datos.fechaEvento,
+    })
     .eq("id", eventoId);
 
   if (error) throw error;

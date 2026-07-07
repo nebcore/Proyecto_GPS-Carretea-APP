@@ -23,6 +23,7 @@ import {
   Modal,
   ScrollView,
   StyleSheet,
+  Switch,
   Text,
   TextInput,
   TouchableOpacity,
@@ -59,6 +60,56 @@ export default function PerfilScreen() {
   const [codigoEmail, setCodigoEmail] = useState("");
   const translateXEmail = useRef(new Animated.Value(width)).current;
 
+  // Estados para el panel de notificaciones
+  const [panelNotifVisible, setPanelNotifVisible] = useState(false);
+  const translateXNotif = useRef(new Animated.Value(width)).current;
+
+  // Preferencias (En un futuro las puedes guardar en Supabase o AsyncStorage)
+  const [prefNotif, setPrefNotif] = useState({
+    nuevosGastos: true,
+    pagosReportados: true,
+    recordatorios: true,
+  });
+
+  // Crear la mutación para guardar silenciosamente en la base de datos
+  const actualizarPreferenciasMutation = useMutation({
+    mutationFn: (nuevasPrefs: any) =>
+      updateUsuarioPerfil({ preferencias_notificaciones: nuevasPrefs }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["perfil"] });
+    },
+    onError: (err) => {
+      Alert.alert(
+        "Error",
+        "No pudimos guardar tus cambios. Revisa tu conexión.",
+      );
+    },
+  });
+
+  // Función auxiliar para manejar el cambio en los switches
+  const togglePreferencia = (llave: keyof typeof prefNotif, valor: boolean) => {
+    const nuevasPrefs = { ...prefNotif, [llave]: valor };
+    setPrefNotif(nuevasPrefs); // Actualiza la UI instantáneamente
+    actualizarPreferenciasMutation.mutate(nuevasPrefs); // Guarda en la nube
+  };
+
+  const abrirPanelNotif = () => {
+    setPanelNotifVisible(true);
+    Animated.timing(translateXNotif, {
+      toValue: 0,
+      duration: 260,
+      useNativeDriver: true,
+    }).start();
+  };
+
+  const cerrarPanelNotif = () => {
+    Animated.timing(translateXNotif, {
+      toValue: width,
+      duration: 220,
+      useNativeDriver: true,
+    }).start(() => setPanelNotifVisible(false));
+  };
+
   const [editandoBanco, setEditandoBanco] = useState(false);
   const [banco, setBanco] = useState("");
   const [tipoCuenta, setTipoCuenta] = useState("");
@@ -69,6 +120,13 @@ export default function PerfilScreen() {
     queryKey: ["perfil"],
     queryFn: getUsuarioPerfil,
   });
+
+  // Sincronizar estado local cuando llegan los datos del perfil
+  useEffect(() => {
+    if (perfil?.preferencias_notificaciones) {
+      setPrefNotif(perfil.preferencias_notificaciones);
+    }
+  }, [perfil]);
 
   const { data: datosBancarios } = useQuery({
     queryKey: ["datos-bancarios"],
@@ -575,7 +633,10 @@ export default function PerfilScreen() {
                   )}
                 </TouchableOpacity>
                 <View style={styles.divisor} />
-                <TouchableOpacity style={styles.settingRow}>
+                <TouchableOpacity
+                  style={styles.settingRow}
+                  onPress={abrirPanelNotif}
+                >
                   <View style={styles.settingLeft}>
                     <Feather name="bell" size={18} color="#AAAAAA" />
                     <Text style={styles.settingLabel}>Notificaciones</Text>
@@ -691,6 +752,88 @@ export default function PerfilScreen() {
                 </TouchableOpacity>
               </>
             )}
+          </Animated.View>
+        </View>
+      </Modal>
+      {/* MODAL PREFERENCIAS DE NOTIFICACIONES */}
+      <Modal
+        visible={panelNotifVisible}
+        transparent
+        animationType="fade"
+        onRequestClose={cerrarPanelNotif}
+      >
+        <View style={styles.overlayEmail}>
+          <TouchableOpacity
+            style={StyleSheet.absoluteFill}
+            activeOpacity={1}
+            onPress={cerrarPanelNotif}
+          />
+          <Animated.View
+            style={[
+              styles.panelEmail,
+              { transform: [{ translateX: translateXNotif }] },
+            ]}
+          >
+            <View style={styles.panelEmailHeader}>
+              <Text style={styles.cardTitle}>Notificaciones</Text>
+              <TouchableOpacity onPress={cerrarPanelNotif}>
+                <Feather name="x" size={22} color="#AAAAAA" />
+              </TouchableOpacity>
+            </View>
+
+            <Text style={styles.panelEmailTexto}>
+              Elige qué alertas quieres recibir en tu teléfono.
+            </Text>
+
+            {/* SWITCH 1 */}
+            <View style={styles.switchRow}>
+              <View style={styles.switchInfo}>
+                <Text style={styles.switchTitle}>Nuevos Gastos</Text>
+                <Text style={styles.switchSub}>
+                  Cuando alguien anota una cuenta nueva.
+                </Text>
+              </View>
+              <Switch
+                value={prefNotif.nuevosGastos}
+                onValueChange={(val) => togglePreferencia("nuevosGastos", val)}
+                trackColor={{ false: "#333", true: "#4CAF50" }}
+                thumbColor={prefNotif.nuevosGastos ? "#fff" : "#888"}
+              />
+            </View>
+
+            {/* SWITCH 2 */}
+            <View style={styles.switchRow}>
+              <View style={styles.switchInfo}>
+                <Text style={styles.switchTitle}>Pagos y Confirmaciones</Text>
+                <Text style={styles.switchSub}>
+                  Cuando te transfieren o confirman un pago.
+                </Text>
+              </View>
+              <Switch
+                value={prefNotif.pagosReportados}
+                onValueChange={(val) =>
+                  togglePreferencia("pagosReportados", val)
+                }
+                trackColor={{ false: "#333", true: "#4CAF50" }}
+                thumbColor={prefNotif.pagosReportados ? "#fff" : "#888"}
+              />
+            </View>
+
+            {/* SWITCH 3 */}
+            <View style={styles.switchRow}>
+              <View style={styles.switchInfo}>
+                <Text style={styles.switchTitle}>Recordatorios de Deuda</Text>
+                <Text style={styles.switchSub}>
+                  Avisos automáticos si te olvidas de pagar.
+                </Text>
+              </View>
+              <Switch
+                value={prefNotif.recordatorios}
+                onValueChange={(val) => togglePreferencia("recordatorios", val)}
+                trackColor={{ false: "#333", true: "#4CAF50" }}
+                thumbColor={prefNotif.recordatorios ? "#fff" : "#888"}
+              />
+            </View>
           </Animated.View>
         </View>
       </Modal>
@@ -884,4 +1027,25 @@ const styles = StyleSheet.create({
     paddingHorizontal: 24,
   },
   botonGoogleText: { color: "#4285F4", fontWeight: "bold", fontSize: 15 },
+  switchRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    marginBottom: 24,
+  },
+  switchInfo: {
+    flex: 1,
+    paddingRight: 16,
+  },
+  switchTitle: {
+    color: "#FFFFFF",
+    fontSize: 15,
+    fontWeight: "600",
+    marginBottom: 4,
+  },
+  switchSub: {
+    color: "#888888",
+    fontSize: 12,
+    lineHeight: 16,
+  },
 });
