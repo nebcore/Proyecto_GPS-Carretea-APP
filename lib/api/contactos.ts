@@ -185,7 +185,9 @@ const validarContactoEditable = async (contactoId: string) => {
     contacto.usuario_id === user.id &&
     contacto.referencia_usuario_id === user.id
   ) {
-    throw new Error("El contacto propio no se puede modificar desde la agenda.");
+    throw new Error(
+      "El contacto propio no se puede modificar desde la agenda.",
+    );
   }
 };
 
@@ -250,11 +252,25 @@ export const getContactosParaInvitar = async () => {
 
   const { data, error } = await supabase
     .from("contactos")
-    .select("*")
+    .select(
+      `
+      *,
+      contactos_grupos(
+        grupo_id,
+        grupos_contacto(id, nombre)
+      )
+    `,
+    )
     .eq("usuario_id", user.id)
     .or(`referencia_usuario_id.is.null,referencia_usuario_id.neq.${user.id}`)
     .order("nombre", { ascending: true });
 
   if (error) throw error;
-  return data || [];
+
+  return (data || []).map((c) => ({
+    ...c,
+    gruposAsignados: (c.contactos_grupos ?? [])
+      .map((cg: any) => cg.grupos_contacto)
+      .filter(Boolean),
+  }));
 };

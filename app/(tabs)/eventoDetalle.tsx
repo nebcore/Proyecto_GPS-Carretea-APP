@@ -62,6 +62,7 @@ import {
 } from "@/lib/api/pagos";
 import { obtenerGoogleToken } from "@/lib/api/usuarios";
 
+import { getGrupos } from "@/lib/api/grupos";
 import {
   actualizarEventoCalendar,
   crearEventoCalendar,
@@ -154,8 +155,28 @@ export default function EventoDetalleScreen() {
     useQuery({
       queryKey: ["contactos-invitar"],
       queryFn: getContactosParaInvitar,
-      enabled: modalInvitarVisible,
+      enabled: modalInvitarVisible || modalEditarEventoVisible,
     });
+
+  const { data: grupos = [] } = useQuery({
+    queryKey: ["grupos"],
+    queryFn: getGrupos,
+  });
+
+  const [grupoSeleccionadoEditar, setGrupoSeleccionadoEditar] = useState({
+    id: "todos",
+    nombre: "Todos",
+  });
+
+  const [grupoSeleccionadoInvitar, setGrupoSeleccionadoInvitar] = useState({
+    id: "todos",
+    nombre: "Todos",
+  });
+  const [modalGruposInvitarVisible, setModalGruposInvitarVisible] =
+    useState(false);
+
+  const [modalGruposEditarVisible, setModalGruposEditarVisible] =
+    useState(false);
 
   const { balances, deudas, detalleParticipantes } =
     useBalancesEvento(eventoId);
@@ -165,7 +186,10 @@ export default function EventoDetalleScreen() {
     queryFn: () => obtenerPagosEvento(eventoId),
     enabled: Boolean(eventoId),
   });
-
+  const abrirModalInvitar = () => {
+    setGrupoSeleccionadoInvitar({ id: "todos", nombre: "Todos" });
+    setModalInvitarVisible(true);
+  };
   const { data: feedEvento = [], isLoading: loadingFeedEvento } = useQuery({
     queryKey: ["notificaciones-evento", eventoId],
     queryFn: () => obtenerNotificacionesEvento(eventoId, 40),
@@ -198,6 +222,19 @@ export default function EventoDetalleScreen() {
   const yaEsParticipante = (contactoId: string) =>
     participantes.some((p: any) => p.contacto_id === contactoId);
 
+  const contactosParaAgregar = contactosInvitar.filter((c: any) => {
+    if (yaEsParticipante(c.id)) return false;
+    if (grupoSeleccionadoEditar.id === "todos") return true;
+    return c.gruposAsignados?.some(
+      (g: any) => g.id === grupoSeleccionadoEditar.id,
+    );
+  });
+  const contactosParaInvitarFiltrados = contactosInvitar.filter((c: any) => {
+    if (grupoSeleccionadoInvitar.id === "todos") return true;
+    return c.gruposAsignados?.some(
+      (g: any) => g.id === grupoSeleccionadoInvitar.id,
+    );
+  });
   const participantesPorId = useMemo(() => {
     const mapa = new Map<string, string>();
     for (const participante of participantes as any[]) {
@@ -479,6 +516,7 @@ export default function EventoDetalleScreen() {
     setEditFecha(
       evento.fecha_evento ? new Date(evento.fecha_evento) : new Date(),
     );
+    setGrupoSeleccionadoEditar({ id: "todos", nombre: "Todos" }); // ← nuevo
     setModalEditarEventoVisible(true);
   };
 
@@ -1618,7 +1656,7 @@ export default function EventoDetalleScreen() {
                 <View style={styles.participantesBotonesRow}>
                   <TouchableOpacity
                     style={[styles.botonMitad, styles.botonVerde]}
-                    onPress={() => setModalInvitarVisible(true)}
+                    onPress={abrirModalInvitar}
                   >
                     <View style={styles.invitarBtnContent}>
                       <Feather name="user-plus" size={16} color="#FFFFFF" />
@@ -1984,17 +2022,28 @@ export default function EventoDetalleScreen() {
       <Modal visible={modalInvitarVisible} transparent animationType="slide">
         <View style={styles.modalOverlay}>
           <View style={styles.modalCard}>
-            <Text style={styles.modalTitle}>Invitar participante</Text>
+            <View style={styles.agregarPartHeader}>
+              <Text style={styles.modalTitle}>Invitar participante</Text>
+              <TouchableOpacity
+                style={styles.dropdownGrupo}
+                onPress={() => setModalGruposInvitarVisible(true)}
+              >
+                <Text style={styles.dropdownText} numberOfLines={1}>
+                  {grupoSeleccionadoInvitar.nombre}
+                </Text>
+                <Feather name="chevron-down" size={16} color="#AAAAAA" />
+              </TouchableOpacity>
+            </View>
 
             {loadingContactosInvitar ? (
               <ActivityIndicator color="#FFFFFF" />
-            ) : contactosInvitar.length === 0 ? (
+            ) : contactosParaInvitarFiltrados.length === 0 ? (
               <Text style={styles.emptyText}>
-                No tienes más contactos disponibles.
+                No tienes contactos disponibles en este grupo.
               </Text>
             ) : (
               <ScrollView>
-                {contactosInvitar.map((c: any) => {
+                {contactosParaInvitarFiltrados.map((c: any) => {
                   const invitado = yaEstaInvitado(c.id);
                   return (
                     <TouchableOpacity
@@ -2516,15 +2565,31 @@ export default function EventoDetalleScreen() {
                 );
               })}
 
-              <Text style={[styles.modalLabel, styles.editarSeccion]}>
-                Agregar participante
-              </Text>
-              {loadingContactosInvitar ? (
-                <ActivityIndicator color="#FFFFFF" style={{ marginTop: 10 }} />
-              ) : (
-                contactosInvitar
-                  .filter((c: any) => !yaEsParticipante(c.id))
-                  .map((c: any) => (
+              <View style={styles.editarSeccion}>
+                <View style={styles.agregarPartHeader}>
+                  <Text style={styles.modalLabel}>Agregar participante</Text>
+                  <TouchableOpacity
+                    style={styles.dropdownGrupo}
+                    onPress={() => setModalGruposEditarVisible(true)}
+                  >
+                    <Text style={styles.dropdownText} numberOfLines={1}>
+                      {grupoSeleccionadoEditar.nombre}
+                    </Text>
+                    <Feather name="chevron-down" size={16} color="#AAAAAA" />
+                  </TouchableOpacity>
+                </View>
+
+                {loadingContactosInvitar ? (
+                  <ActivityIndicator
+                    color="#FFFFFF"
+                    style={{ marginTop: 10 }}
+                  />
+                ) : contactosParaAgregar.length === 0 ? (
+                  <Text style={styles.emptyText}>
+                    No hay contactos disponibles en este grupo.
+                  </Text>
+                ) : (
+                  contactosParaAgregar.map((c: any) => (
                     <TouchableOpacity
                       key={c.id}
                       style={styles.editarAgregarRow}
@@ -2535,7 +2600,8 @@ export default function EventoDetalleScreen() {
                       <Feather name="plus" size={18} color="#FFFFFF" />
                     </TouchableOpacity>
                   ))
-              )}
+                )}
+              </View>
 
               <TouchableOpacity
                 style={[
@@ -2560,6 +2626,124 @@ export default function EventoDetalleScreen() {
             </ScrollView>
           </View>
         </View>
+      </Modal>
+      <Modal
+        visible={modalGruposEditarVisible}
+        transparent
+        animationType="fade"
+      >
+        <TouchableOpacity
+          style={styles.dropdownOverlay}
+          activeOpacity={1}
+          onPress={() => setModalGruposEditarVisible(false)}
+        >
+          <View style={styles.dropdownModalContainer}>
+            <TouchableOpacity
+              style={styles.dropdownItem}
+              onPress={() => {
+                setGrupoSeleccionadoEditar({ id: "todos", nombre: "Todos" });
+                setModalGruposEditarVisible(false);
+              }}
+            >
+              <Text
+                style={[
+                  styles.dropdownItemText,
+                  grupoSeleccionadoEditar.id === "todos" && {
+                    color: "#FFFFFF",
+                    fontWeight: "bold",
+                  },
+                ]}
+              >
+                Todos
+              </Text>
+            </TouchableOpacity>
+            <View style={styles.divisorDropdown} />
+            {grupos.map((grupo: any) => (
+              <TouchableOpacity
+                key={grupo.id}
+                style={styles.dropdownItem}
+                onPress={() => {
+                  setGrupoSeleccionadoEditar({
+                    id: grupo.id,
+                    nombre: grupo.nombre,
+                  });
+                  setModalGruposEditarVisible(false);
+                }}
+              >
+                <Text
+                  style={[
+                    styles.dropdownItemText,
+                    grupoSeleccionadoEditar.id === grupo.id && {
+                      color: "#FFFFFF",
+                      fontWeight: "bold",
+                    },
+                  ]}
+                >
+                  {grupo.nombre}
+                </Text>
+              </TouchableOpacity>
+            ))}
+          </View>
+        </TouchableOpacity>
+      </Modal>
+      <Modal
+        visible={modalGruposInvitarVisible}
+        transparent
+        animationType="fade"
+      >
+        <TouchableOpacity
+          style={styles.dropdownOverlay}
+          activeOpacity={1}
+          onPress={() => setModalGruposInvitarVisible(false)}
+        >
+          <View style={styles.dropdownModalContainer}>
+            <TouchableOpacity
+              style={styles.dropdownItem}
+              onPress={() => {
+                setGrupoSeleccionadoInvitar({ id: "todos", nombre: "Todos" });
+                setModalGruposInvitarVisible(false);
+              }}
+            >
+              <Text
+                style={[
+                  styles.dropdownItemText,
+                  grupoSeleccionadoInvitar.id === "todos" && {
+                    color: "#FFFFFF",
+                    fontWeight: "bold",
+                  },
+                ]}
+              >
+                Todos
+              </Text>
+            </TouchableOpacity>
+            <View style={styles.divisorDropdown} />
+            {grupos.map((grupo: any) => (
+              <TouchableOpacity
+                key={grupo.id}
+                style={styles.dropdownItem}
+                onPress={() => {
+                  setGrupoSeleccionadoInvitar({
+                    id: grupo.id,
+                    nombre: grupo.nombre,
+                  });
+                  setModalGruposInvitarVisible(false);
+                }}
+              >
+                <Text
+                  style={[
+                    styles.dropdownItemText,
+                    grupoSeleccionadoInvitar.id === grupo.id && {
+                      color: "#FFFFFF",
+                      fontWeight: "bold",
+                    },
+                  ]}
+                >
+                  {grupo.nombre}
+                </Text>
+              </TouchableOpacity>
+            ))}
+          </View>
+        </TouchableOpacity>
       </Modal>
     </View>
   );
@@ -3385,5 +3569,50 @@ const styles = StyleSheet.create({
     color: "#AAAAAA",
     fontSize: 11,
     fontWeight: "600",
+  },
+  dropdownOverlay: {
+    flex: 1,
+    backgroundColor: "transparent",
+    justifyContent: "center",
+    alignItems: "center",
+  },
+  dropdownModalContainer: {
+    width: 200,
+    backgroundColor: "rgba(25, 25, 25, 0.95)",
+    borderRadius: 15,
+    padding: 15,
+    borderWidth: 1,
+    borderColor: "rgba(255, 255, 255, 0.1)",
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 5 },
+    shadowOpacity: 0.5,
+    shadowRadius: 10,
+    elevation: 10,
+  },
+  dropdownItem: { paddingVertical: 10 },
+  dropdownItemText: { color: "#AAAAAA", fontSize: 15 },
+  divisorDropdown: {
+    height: 1,
+    backgroundColor: "rgba(255, 255, 255, 0.1)",
+    marginVertical: 5,
+  },
+  dropdownGrupo: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+    backgroundColor: "rgba(0, 0, 0, 0.5)",
+    borderWidth: 1,
+    borderColor: "rgba(255, 255, 255, 0.1)",
+    borderRadius: 10,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    maxWidth: 150,
+  },
+  dropdownText: { color: "#FFFFFF", fontSize: 13 },
+  agregarPartHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    marginBottom: 8,
   },
 });
