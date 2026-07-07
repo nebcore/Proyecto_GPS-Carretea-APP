@@ -19,7 +19,12 @@ export default function Header({ mostrarVolver = false, onVolver }: Props) {
 
   return (
     <View style={[styles.container, { paddingTop: insets.top + 8 }]}>
-      <TouchableOpacity style={styles.iconBtn} onPress={onVolver}>
+      <TouchableOpacity
+        style={styles.iconBtn}
+        onPress={onVolver}
+        hitSlop={16}
+        activeOpacity={0.7}
+      >
         {mostrarVolver ? (
           <Feather name="arrow-left" size={20} color="#FFFFFF" />
         ) : perfil?.foto_url ? (
@@ -63,8 +68,9 @@ const styles = StyleSheet.create({
     left: 0,
     right: 0,
     paddingTop: 24,
+    zIndex: 0,
   },
-  rightSpacer: { width: 38, height: 38 },
+  rightSpacer: { width: 38, height: 38, zIndex: 2 },
   iconBtn: {
     width: 38,
     height: 38,
@@ -73,6 +79,8 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
     overflow: "hidden",
+    zIndex: 2,
+    elevation: 2,
   },
   avatarImage: { width: "100%", height: "100%" },
 });

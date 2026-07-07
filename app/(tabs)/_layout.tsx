@@ -1,13 +1,31 @@
 import { HapticTab } from "@/components/haptic-tab";
 import Header from "@/components/ui/Header";
 import Feather from "@expo/vector-icons/Feather";
-import { router, Tabs } from "expo-router";
+import { router, Tabs, useGlobalSearchParams, usePathname } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 const HeaderConVolver = () => {
+  const pathname = usePathname();
+  const { eventoId } = useGlobalSearchParams<{ eventoId?: string }>();
+
   const volver = () => {
-    if (router.canGoBack()) {
-      router.back();
+    const eventoIdActual = Array.isArray(eventoId) ? eventoId[0] : eventoId;
+
+    if (pathname.includes("gastoNuevo") && eventoIdActual) {
+      router.replace({
+        pathname: "/(tabs)/eventoDetalle",
+        params: { eventoId: eventoIdActual },
+      });
+      return;
+    }
+
+    if (
+      pathname.includes("eventoDetalle") ||
+      pathname.includes("nuevoEvento") ||
+      pathname.includes("notificaciones") ||
+      pathname.includes("saldos")
+    ) {
+      router.replace("/(tabs)/eventos");
       return;
     }
 
