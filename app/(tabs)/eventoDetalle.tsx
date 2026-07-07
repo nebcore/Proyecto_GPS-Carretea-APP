@@ -101,6 +101,7 @@ export default function EventoDetalleScreen() {
   const [deudaSeleccionada, setDeudaSeleccionada] = useState<Deuda | null>(
     null,
   );
+  const [montoAReportar, setMontoAReportar] = useState<string>("");
   const [comprobante, setComprobante] =
     useState<ImagePicker.ImagePickerAsset | null>(null);
   const [pagosReportados, setPagosReportados] = useState<any[]>([]);
@@ -493,6 +494,7 @@ export default function EventoDetalleScreen() {
     setModalReporteVisible(false);
     setDeudaSeleccionada(null);
     setComprobante(null);
+    setMontoAReportar("");
   };
 
   const cerrarModalBoletas = () => {
@@ -549,6 +551,7 @@ export default function EventoDetalleScreen() {
     }
 
     setDeudaSeleccionada(deudasDelUsuario[0]);
+    setMontoAReportar(deudasDelUsuario[0].monto.toString());
     setComprobante(null);
     setModalReporteVisible(true);
   };
@@ -624,11 +627,34 @@ export default function EventoDetalleScreen() {
       return;
     }
 
+    const montoFinal = parseFloat(montoAReportar.replace(/[^0-9.]/g, "")); // Parseamos el monto ingresado, eliminando cualquier carácter que no sea un número o un punto decimal
+    if (isNaN(montoFinal) || montoFinal <= 0) {
+      // Validamos que el monto sea un número válido y mayor a 0
+      mostrarAvisoPago(
+        "Monto inválido",
+        "Ingresa un monto válido mayor a 0.",
+        "alert-circle",
+        "#FF6B6B",
+      );
+      return;
+    }
+    if (montoFinal > deudaSeleccionada.monto) {
+      // Validamos que el monto no exceda la deuda seleccionada
+      mostrarAvisoPago(
+        "Monto excedido",
+        "No puedes reportar un pago mayor a tu deuda actual.",
+        "alert-circle",
+        "#FF6B6B",
+      );
+      return;
+    }
+
     reportarPagoMutation.mutate({
+      // Llamamos a la mutación para reportar el pago con el monto final validado
       eventoId,
       deudorId: deudaSeleccionada.deudorId,
       acreedorId: deudaSeleccionada.acreedorId,
-      monto: deudaSeleccionada.monto,
+      monto: montoFinal,
       comprobante: {
         uri: comprobante.uri,
         mimeType: comprobante.mimeType,
@@ -829,12 +855,9 @@ export default function EventoDetalleScreen() {
 
   const eliminarEventoMutation = useMutation({
     mutationFn: async () => {
-      console.log("google_event_id:", evento?.google_event_id);
-      console.log("evento completo:", evento);
       // Eliminar de Google Calendar si tiene google_event_id
       if (evento?.google_event_id) {
         const accessToken = await obtenerGoogleToken();
-        console.log("accessToken:", accessToken);
         if (accessToken) {
           await eliminarEventoCalendar(accessToken, evento.google_event_id);
         }
@@ -1810,7 +1833,10 @@ export default function EventoDetalleScreen() {
                       styles.deudaOption,
                       seleccionada && styles.deudaOptionActiva,
                     ]}
-                    onPress={() => setDeudaSeleccionada(deuda)}
+                    onPress={() => {
+                      setDeudaSeleccionada(deuda);
+                      setMontoAReportar(deuda.monto.toString()); // Actualizamos el monto a reportar al seleccionar una deuda
+                    }}
                     disabled={reportarPagoMutation.isPending}
                   >
                     <View style={styles.deudaOptionInfo}>
@@ -1831,6 +1857,25 @@ export default function EventoDetalleScreen() {
                 );
               })}
             </ScrollView>
+
+            {/* --- NUEVO INPUT DE MONTO --- */}
+            <Text style={styles.modalLabel}>Monto a pagar</Text>
+            <View style={styles.editarInputGroup}>
+              <Text style={{ color: "#AAAAAA", fontSize: 18, marginRight: 8 }}>
+                $
+              </Text>
+              <TextInput
+                style={styles.editarInput}
+                value={montoAReportar}
+                onChangeText={(text) =>
+                  setMontoAReportar(text.replace(/[^0-9]/g, ""))
+                }
+                keyboardType="numeric"
+                placeholder="0"
+                placeholderTextColor="#666666"
+              />
+            </View>
+            {/* ---------------------------- */}
 
             <Text style={styles.modalLabel}>Comprobante</Text>
             <TouchableOpacity
