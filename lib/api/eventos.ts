@@ -75,6 +75,32 @@ export const createEventoConParticipantes = async (
 
   if (errorParticipantes) throw errorParticipantes;
 
+  if (contactosIds.length > 0) {
+    // Solo si hay contactos invitados, enviamos notificaciones
+    // Buscamos cuáles de esos contactos corresponden a usuarios reales (tienen referencia_usuario_id)
+    const { data: contactosUsuarios } = await supabase
+      .from("contactos")
+      .select("referencia_usuario_id")
+      .in("id", contactosIds)
+      .not("referencia_usuario_id", "is", null);
+
+    // Extraemos los IDs asegurándonos de no auto-notificarnos
+    const idsUsuariosANotificar = (contactosUsuarios || [])
+      .map((c) => c.referencia_usuario_id)
+      .filter((id) => id !== user.id) as string[];
+
+    // Enviamos la notificación directa solo a ellos
+    if (idsUsuariosANotificar.length > 0) {
+      await crearNotificacionEvento({
+        eventoId: nuevoEvento.id,
+        tipo: "nueva_invitacion",
+        titulo: "¡Te han invitado!",
+        cuerpo: `Has sido agregado al evento: ${titulo}`,
+        usuarioIds: idsUsuariosANotificar, // Al pasar esto, la notificación es privada para ellos
+      });
+    }
+  }
+
   return nuevoEvento;
 };
 
@@ -101,18 +127,38 @@ export const invitarContactoAlEvento = async (
 
   if (error) throw error;
 
+  // Obtenemos la información del contacto (nombre y ID de usuario)
   const { data: contacto } = await supabase
     .from("contactos")
-    .select("nombre")
+    .select("nombre, referencia_usuario_id")
     .eq("id", contactoId)
     .single();
 
+  // Avisa AL GRUPO (Feed del evento)
   await crearNotificacionEvento({
     eventoId,
     tipo: "nuevo_participante",
     titulo: "Nuevo integrante",
     cuerpo: `${contacto?.nombre || "Un contacto"} ha sido agregado al evento.`,
   });
+
+  // Avisa AL USUARIO de forma directa a su bandeja
+  if (contacto?.referencia_usuario_id) {
+    const { data: eventoInfo } = await supabase
+      .from("eventos")
+      .select("titulo")
+      .eq("id", eventoId)
+      .single();
+
+    await crearNotificacionEvento({
+      // Notificación privada para el usuario invitado
+      eventoId,
+      tipo: "nueva_invitacion",
+      titulo: "¡Te han invitado!",
+      cuerpo: `Has sido agregado al evento: ${eventoInfo?.titulo || "Nuevo evento"}`,
+      usuarioIds: [contacto.referencia_usuario_id],
+    });
+  }
 };
 
 // ELIMINAR UN PARTICIPANTE DE UN EVENTO
@@ -120,6 +166,12 @@ export const eliminarParticipanteDelEvento = async (
   eventoId: string,
   contactoId: string,
 ) => {
+  const { data: contacto } = await supabase
+    .from("contactos")
+    .select("nombre")
+    .eq("id", contactoId)
+    .single();
+
   const { error } = await supabase
     .from("participantes_evento")
     .delete()
@@ -127,6 +179,13 @@ export const eliminarParticipanteDelEvento = async (
     .eq("contacto_id", contactoId);
 
   if (error) throw error;
+
+  await crearNotificacionEvento({
+    eventoId,
+    tipo: "participante_eliminado",
+    titulo: "Participante eliminado",
+    cuerpo: `${contacto?.nombre || "Un participante"} fue eliminado del evento.`,
+  });
 };
 
 // ELIMINAR UN EVENTO
@@ -250,4 +309,48 @@ export const obtenerAttendeesParaCalendar = async (
   }
 
   return { attendees, sinEmail };
+};
+
+export const salirDeEvento = async (eventoId: string, contactoId: string) => {
+  const { data: contacto } = await supabase
+    .from("contactos")
+    .select("nombre")
+    .eq("id", contactoId)
+    .maybeSingle();
+
+  await crearNotificacionEvento({
+    eventoId,
+    tipo: "participante_salio",
+    titulo: "Participante salió del evento",
+    cuerpo: `${contacto?.nombre || "Un participante"} salió del evento.`,
+  });
+
+  const { data, error } = await supabase
+    .from("participantes_evento")
+    .delete()
+    .eq("evento_id", eventoId)
+    .eq("contacto_id", contactoId)
+    .select();
+
+  if (error) throw error;
+  if (!data || data.length === 0) {
+    throw new Error(
+      "No se pudo salir del evento. Puede faltar un permiso (RLS) para esta acción.",
+    );
+  }
+};
+
+// CAMBIAR ROL DE UN PARTICIPANTE (otorgar o quitar privilegios de administrador)
+export const actualizarRolParticipante = async (
+  eventoId: string,
+  contactoId: string,
+  rol: "invitado" | "administrador",
+) => {
+  const { error } = await supabase
+    .from("participantes_evento")
+    .update({ rol })
+    .eq("evento_id", eventoId)
+    .eq("contacto_id", contactoId);
+
+  if (error) throw error;
 };

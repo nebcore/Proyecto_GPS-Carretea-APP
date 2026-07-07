@@ -1,4 +1,3 @@
-// 1. React & React Native
 import { useMemo, useState } from "react";
 import {
   ActivityIndicator,
@@ -14,31 +13,33 @@ import {
 } from "react-native";
 
 // 2. Librerías de terceros (Expo, TanStack, etc.)
+import Feather from "@expo/vector-icons/Feather";
+import DateTimePicker from "@react-native-community/datetimepicker";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import * as Clipboard from "expo-clipboard";
 import * as ImagePicker from "expo-image-picker";
 import { router, useLocalSearchParams } from "expo-router";
-import Feather from "@expo/vector-icons/Feather";
-import DateTimePicker from "@react-native-community/datetimepicker";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 
-// 3. Componentes UI internos
+// Componentes UI internos
 import { Alert } from "@/components/ui/AppAlert";
 import GlassCard from "@/components/ui/GlassCard";
 
 // 4. APIs, Servicios y Utilidades internas (@/lib y @/services)
-import { supabase } from "@/lib/supabase";
 import type { Deuda } from "@/lib/balances";
 import { useBalancesEvento } from "@/lib/realtime/useBalancesEvento";
+import { supabase } from "@/lib/supabase";
 
 import { getContactosParaInvitar } from "@/lib/api/contactos";
 import {
   actualizarEstadoEvento,
+  actualizarRolParticipante,
   deleteEvento,
   eliminarParticipanteDelEvento,
   getEvento,
   invitarContactoAlEvento,
   obtenerAttendeesParaCalendar,
+  salirDeEvento,
   updateEventoBasico,
 } from "@/lib/api/eventos";
 import {
@@ -59,8 +60,12 @@ import {
   obtenerPagosReportadosEvento,
   reportarPago,
 } from "@/lib/api/pagos";
-import { obtenerGoogleToken } from "@/lib/api/usuarios";
+import {
+  obtenerGoogleToken,
+  obtenerGoogleTokenDeEvento,
+} from "@/lib/api/usuarios";
 
+import { getGrupos } from "@/lib/api/grupos";
 import {
   actualizarEventoCalendar,
   crearEventoCalendar,
@@ -102,6 +107,7 @@ export default function EventoDetalleScreen() {
   const [deudaSeleccionada, setDeudaSeleccionada] = useState<Deuda | null>(
     null,
   );
+  const [montoAReportar, setMontoAReportar] = useState<string>("");
   const [comprobante, setComprobante] =
     useState<ImagePicker.ImagePickerAsset | null>(null);
   const [pagosReportados, setPagosReportados] = useState<any[]>([]);
@@ -110,15 +116,19 @@ export default function EventoDetalleScreen() {
   const [gastoBoletas, setGastoBoletas] = useState<any | null>(null);
   const [boletasGasto, setBoletasGasto] = useState<any[]>([]);
   const [cargandoBoletas, setCargandoBoletas] = useState(false);
+  const [imagenAmpliada, setImagenAmpliada] = useState<string | null>(null);
   const [modalOpcionesGastoVisible, setModalOpcionesGastoVisible] =
     useState(false);
   const [gastoSeleccionado, setGastoSeleccionado] = useState<any | null>(null);
   const [avisoPago, setAvisoPago] = useState<AvisoPago | null>(null);
   const [modalInvitarVisible, setModalInvitarVisible] = useState(false);
+  const [modalEliminarVisible, setModalEliminarVisible] = useState(false);
   const [modalEditarEventoVisible, setModalEditarEventoVisible] =
     useState(false);
-  const [participanteBancarioSeleccionado, setParticipanteBancarioSeleccionado] =
-    useState<any | null>(null);
+  const [
+    participanteBancarioSeleccionado,
+    setParticipanteBancarioSeleccionado,
+  ] = useState<any | null>(null);
   const [editNombre, setEditNombre] = useState("");
   const [editDescripcion, setEditDescripcion] = useState("");
   const [editUbicacion, setEditUbicacion] = useState("");
@@ -150,8 +160,28 @@ export default function EventoDetalleScreen() {
     useQuery({
       queryKey: ["contactos-invitar"],
       queryFn: getContactosParaInvitar,
-      enabled: modalInvitarVisible,
+      enabled: modalInvitarVisible || modalEditarEventoVisible,
     });
+
+  const { data: grupos = [] } = useQuery({
+    queryKey: ["grupos"],
+    queryFn: getGrupos,
+  });
+
+  const [grupoSeleccionadoEditar, setGrupoSeleccionadoEditar] = useState({
+    id: "todos",
+    nombre: "Todos",
+  });
+
+  const [grupoSeleccionadoInvitar, setGrupoSeleccionadoInvitar] = useState({
+    id: "todos",
+    nombre: "Todos",
+  });
+  const [modalGruposInvitarVisible, setModalGruposInvitarVisible] =
+    useState(false);
+
+  const [modalGruposEditarVisible, setModalGruposEditarVisible] =
+    useState(false);
 
   const { balances, deudas, detalleParticipantes } =
     useBalancesEvento(eventoId);
@@ -161,7 +191,10 @@ export default function EventoDetalleScreen() {
     queryFn: () => obtenerPagosEvento(eventoId),
     enabled: Boolean(eventoId),
   });
-
+  const abrirModalInvitar = () => {
+    setGrupoSeleccionadoInvitar({ id: "todos", nombre: "Todos" });
+    setModalInvitarVisible(true);
+  };
   const { data: feedEvento = [], isLoading: loadingFeedEvento } = useQuery({
     queryKey: ["notificaciones-evento", eventoId],
     queryFn: () => obtenerNotificacionesEvento(eventoId, 40),
@@ -194,6 +227,19 @@ export default function EventoDetalleScreen() {
   const yaEsParticipante = (contactoId: string) =>
     participantes.some((p: any) => p.contacto_id === contactoId);
 
+  const contactosParaAgregar = contactosInvitar.filter((c: any) => {
+    if (yaEsParticipante(c.id)) return false;
+    if (grupoSeleccionadoEditar.id === "todos") return true;
+    return c.gruposAsignados?.some(
+      (g: any) => g.id === grupoSeleccionadoEditar.id,
+    );
+  });
+  const contactosParaInvitarFiltrados = contactosInvitar.filter((c: any) => {
+    if (grupoSeleccionadoInvitar.id === "todos") return true;
+    return c.gruposAsignados?.some(
+      (g: any) => g.id === grupoSeleccionadoInvitar.id,
+    );
+  });
   const participantesPorId = useMemo(() => {
     const mapa = new Map<string, string>();
     for (const participante of participantes as any[]) {
@@ -280,11 +326,14 @@ export default function EventoDetalleScreen() {
       usuarioActualId,
       usuariosPorContactoId,
       evento,
-      participantes,
     ],
   );
 
   const esCreador = evento?.creador_id === usuarioActualId;
+  const esAdministrador = participantes.some(
+    (p: any) => p.contacto_id === miContactoId && p.rol === "administrador",
+  );
+  const puedeGestionar = esCreador || esAdministrador;
 
   const actualizarEstadoMutation = useMutation({
     mutationFn: (estado: "abierto" | "finalizado") =>
@@ -310,7 +359,7 @@ export default function EventoDetalleScreen() {
         fechaEvento: editFecha.toISOString(),
       };
       if (evento?.google_event_id) {
-        const accessToken = await obtenerGoogleToken();
+        const accessToken = await obtenerGoogleTokenDeEvento(eventoId);
         if (accessToken) {
           const { attendees } = await obtenerAttendeesParaCalendar(
             evento?.participantes_evento ?? [],
@@ -340,12 +389,34 @@ export default function EventoDetalleScreen() {
     },
   });
 
+  const tieneSaldoPendiente = miResumen.debe > 0 || miResumen.leDeben > 0;
+
+  const confirmarSalirEvento = () => {
+    if (tieneSaldoPendiente) {
+      Alert.alert(
+        "No puedes salir todavía",
+        "Tienes saldos pendientes en este evento (deudas o pagos por recibir). Debes saldarlos antes de salir.",
+      );
+      return;
+    }
+    Alert.alert(
+      "¿Salir del evento?",
+      "Dejarás de ver este evento. Esta acción no se puede deshacer.",
+      [
+        { text: "Cancelar", style: "cancel" },
+        {
+          text: "Salir",
+          style: "destructive",
+          onPress: () => salirEventoMutation.mutate(),
+        },
+      ],
+    );
+  };
+
   const invitarParticipanteMutation = useMutation({
     mutationFn: (contactoId: string) =>
       invitarContactoAlEvento(eventoId, contactoId),
-    onSuccess: async () => {
-      // Traemos el evento actualizado (con el nuevo participante ya incluido)
-      // para poder sincronizar la lista completa de invitados con Calendar.
+    onSuccess: async (_data, contactoId) => {
       let eventoActualizado: any = null;
       try {
         eventoActualizado = await getEvento(eventoId);
@@ -355,22 +426,47 @@ export default function EventoDetalleScreen() {
 
       if (eventoActualizado?.google_event_id) {
         try {
-          const accessToken = await obtenerGoogleToken();
+          const accessToken = await obtenerGoogleTokenDeEvento(eventoId);
           if (accessToken) {
+            const participantesTodos =
+              eventoActualizado?.participantes_evento ?? [];
+            const participantesSinNuevo = participantesTodos.filter(
+              (p: any) => p.contacto_id !== contactoId,
+            );
+
+            const { attendees: attendeesSinNuevo } =
+              await obtenerAttendeesParaCalendar(
+                participantesSinNuevo,
+                eventoActualizado?.creador_id,
+              );
             const { attendees } = await obtenerAttendeesParaCalendar(
-              eventoActualizado?.participantes_evento ?? [],
+              participantesTodos,
               eventoActualizado?.creador_id,
             );
+
+            const datosEvento = {
+              titulo: eventoActualizado.titulo,
+              descripcion: eventoActualizado.descripcion,
+              fechaInicio: eventoActualizado.fecha_evento,
+              fechaFin: eventoActualizado.fecha_evento,
+            };
+
+            // Paso 1: PATCH silencioso sin el nuevo invitado, por si Google
+            // todavía lo tenía como asistente "viejo" de una invitación anterior.
             await actualizarEventoCalendar(
               accessToken,
               eventoActualizado.google_event_id,
-              {
-                titulo: eventoActualizado.titulo,
-                descripcion: eventoActualizado.descripcion,
-                fechaInicio: eventoActualizado.fecha_evento,
-                fechaFin: eventoActualizado.fecha_evento,
-                attendees,
-              },
+              { ...datosEvento, attendees: attendeesSinNuevo },
+              "none",
+            );
+
+            // Paso 2: PATCH real con la lista completa, notificando a todos
+            // (incluyendo la invitación fresca al nuevo participante).
+            await actualizarEventoCalendar(
+              accessToken,
+              eventoActualizado.google_event_id,
+              { ...datosEvento, attendees },
+              "all",
             );
           }
         } catch (e) {
@@ -387,6 +483,26 @@ export default function EventoDetalleScreen() {
     },
   });
 
+  const cambiarRolParticipanteMutation = useMutation({
+    mutationFn: ({
+      contactoId,
+      rol,
+    }: {
+      contactoId: string;
+      rol: "invitado" | "administrador";
+    }) => actualizarRolParticipante(eventoId, contactoId, rol),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["participantes", eventoId] });
+    },
+    onError: (error: any) => {
+      Alert.alert(
+        "Error",
+        error?.message ??
+          "No se pudo actualizar los privilegios del participante.",
+      );
+    },
+  });
+
   const eliminarParticipanteMutation = useMutation({
     mutationFn: (contactoId: string) =>
       eliminarParticipanteDelEvento(eventoId, contactoId),
@@ -397,12 +513,15 @@ export default function EventoDetalleScreen() {
       try {
         eventoActualizado = await getEvento(eventoId);
       } catch (e) {
-        console.log("No se pudo refrescar el evento tras quitar participante:", e);
+        console.log(
+          "No se pudo refrescar el evento tras quitar participante:",
+          e,
+        );
       }
 
       if (eventoActualizado?.google_event_id) {
         try {
-          const accessToken = await obtenerGoogleToken();
+          const accessToken = await obtenerGoogleTokenDeEvento(eventoId);
           if (accessToken) {
             const { attendees } = await obtenerAttendeesParaCalendar(
               eventoActualizado?.participantes_evento ?? [],
@@ -421,7 +540,10 @@ export default function EventoDetalleScreen() {
             );
           }
         } catch (e) {
-          console.log("Error al sincronizar participante quitado con Calendar:", e);
+          console.log(
+            "Error al sincronizar participante quitado con Calendar:",
+            e,
+          );
         }
       }
 
@@ -442,7 +564,10 @@ export default function EventoDetalleScreen() {
     setEditNombre(evento.titulo ?? "");
     setEditDescripcion(evento.descripcion ?? "");
     setEditUbicacion(evento.ubicacion ?? "");
-    setEditFecha(evento.fecha_evento ? new Date(evento.fecha_evento) : new Date());
+    setEditFecha(
+      evento.fecha_evento ? new Date(evento.fecha_evento) : new Date(),
+    );
+    setGrupoSeleccionadoEditar({ id: "todos", nombre: "Todos" }); // ← nuevo
     setModalEditarEventoVisible(true);
   };
 
@@ -485,6 +610,7 @@ export default function EventoDetalleScreen() {
     setModalReporteVisible(false);
     setDeudaSeleccionada(null);
     setComprobante(null);
+    setMontoAReportar("");
   };
 
   const cerrarModalBoletas = () => {
@@ -541,6 +667,7 @@ export default function EventoDetalleScreen() {
     }
 
     setDeudaSeleccionada(deudasDelUsuario[0]);
+    setMontoAReportar(deudasDelUsuario[0].monto.toString());
     setComprobante(null);
     setModalReporteVisible(true);
   };
@@ -616,11 +743,34 @@ export default function EventoDetalleScreen() {
       return;
     }
 
+    const montoFinal = parseFloat(montoAReportar.replace(/[^0-9.]/g, "")); // Parseamos el monto ingresado, eliminando cualquier carácter que no sea un número o un punto decimal
+    if (isNaN(montoFinal) || montoFinal <= 0) {
+      // Validamos que el monto sea un número válido y mayor a 0
+      mostrarAvisoPago(
+        "Monto inválido",
+        "Ingresa un monto válido mayor a 0.",
+        "alert-circle",
+        "#FF6B6B",
+      );
+      return;
+    }
+    if (montoFinal > deudaSeleccionada.monto) {
+      // Validamos que el monto no exceda la deuda seleccionada
+      mostrarAvisoPago(
+        "Monto excedido",
+        "No puedes reportar un pago mayor a tu deuda actual.",
+        "alert-circle",
+        "#FF6B6B",
+      );
+      return;
+    }
+
     reportarPagoMutation.mutate({
+      // Llamamos a la mutación para reportar el pago con el monto final validado
       eventoId,
       deudorId: deudaSeleccionada.deudorId,
       acreedorId: deudaSeleccionada.acreedorId,
-      monto: deudaSeleccionada.monto,
+      monto: montoFinal,
       comprobante: {
         uri: comprobante.uri,
         mimeType: comprobante.mimeType,
@@ -643,16 +793,27 @@ export default function EventoDetalleScreen() {
 
     try {
       const pagos = await obtenerPagosReportadosEvento(eventoId);
-      const pagosDelAcreedor = pagos.filter(
-        (pago: any) =>
-          usuariosPorContactoId.get(pago.acreedor_id) === usuarioActualId,
-      );
+
+      // LÓGICA PARA INVITADOS
+      const pagosDelAcreedor = pagos.filter((pago: any) => {
+        const acreedorUsuarioId = usuariosPorContactoId.get(pago.acreedor_id);
+        const esInvitado = !acreedorUsuarioId; // Si no hay ID, es un invitado
+        const soyOrganizador = evento?.creador_id === usuarioActualId;
+
+        // Puede revisar y confirmar el pago si:
+        // 1. El usuario actual es el acreedor real
+        // 2. O el acreedor es un invitado y el usuario actual es el organizador del evento
+        return (
+          acreedorUsuarioId === usuarioActualId ||
+          (esInvitado && soyOrganizador)
+        );
+      });
 
       if (pagosDelAcreedor.length === 0) {
         setPagosReportados([]);
         mostrarAvisoPago(
           "No hay reportes",
-          "No hay pagos reportados donde aparezcas como acreedor.",
+          "No hay pagos reportados donde aparezcas como acreedor (o responsable de un invitado).",
           "inbox",
         );
         return;
@@ -764,9 +925,7 @@ export default function EventoDetalleScreen() {
   const invitarMutation = useMutation({
     mutationFn: (contactoId: string) =>
       invitarContactoAlEvento(eventoId, contactoId),
-    onSuccess: async () => {
-      // Traemos el evento actualizado (con el nuevo participante ya incluido)
-      // para poder sincronizar la lista completa de invitados con Calendar.
+    onSuccess: async (_data, contactoId) => {
       let eventoActualizado: any = null;
       try {
         eventoActualizado = await getEvento(eventoId);
@@ -776,22 +935,42 @@ export default function EventoDetalleScreen() {
 
       if (eventoActualizado?.google_event_id) {
         try {
-          const accessToken = await obtenerGoogleToken();
+          const accessToken = await obtenerGoogleTokenDeEvento(eventoId);
           if (accessToken) {
+            const participantesTodos =
+              eventoActualizado?.participantes_evento ?? [];
+            const participantesSinNuevo = participantesTodos.filter(
+              (p: any) => p.contacto_id !== contactoId,
+            );
+
+            const { attendees: attendeesSinNuevo } =
+              await obtenerAttendeesParaCalendar(
+                participantesSinNuevo,
+                eventoActualizado?.creador_id,
+              );
             const { attendees } = await obtenerAttendeesParaCalendar(
-              eventoActualizado?.participantes_evento ?? [],
+              participantesTodos,
               eventoActualizado?.creador_id,
+            );
+
+            const datosEvento = {
+              titulo: eventoActualizado.titulo,
+              descripcion: eventoActualizado.descripcion,
+              fechaInicio: eventoActualizado.fecha_evento,
+              fechaFin: eventoActualizado.fecha_evento,
+            };
+
+            await actualizarEventoCalendar(
+              accessToken,
+              eventoActualizado.google_event_id,
+              { ...datosEvento, attendees: attendeesSinNuevo },
+              "none",
             );
             await actualizarEventoCalendar(
               accessToken,
               eventoActualizado.google_event_id,
-              {
-                titulo: eventoActualizado.titulo,
-                descripcion: eventoActualizado.descripcion,
-                fechaInicio: eventoActualizado.fecha_evento,
-                fechaFin: eventoActualizado.fecha_evento,
-                attendees,
-              },
+              { ...datosEvento, attendees },
+              "all",
             );
           }
         } catch (e) {
@@ -810,12 +989,9 @@ export default function EventoDetalleScreen() {
 
   const eliminarEventoMutation = useMutation({
     mutationFn: async () => {
-      console.log("google_event_id:", evento?.google_event_id);
-      console.log("evento completo:", evento);
       // Eliminar de Google Calendar si tiene google_event_id
       if (evento?.google_event_id) {
         const accessToken = await obtenerGoogleToken();
-        console.log("accessToken:", accessToken);
         if (accessToken) {
           await eliminarEventoCalendar(accessToken, evento.google_event_id);
         }
@@ -828,6 +1004,41 @@ export default function EventoDetalleScreen() {
       Alert.alert("Eliminado", "El evento fue borrado.");
     },
     onError: () => Alert.alert("Error", "No se pudo eliminar el evento."),
+  });
+
+  const salirEventoMutation = useMutation({
+    mutationFn: async () => {
+      if (!miContactoId) {
+        throw new Error(
+          "No pudimos identificar tu participación en este evento.",
+        );
+      }
+
+      if (evento?.google_event_id) {
+        try {
+          const miAccessToken = await obtenerGoogleToken();
+          if (miAccessToken) {
+            await eliminarEventoCalendar(miAccessToken, evento.google_event_id);
+          }
+        } catch (e) {
+          console.log(
+            "No se pudo quitar el evento del calendar propio al salir:",
+            e,
+          );
+        }
+      }
+
+      await salirDeEvento(eventoId, miContactoId);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["eventos"] });
+      queryClient.invalidateQueries({ queryKey: ["evento", eventoId] });
+      queryClient.invalidateQueries({ queryKey: ["participantes", eventoId] });
+      router.back();
+      Alert.alert("Listo", "Saliste del evento.");
+    },
+    onError: (error: any) =>
+      Alert.alert("Error", error?.message ?? "No se pudo salir del evento."),
   });
 
   const confirmarEliminar = () => {
@@ -895,7 +1106,7 @@ export default function EventoDetalleScreen() {
 
   const agregarACalendar = async () => {
     try {
-      const accessToken = await obtenerGoogleToken();
+      const accessToken = await obtenerGoogleTokenDeEvento(eventoId);
 
       if (!accessToken) {
         Alert.alert(
@@ -1103,6 +1314,18 @@ export default function EventoDetalleScreen() {
           color: "#A855F7",
           bg: "rgba(168, 85, 247, 0.15)",
         }; // Morado
+      case "participante_salio":
+        return {
+          icon: "user-x",
+          color: "#EF4444",
+          bg: "rgba(239, 68, 68, 0.15)",
+        }; // Rojo
+      case "participante_eliminado":
+        return {
+          icon: "user-x",
+          color: "#EF4444",
+          bg: "rgba(239, 68, 68, 0.15)",
+        }; // Rojo
       default:
         return {
           icon: "activity",
@@ -1168,7 +1391,7 @@ export default function EventoDetalleScreen() {
                   </Text>
                 </View>
               </View>
-              {esCreador ? (
+              {puedeGestionar ? (
                 <View style={styles.infoPills}>
                   <TouchableOpacity
                     style={[styles.pill, styles.pillBoton]}
@@ -1181,22 +1404,28 @@ export default function EventoDetalleScreen() {
                     />
                     <Text style={styles.pillText}>Editar</Text>
                   </TouchableOpacity>
-                  <TouchableOpacity
-                    style={[styles.pill, styles.pillBoton]}
-                    onPress={confirmarCambioEstado}
-                    disabled={actualizarEstadoMutation.isPending}
-                  >
-                    <Feather
-                      name={evento?.estado === "finalizado" ? "rotate-ccw" : "check-circle"}
-                      size={11}
-                      color="rgba(255,255,255,0.5)"
-                    />
-                    <Text style={styles.pillText}>
-                      {evento?.estado === "finalizado"
-                        ? "Reabrir evento"
-                        : "Finalizar evento"}
-                    </Text>
-                  </TouchableOpacity>
+                  {esCreador ? (
+                    <TouchableOpacity
+                      style={[styles.pill, styles.pillBoton]}
+                      onPress={confirmarCambioEstado}
+                      disabled={actualizarEstadoMutation.isPending}
+                    >
+                      <Feather
+                        name={
+                          evento?.estado === "finalizado"
+                            ? "rotate-ccw"
+                            : "check-circle"
+                        }
+                        size={11}
+                        color="rgba(255,255,255,0.5)"
+                      />
+                      <Text style={styles.pillText}>
+                        {evento?.estado === "finalizado"
+                          ? "Reabrir evento"
+                          : "Finalizar evento"}
+                      </Text>
+                    </TouchableOpacity>
+                  ) : null}
                 </View>
               ) : null}
             </View>
@@ -1227,9 +1456,26 @@ export default function EventoDetalleScreen() {
           </View>
           <View style={styles.headerRight}>
             <View style={styles.iconosRow}>
-              <TouchableOpacity onPress={confirmarEliminar}>
-                <Feather name="trash-2" size={16} color="rgba(255,82,82,0.7)" />
-              </TouchableOpacity>
+              {esCreador ? (
+                <TouchableOpacity onPress={confirmarEliminar}>
+                  <Feather
+                    name="trash-2"
+                    size={16}
+                    color="rgba(255,82,82,0.7)"
+                  />
+                </TouchableOpacity>
+              ) : (
+                <TouchableOpacity
+                  onPress={confirmarSalirEvento}
+                  disabled={salirEventoMutation.isPending}
+                >
+                  <Feather
+                    name="log-out"
+                    size={16}
+                    color="rgba(255,82,82,0.7)"
+                  />
+                </TouchableOpacity>
+              )}
             </View>
             <View
               style={{
@@ -1498,17 +1744,29 @@ export default function EventoDetalleScreen() {
           {/* TAB PARTICIPANTES */}
           {tabActivo === "participantes" && (
             <>
-              <TouchableOpacity
-                style={[styles.botonSecundario, { marginBottom: 12 }]}
-                onPress={() => setModalInvitarVisible(true)}
-              >
-                <View style={styles.invitarBtnContent}>
-                  <Feather name="user-plus" size={16} color="#FFFFFF" />
-                  <Text style={styles.botonSecundarioText}>
-                    Invitar participante
-                  </Text>
+              {puedeGestionar ? (
+                <View style={styles.participantesBotonesRow}>
+                  <TouchableOpacity
+                    style={[styles.botonMitad, styles.botonVerde]}
+                    onPress={abrirModalInvitar}
+                  >
+                    <View style={styles.invitarBtnContent}>
+                      <Feather name="user-plus" size={16} color="#FFFFFF" />
+                      <Text style={styles.botonSecundarioText}>Invitar</Text>
+                    </View>
+                  </TouchableOpacity>
+
+                  <TouchableOpacity
+                    style={[styles.botonMitad, styles.botonRojo]}
+                    onPress={() => setModalEliminarVisible(true)}
+                  >
+                    <View style={styles.invitarBtnContent}>
+                      <Feather name="user-minus" size={16} color="#FFFFFF" />
+                      <Text style={styles.botonSecundarioText}>Eliminar</Text>
+                    </View>
+                  </TouchableOpacity>
                 </View>
-              </TouchableOpacity>
+              ) : null}
 
               {loadingParticipantes ? (
                 <ActivityIndicator color="#FFFFFF" style={{ marginTop: 20 }} />
@@ -1525,6 +1783,9 @@ export default function EventoDetalleScreen() {
                     );
                     const monto = balance?.balance ?? 0;
                     const nombre = obtenerNombreContacto(p.contactos);
+                    const esAdminFila = p.rol === "administrador";
+                    const esCreadorFila = p.rol === "creador";
+
                     return (
                       <TouchableOpacity
                         key={p.contacto_id}
@@ -1533,16 +1794,59 @@ export default function EventoDetalleScreen() {
                         activeOpacity={0.78}
                       >
                         <View style={styles.avatar}>
-                          <Text style={styles.avatarText}>
-                            {nombre.substring(0, 1).toUpperCase()}
-                          </Text>
+                          {p.foto_url ? (
+                            <Image
+                              source={{ uri: p.foto_url }}
+                              style={styles.avatarImage}
+                              resizeMode="cover"
+                            />
+                          ) : (
+                            <Text style={styles.avatarText}>
+                              {nombre.substring(0, 1).toUpperCase()}
+                            </Text>
+                          )}
                         </View>
                         <View style={styles.cardInfo}>
-                          <Text style={styles.cardTitulo}>{nombre}</Text>
+                          <View style={styles.nombreConBadgeRow}>
+                            <Text style={styles.cardTitulo}>{nombre}</Text>
+                            {esCreadorFila ? (
+                              <Feather name="star" size={12} color="#FFD54F" />
+                            ) : esAdminFila ? (
+                              <Feather
+                                name="shield"
+                                size={12}
+                                color="#4CAF50"
+                              />
+                            ) : null}
+                          </View>
                           <Text style={styles.cardSub}>
                             {monto >= 0 ? "Recibe" : "Debe"}
                           </Text>
                         </View>
+
+                        {esCreador && !esCreadorFila ? (
+                          <TouchableOpacity
+                            style={styles.adminToggleBtn}
+                            onPress={() =>
+                              cambiarRolParticipanteMutation.mutate({
+                                contactoId: p.contacto_id,
+                                rol: esAdminFila ? "invitado" : "administrador",
+                              })
+                            }
+                            disabled={cambiarRolParticipanteMutation.isPending}
+                          >
+                            <Feather
+                              name={esAdminFila ? "user-minus" : "shield"}
+                              size={16}
+                              color={
+                                esAdminFila
+                                  ? "#FF6B6B"
+                                  : "rgba(255,255,255,0.4)"
+                              }
+                            />
+                          </TouchableOpacity>
+                        ) : null}
+
                         <Text
                           style={[
                             styles.gastoMonto,
@@ -1649,20 +1953,22 @@ export default function EventoDetalleScreen() {
                 {[
                   {
                     label: "Banco",
-                    value: participanteBancarioSeleccionado.datos_bancarios
-                      .banco,
+                    value:
+                      participanteBancarioSeleccionado.datos_bancarios.banco,
                     icon: "credit-card" as const,
                   },
                   {
                     label: "Tipo de cuenta",
-                    value: participanteBancarioSeleccionado.datos_bancarios
-                      .tipo_cuenta,
+                    value:
+                      participanteBancarioSeleccionado.datos_bancarios
+                        .tipo_cuenta,
                     icon: "list" as const,
                   },
                   {
                     label: "Numero de cuenta",
-                    value: participanteBancarioSeleccionado.datos_bancarios
-                      .numero_cuenta,
+                    value:
+                      participanteBancarioSeleccionado.datos_bancarios
+                        .numero_cuenta,
                     icon: "hash" as const,
                   },
                   {
@@ -1691,16 +1997,14 @@ export default function EventoDetalleScreen() {
                   onPress={copiarDatosBancarios}
                 >
                   <Feather name="copy" size={17} color="#000000" />
-                  <Text style={styles.botonReportarFinalText}>Copiar datos</Text>
+                  <Text style={styles.botonReportarFinalText}>
+                    Copiar datos
+                  </Text>
                 </TouchableOpacity>
               </>
             ) : (
               <View style={styles.datosBancoVacios}>
-                <Feather
-                  name="lock"
-                  size={24}
-                  color="rgba(255,255,255,0.45)"
-                />
+                <Feather name="lock" size={24} color="rgba(255,255,255,0.45)" />
                 <Text style={styles.emptyText}>
                   No hay datos bancarios disponibles para este participante.
                 </Text>
@@ -1787,7 +2091,10 @@ export default function EventoDetalleScreen() {
                       styles.deudaOption,
                       seleccionada && styles.deudaOptionActiva,
                     ]}
-                    onPress={() => setDeudaSeleccionada(deuda)}
+                    onPress={() => {
+                      setDeudaSeleccionada(deuda);
+                      setMontoAReportar(deuda.monto.toString()); // Actualizamos el monto a reportar al seleccionar una deuda
+                    }}
                     disabled={reportarPagoMutation.isPending}
                   >
                     <View style={styles.deudaOptionInfo}>
@@ -1808,6 +2115,25 @@ export default function EventoDetalleScreen() {
                 );
               })}
             </ScrollView>
+
+            {/* --- NUEVO INPUT DE MONTO --- */}
+            <Text style={styles.modalLabel}>Monto a pagar</Text>
+            <View style={styles.editarInputGroup}>
+              <Text style={{ color: "#AAAAAA", fontSize: 18, marginRight: 8 }}>
+                $
+              </Text>
+              <TextInput
+                style={styles.editarInput}
+                value={montoAReportar}
+                onChangeText={(text) =>
+                  setMontoAReportar(text.replace(/[^0-9]/g, ""))
+                }
+                keyboardType="numeric"
+                placeholder="0"
+                placeholderTextColor="#666666"
+              />
+            </View>
+            {/* ---------------------------- */}
 
             <Text style={styles.modalLabel}>Comprobante</Text>
             <TouchableOpacity
@@ -1856,17 +2182,28 @@ export default function EventoDetalleScreen() {
       <Modal visible={modalInvitarVisible} transparent animationType="slide">
         <View style={styles.modalOverlay}>
           <View style={styles.modalCard}>
-            <Text style={styles.modalTitle}>Invitar participante</Text>
+            <View style={styles.agregarPartHeader}>
+              <Text style={styles.modalTitle}>Invitar participante</Text>
+              <TouchableOpacity
+                style={styles.dropdownGrupo}
+                onPress={() => setModalGruposInvitarVisible(true)}
+              >
+                <Text style={styles.dropdownText} numberOfLines={1}>
+                  {grupoSeleccionadoInvitar.nombre}
+                </Text>
+                <Feather name="chevron-down" size={16} color="#AAAAAA" />
+              </TouchableOpacity>
+            </View>
 
             {loadingContactosInvitar ? (
               <ActivityIndicator color="#FFFFFF" />
-            ) : contactosInvitar.length === 0 ? (
+            ) : contactosParaInvitarFiltrados.length === 0 ? (
               <Text style={styles.emptyText}>
-                No tienes más contactos disponibles.
+                No tienes contactos disponibles en este grupo.
               </Text>
             ) : (
               <ScrollView>
-                {contactosInvitar.map((c: any) => {
+                {contactosParaInvitarFiltrados.map((c: any) => {
                   const invitado = yaEstaInvitado(c.id);
                   return (
                     <TouchableOpacity
@@ -1902,6 +2239,59 @@ export default function EventoDetalleScreen() {
             <TouchableOpacity
               style={[styles.cancelBtn, { marginTop: 12 }]}
               onPress={() => setModalInvitarVisible(false)}
+            >
+              <Text style={styles.cancelBtnText}>Cerrar</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
+
+      <Modal visible={modalEliminarVisible} transparent animationType="slide">
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalCard}>
+            <Text style={styles.modalTitle}>Eliminar participante</Text>
+
+            {loadingParticipantes ? (
+              <ActivityIndicator color="#FFFFFF" />
+            ) : participantes.length === 0 ? (
+              <Text style={styles.emptyText}>No hay participantes.</Text>
+            ) : (
+              <ScrollView>
+                {participantes.map((p: any) => {
+                  const nombre = obtenerNombreContacto(p.contactos);
+                  const esCreadorFila = p.rol === "creador";
+
+                  return (
+                    <View
+                      key={p.contacto_id}
+                      style={styles.editarParticipanteRow}
+                    >
+                      <Text style={styles.editarParticipanteNombre}>
+                        {nombre}
+                      </Text>
+                      {esCreadorFila ? (
+                        <Text style={styles.editarParticipanteCreadorTag}>
+                          Organizador
+                        </Text>
+                      ) : (
+                        <TouchableOpacity
+                          onPress={() =>
+                            confirmarQuitarParticipante(p.contacto_id, nombre)
+                          }
+                          disabled={eliminarParticipanteMutation.isPending}
+                        >
+                          <Feather name="x" size={18} color="#FF6B6B" />
+                        </TouchableOpacity>
+                      )}
+                    </View>
+                  );
+                })}
+              </ScrollView>
+            )}
+
+            <TouchableOpacity
+              style={[styles.cancelBtn, { marginTop: 12 }]}
+              onPress={() => setModalEliminarVisible(false)}
             >
               <Text style={styles.cancelBtnText}>Cerrar</Text>
             </TouchableOpacity>
@@ -1967,11 +2357,21 @@ export default function EventoDetalleScreen() {
 
                       <View style={styles.comprobanteLecturaBox}>
                         {pago.comprobanteUrl ? (
-                          <Image
-                            source={{ uri: pago.comprobanteUrl }}
-                            style={styles.comprobantePreview}
-                            resizeMode="contain"
-                          />
+                          <TouchableOpacity
+                            style={styles.imagenTocable}
+                            onPress={() => setImagenAmpliada(pago.comprobanteUrl)}
+                            activeOpacity={0.88}
+                          >
+                            <Image
+                              source={{ uri: pago.comprobanteUrl }}
+                              style={styles.comprobantePreview}
+                              resizeMode="contain"
+                            />
+                            <View style={styles.verImagenBadge}>
+                              <Feather name="maximize-2" size={14} color="#FFFFFF" />
+                              <Text style={styles.verImagenText}>Ampliar</Text>
+                            </View>
+                          </TouchableOpacity>
                         ) : (
                           <View style={styles.comprobanteVacio}>
                             <Feather
@@ -2153,11 +2553,21 @@ export default function EventoDetalleScreen() {
               <ScrollView style={styles.boletasLista}>
                 {boletasGasto.map((boleta) => (
                   <View key={boleta.id} style={styles.boletaCard}>
-                    <Image
-                      source={{ uri: boleta.url }}
-                      style={styles.comprobantePreview}
-                      resizeMode="contain"
-                    />
+                    <TouchableOpacity
+                      style={styles.imagenTocable}
+                      onPress={() => setImagenAmpliada(boleta.url)}
+                      activeOpacity={0.88}
+                    >
+                      <Image
+                        source={{ uri: boleta.url }}
+                        style={styles.comprobantePreview}
+                        resizeMode="contain"
+                      />
+                      <View style={styles.verImagenBadge}>
+                        <Feather name="maximize-2" size={14} color="#FFFFFF" />
+                        <Text style={styles.verImagenText}>Ampliar</Text>
+                      </View>
+                    </TouchableOpacity>
                   </View>
                 ))}
               </ScrollView>
@@ -2183,6 +2593,30 @@ export default function EventoDetalleScreen() {
               </TouchableOpacity>
             ) : null}
           </View>
+        </View>
+      </Modal>
+
+      <Modal
+        visible={Boolean(imagenAmpliada)}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setImagenAmpliada(null)}
+      >
+        <View style={styles.imagenAmpliadaOverlay}>
+          <TouchableOpacity
+            style={[styles.imagenAmpliadaCerrar, { top: 18 + insets.top }]}
+            onPress={() => setImagenAmpliada(null)}
+          >
+            <Feather name="x" size={24} color="#FFFFFF" />
+          </TouchableOpacity>
+
+          {imagenAmpliada ? (
+            <Image
+              source={{ uri: imagenAmpliada }}
+              style={styles.imagenAmpliada}
+              resizeMode="contain"
+            />
+          ) : null}
         </View>
       </Modal>
 
@@ -2310,7 +2744,10 @@ export default function EventoDetalleScreen() {
                 const nombre = obtenerNombreContacto(p.contactos);
                 const esCreadorFila = p.rol === "creador";
                 return (
-                  <View key={p.contacto_id} style={styles.editarParticipanteRow}>
+                  <View
+                    key={p.contacto_id}
+                    style={styles.editarParticipanteRow}
+                  >
                     <Text style={styles.editarParticipanteNombre}>
                       {nombre}
                     </Text>
@@ -2332,35 +2769,49 @@ export default function EventoDetalleScreen() {
                 );
               })}
 
-              <Text style={[styles.modalLabel, styles.editarSeccion]}>
-                Agregar participante
-              </Text>
-              {loadingContactosInvitar ? (
-                <ActivityIndicator color="#FFFFFF" style={{ marginTop: 10 }} />
-              ) : (
-                contactosInvitar
-                  .filter((c: any) => !yaEsParticipante(c.id))
-                  .map((c: any) => (
+              <View style={styles.editarSeccion}>
+                <View style={styles.agregarPartHeader}>
+                  <Text style={styles.modalLabel}>Agregar participante</Text>
+                  <TouchableOpacity
+                    style={styles.dropdownGrupo}
+                    onPress={() => setModalGruposEditarVisible(true)}
+                  >
+                    <Text style={styles.dropdownText} numberOfLines={1}>
+                      {grupoSeleccionadoEditar.nombre}
+                    </Text>
+                    <Feather name="chevron-down" size={16} color="#AAAAAA" />
+                  </TouchableOpacity>
+                </View>
+
+                {loadingContactosInvitar ? (
+                  <ActivityIndicator
+                    color="#FFFFFF"
+                    style={{ marginTop: 10 }}
+                  />
+                ) : contactosParaAgregar.length === 0 ? (
+                  <Text style={styles.emptyText}>
+                    No hay contactos disponibles en este grupo.
+                  </Text>
+                ) : (
+                  contactosParaAgregar.map((c: any) => (
                     <TouchableOpacity
                       key={c.id}
                       style={styles.editarAgregarRow}
                       onPress={() => invitarParticipanteMutation.mutate(c.id)}
                       disabled={invitarParticipanteMutation.isPending}
                     >
-                      <Text style={styles.editarAgregarNombre}>
-                        {c.nombre}
-                      </Text>
+                      <Text style={styles.editarAgregarNombre}>{c.nombre}</Text>
                       <Feather name="plus" size={18} color="#FFFFFF" />
                     </TouchableOpacity>
                   ))
-              )}
+                )}
+              </View>
 
               <TouchableOpacity
                 style={[
                   styles.botonReportarFinal,
                   styles.editarGuardarBtn,
-                  (actualizarEventoMutation.isPending ||
-                    !editNombre.trim()) &&
+                  (actualizarEventoMutation.isPending || !editNombre.trim()) &&
                     styles.botonDeshabilitado,
                 ]}
                 onPress={() => actualizarEventoMutation.mutate()}
@@ -2379,6 +2830,124 @@ export default function EventoDetalleScreen() {
             </ScrollView>
           </View>
         </View>
+      </Modal>
+      <Modal
+        visible={modalGruposEditarVisible}
+        transparent
+        animationType="fade"
+      >
+        <TouchableOpacity
+          style={styles.dropdownOverlay}
+          activeOpacity={1}
+          onPress={() => setModalGruposEditarVisible(false)}
+        >
+          <View style={styles.dropdownModalContainer}>
+            <TouchableOpacity
+              style={styles.dropdownItem}
+              onPress={() => {
+                setGrupoSeleccionadoEditar({ id: "todos", nombre: "Todos" });
+                setModalGruposEditarVisible(false);
+              }}
+            >
+              <Text
+                style={[
+                  styles.dropdownItemText,
+                  grupoSeleccionadoEditar.id === "todos" && {
+                    color: "#FFFFFF",
+                    fontWeight: "bold",
+                  },
+                ]}
+              >
+                Todos
+              </Text>
+            </TouchableOpacity>
+            <View style={styles.divisorDropdown} />
+            {grupos.map((grupo: any) => (
+              <TouchableOpacity
+                key={grupo.id}
+                style={styles.dropdownItem}
+                onPress={() => {
+                  setGrupoSeleccionadoEditar({
+                    id: grupo.id,
+                    nombre: grupo.nombre,
+                  });
+                  setModalGruposEditarVisible(false);
+                }}
+              >
+                <Text
+                  style={[
+                    styles.dropdownItemText,
+                    grupoSeleccionadoEditar.id === grupo.id && {
+                      color: "#FFFFFF",
+                      fontWeight: "bold",
+                    },
+                  ]}
+                >
+                  {grupo.nombre}
+                </Text>
+              </TouchableOpacity>
+            ))}
+          </View>
+        </TouchableOpacity>
+      </Modal>
+      <Modal
+        visible={modalGruposInvitarVisible}
+        transparent
+        animationType="fade"
+      >
+        <TouchableOpacity
+          style={styles.dropdownOverlay}
+          activeOpacity={1}
+          onPress={() => setModalGruposInvitarVisible(false)}
+        >
+          <View style={styles.dropdownModalContainer}>
+            <TouchableOpacity
+              style={styles.dropdownItem}
+              onPress={() => {
+                setGrupoSeleccionadoInvitar({ id: "todos", nombre: "Todos" });
+                setModalGruposInvitarVisible(false);
+              }}
+            >
+              <Text
+                style={[
+                  styles.dropdownItemText,
+                  grupoSeleccionadoInvitar.id === "todos" && {
+                    color: "#FFFFFF",
+                    fontWeight: "bold",
+                  },
+                ]}
+              >
+                Todos
+              </Text>
+            </TouchableOpacity>
+            <View style={styles.divisorDropdown} />
+            {grupos.map((grupo: any) => (
+              <TouchableOpacity
+                key={grupo.id}
+                style={styles.dropdownItem}
+                onPress={() => {
+                  setGrupoSeleccionadoInvitar({
+                    id: grupo.id,
+                    nombre: grupo.nombre,
+                  });
+                  setModalGruposInvitarVisible(false);
+                }}
+              >
+                <Text
+                  style={[
+                    styles.dropdownItemText,
+                    grupoSeleccionadoInvitar.id === grupo.id && {
+                      color: "#FFFFFF",
+                      fontWeight: "bold",
+                    },
+                  ]}
+                >
+                  {grupo.nombre}
+                </Text>
+              </TouchableOpacity>
+            ))}
+          </View>
+        </TouchableOpacity>
       </Modal>
     </View>
   );
@@ -2542,7 +3111,9 @@ const styles = StyleSheet.create({
     justifyContent: "center",
     alignItems: "center",
     marginRight: 14,
+    overflow: "hidden",
   },
+  avatarImage: { width: "100%", height: "100%" },
   avatarText: { color: "#FFFFFF", fontSize: 16, fontWeight: "bold" },
   cardInfo: { flex: 1 },
   cardTitulo: { color: "#FFFFFF", fontSize: 15, fontWeight: "500" },
@@ -2601,6 +3172,26 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
     gap: 8,
+  },
+  participantesBotonesRow: {
+    flexDirection: "row",
+    gap: 10,
+    marginBottom: 12,
+  },
+  botonMitad: {
+    flex: 1,
+    borderRadius: 15,
+    padding: 16,
+    alignItems: "center",
+    borderWidth: 1,
+  },
+  botonVerde: {
+    backgroundColor: "rgba(76,175,80,0.18)",
+    borderColor: "rgba(76,175,80,0.45)",
+  },
+  botonRojo: {
+    backgroundColor: "rgba(255,82,82,0.18)",
+    borderColor: "rgba(255,107,107,0.45)",
   },
   contactRow: {
     flexDirection: "row",
@@ -2886,6 +3477,48 @@ const styles = StyleSheet.create({
     width: "100%",
     height: "100%",
   },
+  imagenTocable: {
+    flex: 1,
+  },
+  verImagenBadge: {
+    position: "absolute",
+    right: 12,
+    bottom: 12,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+    paddingHorizontal: 11,
+    paddingVertical: 7,
+    borderRadius: 14,
+    backgroundColor: "rgba(0,0,0,0.68)",
+  },
+  verImagenText: {
+    color: "#FFFFFF",
+    fontSize: 12,
+    fontWeight: "700",
+  },
+  imagenAmpliadaOverlay: {
+    flex: 1,
+    alignItems: "center",
+    justifyContent: "center",
+    padding: 16,
+    backgroundColor: "rgba(0,0,0,0.94)",
+  },
+  imagenAmpliadaCerrar: {
+    position: "absolute",
+    right: 18,
+    zIndex: 2,
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: "rgba(255,255,255,0.14)",
+  },
+  imagenAmpliada: {
+    width: "100%",
+    height: "86%",
+  },
   comprobanteOverlay: {
     position: "absolute",
     right: 12,
@@ -3087,7 +3720,7 @@ const styles = StyleSheet.create({
     shadowRadius: 5,
     elevation: 8,
   },
-  
+
   // --- CALENDAR BTN ---
   calendarBtn: {
     flexDirection: "row",
@@ -3184,5 +3817,72 @@ const styles = StyleSheet.create({
     color: "#AAAAAA",
     fontSize: 11,
     fontWeight: "600",
+  },
+  dropdownOverlay: {
+    flex: 1,
+    backgroundColor: "transparent",
+    justifyContent: "center",
+    alignItems: "center",
+  },
+  dropdownModalContainer: {
+    width: 200,
+    backgroundColor: "rgba(25, 25, 25, 0.95)",
+    borderRadius: 15,
+    padding: 15,
+    borderWidth: 1,
+    borderColor: "rgba(255, 255, 255, 0.1)",
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 5 },
+    shadowOpacity: 0.5,
+    shadowRadius: 10,
+    elevation: 10,
+  },
+  dropdownItem: { paddingVertical: 10 },
+  dropdownItemText: { color: "#AAAAAA", fontSize: 15 },
+  divisorDropdown: {
+    height: 1,
+    backgroundColor: "rgba(255, 255, 255, 0.1)",
+    marginVertical: 5,
+  },
+  dropdownGrupo: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+    backgroundColor: "rgba(0, 0, 0, 0.5)",
+    borderWidth: 1,
+    borderColor: "rgba(255, 255, 255, 0.1)",
+    borderRadius: 10,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    maxWidth: 150,
+  },
+  dropdownText: { color: "#FFFFFF", fontSize: 13 },
+  agregarPartHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    marginBottom: 8,
+  },
+  editarParticipanteInfo: {
+    flex: 1,
+    gap: 2,
+  },
+  adminTag: {
+    color: "#4CAF50",
+    fontSize: 11,
+    fontWeight: "600",
+  },
+  participanteAccionesRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 14,
+  },
+  adminToggleBtn: {
+    padding: 2,
+  },
+  nombreConBadgeRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
   },
 });

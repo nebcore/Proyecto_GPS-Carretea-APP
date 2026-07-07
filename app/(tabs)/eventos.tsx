@@ -23,6 +23,7 @@ import {
   getEventos,
   invitarContactoAlEvento,
 } from "@/lib/api/eventos";
+import { supabase } from "@/lib/supabase";
 
 const formatearFecha = (fechaString: string) => {
   if (!fechaString) return "Fecha sin definir";
@@ -43,10 +44,39 @@ export default function EventosScreen() {
   const [modalDetalleVisible, setModalDetalleVisible] = useState(false);
   const [eventoSeleccionado, setEventoSeleccionado] = useState<any>(null);
   const [modalInvitarVisible, setModalInvitarVisible] = useState(false);
+  const [filtroRol, setFiltroRol] = useState(
+    "todos" as "todos" | "creados" | "invitado",
+  );
+  const [filtroEstado, setFiltroEstado] = useState(
+    "todos" as "todos" | "abierto" | "finalizado",
+  );
 
   const { data: eventos = [], isLoading: loadingEventos } = useQuery({
     queryKey: ["eventos"],
     queryFn: getEventos,
+  });
+
+  const { data: usuarioActualId } = useQuery({
+    queryKey: ["usuario-actual-id"],
+    queryFn: async () => {
+      const {
+        data: { user },
+        error,
+      } = await supabase.auth.getUser();
+
+      if (error) throw error;
+      return user?.id ?? null;
+    },
+  });
+
+  const eventosFiltrados = eventos.filter((evento: any) => {
+    if (filtroRol === "creados" && evento.creador_id !== usuarioActualId)
+      return false;
+    if (filtroRol === "invitado" && evento.creador_id === usuarioActualId)
+      return false;
+    if (filtroEstado !== "todos" && evento.estado !== filtroEstado)
+      return false;
+    return true;
   });
 
   const { data: contactos = [], isLoading: loadingContactos } = useQuery({
@@ -110,12 +140,12 @@ export default function EventosScreen() {
           showsVerticalScrollIndicator={false}
         >
           <GlassCard style={styles.formCard}>
-            {/* HEADER */}
             <View style={styles.headerRow}>
               <View>
                 <Text style={styles.title}>Mis Eventos</Text>
                 <Text style={styles.subtitle}>
-                  {eventos.length} evento{eventos.length !== 1 ? "s" : ""}
+                  {eventosFiltrados.length} evento
+                  {eventosFiltrados.length !== 1 ? "s" : ""}
                 </Text>
               </View>
               <TouchableOpacity
@@ -126,15 +156,85 @@ export default function EventosScreen() {
               </TouchableOpacity>
             </View>
 
+            {/* FILTROS */}
+            <View style={styles.filtrosContainer}>
+              <ScrollView
+                horizontal
+                showsHorizontalScrollIndicator={false}
+                contentContainerStyle={styles.filtroGrupo}
+              >
+                {(
+                  [
+                    { key: "todos", label: "Todos" },
+                    { key: "creados", label: "Creados por mí" },
+                    { key: "invitado", label: "Invitado" },
+                  ] as const
+                ).map((opcion) => (
+                  <TouchableOpacity
+                    key={opcion.key}
+                    style={[
+                      styles.filtroChip,
+                      filtroRol === opcion.key && styles.filtroChipActivo,
+                    ]}
+                    onPress={() => setFiltroRol(opcion.key)}
+                  >
+                    <Text
+                      style={[
+                        styles.filtroChipText,
+                        filtroRol === opcion.key && styles.filtroChipTextActivo,
+                      ]}
+                    >
+                      {opcion.label}
+                    </Text>
+                  </TouchableOpacity>
+                ))}
+              </ScrollView>
+
+              <ScrollView
+                horizontal
+                showsHorizontalScrollIndicator={false}
+                contentContainerStyle={styles.filtroGrupo}
+              >
+                {(
+                  [
+                    { key: "todos", label: "Todos" },
+                    { key: "abierto", label: "Abiertos" },
+                    { key: "finalizado", label: "Finalizados" },
+                  ] as const
+                ).map((opcion) => (
+                  <TouchableOpacity
+                    key={opcion.key}
+                    style={[
+                      styles.filtroChip,
+                      filtroEstado === opcion.key && styles.filtroChipActivo,
+                    ]}
+                    onPress={() => setFiltroEstado(opcion.key)}
+                  >
+                    <Text
+                      style={[
+                        styles.filtroChipText,
+                        filtroEstado === opcion.key &&
+                          styles.filtroChipTextActivo,
+                      ]}
+                    >
+                      {opcion.label}
+                    </Text>
+                  </TouchableOpacity>
+                ))}
+              </ScrollView>
+            </View>
+
             {/* LISTA DE EVENTOS */}
             {loadingEventos ? (
               <ActivityIndicator color="#FFFFFF" style={{ marginTop: 20 }} />
-            ) : eventos.length === 0 ? (
+            ) : eventosFiltrados.length === 0 ? (
               <Text style={styles.emptyText}>
-                Aún no tienes Eventos. ¡Crea la primera!
+                {eventos.length === 0
+                  ? "Aún no tienes Eventos. ¡Crea la primera!"
+                  : "No hay eventos que coincidan con este filtro."}
               </Text>
             ) : (
-              eventos.map((evento: any) => (
+              eventosFiltrados.map((evento: any) => (
                 <TouchableOpacity
                   key={evento.id}
                   style={styles.eventoCard}
@@ -178,7 +278,9 @@ export default function EventosScreen() {
       {/* MODAL DETALLE EVENTO */}
       <Modal visible={modalDetalleVisible} transparent animationType="fade">
         <View style={styles.modalOverlay}>
-          <View style={[styles.modalCard, { paddingBottom: 24 + insets.bottom }]}>
+          <View
+            style={[styles.modalCard, { paddingBottom: 24 + insets.bottom }]}
+          >
             {eventoSeleccionado && (
               <ScrollView showsVerticalScrollIndicator={false}>
                 <Text style={styles.modalTitle}>
@@ -289,7 +391,9 @@ export default function EventosScreen() {
       {/* MODAL INVITAR CONTACTO */}
       <Modal visible={modalInvitarVisible} transparent animationType="slide">
         <View style={styles.modalOverlay}>
-          <View style={[styles.modalCard, { paddingBottom: 24 + insets.bottom }]}>
+          <View
+            style={[styles.modalCard, { paddingBottom: 24 + insets.bottom }]}
+          >
             <Text style={styles.modalTitle}>Invitar contacto</Text>
             {loadingContactos ? (
               <ActivityIndicator color="#FFFFFF" />
@@ -507,4 +611,32 @@ const styles = StyleSheet.create({
   contactRowDisabled: { opacity: 0.4 },
   contactNombre: { color: "#FFFFFF", fontSize: 15 },
   yaInvitadoText: { color: "#555", fontSize: 13 },
+  filtrosContainer: {
+    gap: 8,
+    marginBottom: 16,
+  },
+  filtroGrupo: {
+    gap: 8,
+    paddingRight: 4,
+  },
+  filtroChip: {
+    borderRadius: 16,
+    paddingHorizontal: 14,
+    paddingVertical: 7,
+    borderWidth: 1,
+    borderColor: "rgba(255,255,255,0.12)",
+    backgroundColor: "rgba(255,255,255,0.05)",
+  },
+  filtroChipActivo: {
+    backgroundColor: "#FFFFFF",
+    borderColor: "#FFFFFF",
+  },
+  filtroChipText: {
+    color: "#AAAAAA",
+    fontSize: 12,
+    fontWeight: "600",
+  },
+  filtroChipTextActivo: {
+    color: "#000000",
+  },
 });
