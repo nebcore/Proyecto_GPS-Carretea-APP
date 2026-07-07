@@ -103,17 +103,23 @@ export default function GastoNuevoScreen() {
   const formatearMontoInput = (valor?: number) =>
     valor ? new Intl.NumberFormat("es-CL").format(valor) : "";
 
+  const consumidoresSeleccionados = useMemo(
+    () =>
+      participantes.filter(
+        (p: any) => selectedConsumers[p.contacto_id] ?? true,
+      ),
+    [participantes, selectedConsumers],
+  );
+
   const obtenerConsumidoresIds = () =>
-    participantes
-      .filter((p: any) => selectedConsumers[p.contacto_id] ?? true)
-      .map((p: any) => p.contacto_id);
+    consumidoresSeleccionados.map((p: any) => p.contacto_id);
 
   const montoTotalActual = Number(watch("monto_total") || 0);
 
   const resumenGasto = useMemo(() => {
-    const consumidoresIds = participantes
-      .filter((p: any) => selectedConsumers[p.contacto_id] ?? true)
-      .map((p: any) => p.contacto_id);
+    const consumidoresIds = consumidoresSeleccionados.map(
+      (p: any) => p.contacto_id,
+    );
     const totalAportes = Object.values(montosPagadores).reduce(
       (suma, monto) => suma + (Number(monto) || 0),
       0,
@@ -156,10 +162,9 @@ export default function GastoNuevoScreen() {
     };
   }, [
     montoTotalActual,
+    consumidoresSeleccionados,
     montosExactos,
     montosPagadores,
-    participantes,
-    selectedConsumers,
     tipoDivision,
   ]);
 
@@ -197,9 +202,9 @@ export default function GastoNuevoScreen() {
             : `Sobran ${formatearMontoResumen(Math.abs(resumenGasto.diferenciaDivision))} en la distribucion`;
 
   const previewParticipantes = useMemo(() => {
-    const consumidoresIds = participantes
-      .filter((p: any) => selectedConsumers[p.contacto_id] ?? true)
-      .map((p: any) => p.contacto_id);
+    const consumidoresIds = consumidoresSeleccionados.map(
+      (p: any) => p.contacto_id,
+    );
 
     let consumos: { contacto_id: string; parte: number }[] = [];
 
@@ -234,10 +239,10 @@ export default function GastoNuevoScreen() {
     });
   }, [
     montoTotalActual,
+    consumidoresSeleccionados,
     montosExactos,
     montosPagadores,
     participantes,
-    selectedConsumers,
     tipoDivision,
   ]);
 
@@ -521,10 +526,22 @@ export default function GastoNuevoScreen() {
                 key={p.contacto_id}
                 style={[styles.chip, seleccionado && styles.chipActivo]}
                 onPress={() =>
-                  setSelectedConsumers((prev) => ({
-                    ...prev,
-                    [p.contacto_id]: !(prev[p.contacto_id] ?? true),
-                  }))
+                  setSelectedConsumers((prev) => {
+                    const siguienteSeleccion = !(prev[p.contacto_id] ?? true);
+
+                    if (!siguienteSeleccion) {
+                      setMontosExactos((montosPrevios) => {
+                        const { [p.contacto_id]: _omitido, ...resto } =
+                          montosPrevios;
+                        return resto;
+                      });
+                    }
+
+                    return {
+                      ...prev,
+                      [p.contacto_id]: siguienteSeleccion,
+                    };
+                  })
                 }
               >
                 <Text
@@ -677,7 +694,12 @@ export default function GastoNuevoScreen() {
                   ? "Porcentaje por persona (%)"
                   : "Partes por persona"}
             </Text>
-            {participantes.map((p: any) => (
+            {consumidoresSeleccionados.length === 0 ? (
+              <Text style={styles.montosCardVacio}>
+                Selecciona al menos un consumidor para asignar la division.
+              </Text>
+            ) : null}
+            {consumidoresSeleccionados.map((p: any) => (
               <View key={p.contacto_id} style={styles.montoPersonaRow}>
                 <View style={styles.avatar}>
                   <Text style={styles.avatarText}>
@@ -1003,6 +1025,11 @@ const styles = StyleSheet.create({
     fontSize: 12,
     letterSpacing: 0.8,
     marginBottom: 14,
+  },
+  montosCardVacio: {
+    color: "rgba(255,255,255,0.55)",
+    fontSize: 13,
+    lineHeight: 18,
   },
   montoPersonaRow: {
     flexDirection: "row",
