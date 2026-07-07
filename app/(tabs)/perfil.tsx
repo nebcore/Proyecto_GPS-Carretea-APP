@@ -1,5 +1,7 @@
 import { Alert } from "@/components/ui/AppAlert";
 import GlassCard from "@/components/ui/GlassCard";
+import { BANCOS_CHILE } from "@/constants/bancosChile";
+import { TIPOS_CUENTA_CHILE } from "@/constants/tiposCuentaChile";
 import {
   enviarCodigoVerificacionEmail,
   getDatosBancarios,
@@ -16,6 +18,7 @@ import {
   subirFotoPerfil,
 } from "@/lib/api/usuarios";
 import { supabase } from "@/lib/supabase";
+import { formatearRut } from "@/lib/utils/rut";
 import Feather from "@expo/vector-icons/Feather";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import * as ImagePicker from "expo-image-picker";
@@ -118,6 +121,10 @@ export default function PerfilScreen() {
 
   const [editandoBanco, setEditandoBanco] = useState(false);
   const [banco, setBanco] = useState("");
+  const [selectorBancoVisible, setSelectorBancoVisible] = useState(false);
+  const [busquedaBanco, setBusquedaBanco] = useState("");
+  const [selectorTipoCuentaVisible, setSelectorTipoCuentaVisible] =
+    useState(false);
   const [tipoCuenta, setTipoCuenta] = useState("");
   const [numeroCuenta, setNumeroCuenta] = useState("");
   const [rut, setRut] = useState("");
@@ -228,7 +235,7 @@ export default function PerfilScreen() {
         banco: banco.trim(),
         tipo_cuenta: tipoCuenta.trim(),
         numero_cuenta: numeroCuenta.trim(),
-        rut: rut.trim(),
+        rut: formatearRut(rut.trim()),
       }),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["datos-bancarios"] });
@@ -243,7 +250,7 @@ export default function PerfilScreen() {
     setBanco(datosBancarios?.banco ?? "");
     setTipoCuenta(datosBancarios?.tipo_cuenta ?? "");
     setNumeroCuenta(datosBancarios?.numero_cuenta ?? "");
-    setRut(datosBancarios?.rut ?? "");
+    setRut(formatearRut(datosBancarios?.rut ?? ""));
     setEditandoBanco(true);
   };
 
@@ -258,6 +265,21 @@ export default function PerfilScreen() {
       return;
     }
     guardarBancoMutation.mutate();
+  };
+
+  const bancosFiltrados = BANCOS_CHILE.filter((nombreBanco) =>
+    nombreBanco.toLowerCase().includes(busquedaBanco.trim().toLowerCase()),
+  );
+
+  const seleccionarBanco = (nombreBanco: string) => {
+    setBanco(nombreBanco);
+    setBusquedaBanco("");
+    setSelectorBancoVisible(false);
+  };
+
+  const seleccionarTipoCuenta = (tipo: string) => {
+    setTipoCuenta(tipo);
+    setSelectorTipoCuentaVisible(false);
   };
 
   const iniciarEdicion = () => {
@@ -541,15 +563,18 @@ export default function PerfilScreen() {
                       label: "Banco",
                       value: banco,
                       setter: setBanco,
-                      placeholder: "Ej: Banco Estado",
+                      placeholder: "Selecciona tu banco",
                       icon: "credit-card" as const,
+                      selector: true,
                     },
                     {
                       label: "Tipo de cuenta",
                       value: tipoCuenta,
                       setter: setTipoCuenta,
-                      placeholder: "Ej: Cuenta Vista",
+                      placeholder: "Selecciona el tipo de cuenta",
                       icon: "list" as const,
+                      selector: true,
+                      onPress: () => setSelectorTipoCuentaVisible(true),
                     },
                     {
                       label: "Número de cuenta",
@@ -562,9 +587,10 @@ export default function PerfilScreen() {
                     {
                       label: "RUT",
                       value: rut,
-                      setter: setRut,
+                      setter: (valor: string) => setRut(formatearRut(valor)),
                       placeholder: "Ej: 12.345.678-9",
                       icon: "user" as const,
+                      autoCapitalize: "characters" as const,
                     },
                   ].map((campo, i, arr) => (
                     <View key={campo.label}>
@@ -578,15 +604,42 @@ export default function PerfilScreen() {
                         </View>
                         <View style={styles.campoBody}>
                           <Text style={styles.campoLabel}>{campo.label}</Text>
-                          <TextInput
-                            style={styles.campoInput}
-                            value={campo.value}
-                            onChangeText={campo.setter}
-                            placeholder={campo.placeholder}
-                            placeholderTextColor="#555"
-                            keyboardType={campo.keyboard ?? "default"}
-                            autoFocus={i === 0}
-                          />
+                          {campo.selector ? (
+                            <TouchableOpacity
+                              style={styles.campoSelector}
+                              onPress={
+                                campo.onPress ??
+                                (() => setSelectorBancoVisible(true))
+                              }
+                              activeOpacity={0.8}
+                            >
+                              <Text
+                                style={[
+                                  styles.campoSelectorText,
+                                  !campo.value && styles.campoPlaceholder,
+                                ]}
+                                numberOfLines={1}
+                              >
+                                {campo.value || campo.placeholder}
+                              </Text>
+                              <Feather
+                                name="chevron-down"
+                                size={16}
+                                color="#777777"
+                              />
+                            </TouchableOpacity>
+                          ) : (
+                            <TextInput
+                              style={styles.campoInput}
+                              value={campo.value}
+                              onChangeText={campo.setter}
+                              placeholder={campo.placeholder}
+                              placeholderTextColor="#555"
+                              keyboardType={campo.keyboard ?? "default"}
+                              autoCapitalize={campo.autoCapitalize ?? "none"}
+                              autoFocus={i === 0}
+                            />
+                          )}
                         </View>
                       </View>
                       {i < arr.length - 1 && <View style={styles.divisor} />}
@@ -737,6 +790,105 @@ export default function PerfilScreen() {
           </>
         )}
       </ScrollView>
+
+      <Modal
+        visible={selectorBancoVisible}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setSelectorBancoVisible(false)}
+      >
+        <View style={styles.selectorOverlay}>
+          <TouchableOpacity
+            style={StyleSheet.absoluteFill}
+            activeOpacity={1}
+            onPress={() => setSelectorBancoVisible(false)}
+          />
+          <View style={styles.selectorCard}>
+            <View style={styles.selectorHeader}>
+              <Text style={styles.cardTitle}>Seleccionar banco</Text>
+              <TouchableOpacity onPress={() => setSelectorBancoVisible(false)}>
+                <Feather name="x" size={22} color="#AAAAAA" />
+              </TouchableOpacity>
+            </View>
+            <View style={styles.selectorSearch}>
+              <Feather name="search" size={16} color="#777777" />
+              <TextInput
+                style={styles.selectorSearchInput}
+                value={busquedaBanco}
+                onChangeText={setBusquedaBanco}
+                placeholder="Buscar banco"
+                placeholderTextColor="#666666"
+                autoFocus
+              />
+            </View>
+            <ScrollView
+              style={styles.selectorLista}
+              showsVerticalScrollIndicator={false}
+            >
+              {bancosFiltrados.length === 0 ? (
+                <Text style={styles.selectorVacio}>Sin resultados.</Text>
+              ) : (
+                bancosFiltrados.map((nombreBanco) => (
+                  <TouchableOpacity
+                    key={nombreBanco}
+                    style={styles.selectorOpcion}
+                    onPress={() => seleccionarBanco(nombreBanco)}
+                  >
+                    <Text style={styles.selectorOpcionText}>
+                      {nombreBanco}
+                    </Text>
+                    {banco === nombreBanco && (
+                      <Feather name="check" size={16} color="#50C878" />
+                    )}
+                  </TouchableOpacity>
+                ))
+              )}
+            </ScrollView>
+          </View>
+        </View>
+      </Modal>
+
+      <Modal
+        visible={selectorTipoCuentaVisible}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setSelectorTipoCuentaVisible(false)}
+      >
+        <View style={styles.selectorOverlay}>
+          <TouchableOpacity
+            style={StyleSheet.absoluteFill}
+            activeOpacity={1}
+            onPress={() => setSelectorTipoCuentaVisible(false)}
+          />
+          <View style={styles.selectorCard}>
+            <View style={styles.selectorHeader}>
+              <Text style={styles.cardTitle}>Tipo de cuenta</Text>
+              <TouchableOpacity
+                onPress={() => setSelectorTipoCuentaVisible(false)}
+              >
+                <Feather name="x" size={22} color="#AAAAAA" />
+              </TouchableOpacity>
+            </View>
+            <ScrollView
+              style={styles.selectorLista}
+              showsVerticalScrollIndicator={false}
+            >
+              {TIPOS_CUENTA_CHILE.map((tipo) => (
+                <TouchableOpacity
+                  key={tipo}
+                  style={styles.selectorOpcion}
+                  onPress={() => seleccionarTipoCuenta(tipo)}
+                >
+                  <Text style={styles.selectorOpcionText}>{tipo}</Text>
+                  {tipoCuenta === tipo && (
+                    <Feather name="check" size={16} color="#50C878" />
+                  )}
+                </TouchableOpacity>
+              ))}
+            </ScrollView>
+          </View>
+        </View>
+      </Modal>
 
       <Modal
         visible={panelEmailVisible}
@@ -989,6 +1141,22 @@ const styles = StyleSheet.create({
     borderBottomColor: "rgba(255,255,255,0.2)",
     paddingVertical: 4,
   },
+  campoSelector: {
+    minHeight: 32,
+    borderBottomWidth: 1,
+    borderBottomColor: "rgba(255,255,255,0.2)",
+    paddingVertical: 4,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    gap: 10,
+  },
+  campoSelectorText: {
+    color: "#FFFFFF",
+    fontSize: 15,
+    flex: 1,
+  },
+  campoPlaceholder: { color: "#555555" },
   divisor: {
     height: 1,
     backgroundColor: "rgba(255,255,255,0.06)",
@@ -1110,6 +1278,64 @@ const styles = StyleSheet.create({
     textAlign: "center",
     fontSize: 14,
     marginTop: 8,
+  },
+  selectorOverlay: {
+    flex: 1,
+    backgroundColor: "rgba(0,0,0,0.65)",
+    alignItems: "center",
+    justifyContent: "center",
+    padding: 24,
+  },
+  selectorCard: {
+    width: "100%",
+    maxWidth: 360,
+    maxHeight: "75%",
+    backgroundColor: "#0A0A0A",
+    borderRadius: 20,
+    borderWidth: 1,
+    borderColor: "rgba(255,255,255,0.08)",
+    padding: 18,
+  },
+  selectorHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    marginBottom: 16,
+  },
+  selectorSearch: {
+    height: 42,
+    borderRadius: 12,
+    backgroundColor: "rgba(255,255,255,0.06)",
+    borderWidth: 1,
+    borderColor: "rgba(255,255,255,0.08)",
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+    paddingHorizontal: 12,
+    marginBottom: 10,
+  },
+  selectorSearchInput: {
+    flex: 1,
+    color: "#FFFFFF",
+    fontSize: 14,
+    paddingVertical: 8,
+  },
+  selectorLista: { maxHeight: 360 },
+  selectorOpcion: {
+    minHeight: 44,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    borderBottomWidth: 1,
+    borderBottomColor: "rgba(255,255,255,0.06)",
+    paddingVertical: 10,
+  },
+  selectorOpcionText: { color: "#FFFFFF", fontSize: 14, flex: 1 },
+  selectorVacio: {
+    color: "#777777",
+    textAlign: "center",
+    paddingVertical: 20,
+    fontSize: 13,
   },
   botonText: { color: "#FF5252", fontWeight: "bold", fontSize: 15 },
   botonGoogle: {
