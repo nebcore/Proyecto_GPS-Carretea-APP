@@ -116,6 +116,7 @@ export default function EventoDetalleScreen() {
   const [gastoSeleccionado, setGastoSeleccionado] = useState<any | null>(null);
   const [avisoPago, setAvisoPago] = useState<AvisoPago | null>(null);
   const [modalInvitarVisible, setModalInvitarVisible] = useState(false);
+  const [modalEliminarVisible, setModalEliminarVisible] = useState(false);
   const [modalEditarEventoVisible, setModalEditarEventoVisible] =
     useState(false);
   const [
@@ -1613,17 +1614,29 @@ export default function EventoDetalleScreen() {
           {/* TAB PARTICIPANTES */}
           {tabActivo === "participantes" && (
             <>
-              <TouchableOpacity
-                style={[styles.botonSecundario, { marginBottom: 12 }]}
-                onPress={() => setModalInvitarVisible(true)}
-              >
-                <View style={styles.invitarBtnContent}>
-                  <Feather name="user-plus" size={16} color="#FFFFFF" />
-                  <Text style={styles.botonSecundarioText}>
-                    Invitar participante
-                  </Text>
+              {esCreador ? (
+                <View style={styles.participantesBotonesRow}>
+                  <TouchableOpacity
+                    style={[styles.botonMitad, styles.botonVerde]}
+                    onPress={() => setModalInvitarVisible(true)}
+                  >
+                    <View style={styles.invitarBtnContent}>
+                      <Feather name="user-plus" size={16} color="#FFFFFF" />
+                      <Text style={styles.botonSecundarioText}>Invitar</Text>
+                    </View>
+                  </TouchableOpacity>
+
+                  <TouchableOpacity
+                    style={[styles.botonMitad, styles.botonRojo]}
+                    onPress={() => setModalEliminarVisible(true)}
+                  >
+                    <View style={styles.invitarBtnContent}>
+                      <Feather name="user-minus" size={16} color="#FFFFFF" />
+                      <Text style={styles.botonSecundarioText}>Eliminar</Text>
+                    </View>
+                  </TouchableOpacity>
                 </View>
-              </TouchableOpacity>
+              ) : null}
 
               {loadingParticipantes ? (
                 <ActivityIndicator color="#FFFFFF" style={{ marginTop: 20 }} />
@@ -2017,6 +2030,59 @@ export default function EventoDetalleScreen() {
             <TouchableOpacity
               style={[styles.cancelBtn, { marginTop: 12 }]}
               onPress={() => setModalInvitarVisible(false)}
+            >
+              <Text style={styles.cancelBtnText}>Cerrar</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
+
+      <Modal visible={modalEliminarVisible} transparent animationType="slide">
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalCard}>
+            <Text style={styles.modalTitle}>Eliminar participante</Text>
+
+            {loadingParticipantes ? (
+              <ActivityIndicator color="#FFFFFF" />
+            ) : participantes.length === 0 ? (
+              <Text style={styles.emptyText}>No hay participantes.</Text>
+            ) : (
+              <ScrollView>
+                {participantes.map((p: any) => {
+                  const nombre = obtenerNombreContacto(p.contactos);
+                  const esCreadorFila = p.rol === "creador";
+
+                  return (
+                    <View
+                      key={p.contacto_id}
+                      style={styles.editarParticipanteRow}
+                    >
+                      <Text style={styles.editarParticipanteNombre}>
+                        {nombre}
+                      </Text>
+                      {esCreadorFila ? (
+                        <Text style={styles.editarParticipanteCreadorTag}>
+                          Organizador
+                        </Text>
+                      ) : (
+                        <TouchableOpacity
+                          onPress={() =>
+                            confirmarQuitarParticipante(p.contacto_id, nombre)
+                          }
+                          disabled={eliminarParticipanteMutation.isPending}
+                        >
+                          <Feather name="x" size={18} color="#FF6B6B" />
+                        </TouchableOpacity>
+                      )}
+                    </View>
+                  );
+                })}
+              </ScrollView>
+            )}
+
+            <TouchableOpacity
+              style={[styles.cancelBtn, { marginTop: 12 }]}
+              onPress={() => setModalEliminarVisible(false)}
             >
               <Text style={styles.cancelBtnText}>Cerrar</Text>
             </TouchableOpacity>
@@ -2716,6 +2782,26 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
     gap: 8,
+  },
+  participantesBotonesRow: {
+    flexDirection: "row",
+    gap: 10,
+    marginBottom: 12,
+  },
+  botonMitad: {
+    flex: 1,
+    borderRadius: 15,
+    padding: 16,
+    alignItems: "center",
+    borderWidth: 1,
+  },
+  botonVerde: {
+    backgroundColor: "rgba(76,175,80,0.18)",
+    borderColor: "rgba(76,175,80,0.45)",
+  },
+  botonRojo: {
+    backgroundColor: "rgba(255,82,82,0.18)",
+    borderColor: "rgba(255,107,107,0.45)",
   },
   contactRow: {
     flexDirection: "row",
