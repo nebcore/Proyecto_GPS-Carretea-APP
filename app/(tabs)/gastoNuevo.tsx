@@ -3,7 +3,7 @@ import Feather from "@expo/vector-icons/Feather";
 import { zodResolver } from "@hookform/resolvers/zod";
 import DateTimePicker from "@react-native-community/datetimepicker";
 import { router, useLocalSearchParams } from "expo-router";
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Controller, useForm } from "react-hook-form";
 import {
   ActivityIndicator,
@@ -31,6 +31,9 @@ import {
 import { CalculoDivision, TipoDivision } from "@/lib/api/gastos_logic";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 
+const formatearMontoResumen = (valor: number) =>
+  `$${Math.round(valor).toLocaleString("es-CL")}`;
+
 export default function GastoNuevoScreen() {
   const { eventoId } = useLocalSearchParams<{ eventoId: string }>();
   const eventoIdString = Array.isArray(eventoId)
@@ -40,7 +43,6 @@ export default function GastoNuevoScreen() {
   const queryClient = useQueryClient();
 
   const [tipoDivision, setTipoDivision] = useState<TipoDivision>("equitativo");
-  const [pagadorId, setPagadorId] = useState<string>("");
   const [montosPagadores, setMontosPagadores] = useState<
     Record<string, number>
   >({});
@@ -70,6 +72,7 @@ export default function GastoNuevoScreen() {
     handleSubmit,
     reset,
     setValue,
+    watch,
     formState: { errors },
   } = useForm<GastoFormInput, unknown, GastoFormValues>({
     resolver: zodResolver(gastoFormSchema),
@@ -105,6 +108,94 @@ export default function GastoNuevoScreen() {
       .filter((p: any) => selectedConsumers[p.contacto_id] ?? true)
       .map((p: any) => p.contacto_id);
 
+  const montoTotalActual = Number(watch("monto_total") || 0);
+
+  const resumenGasto = useMemo(() => {
+    const consumidoresIds = participantes
+      .filter((p: any) => selectedConsumers[p.contacto_id] ?? true)
+      .map((p: any) => p.contacto_id);
+    const totalAportes = Object.values(montosPagadores).reduce(
+      (suma, monto) => suma + (Number(monto) || 0),
+      0,
+    );
+    const diferenciaAportes = montoTotalActual - totalAportes;
+    const totalValoresDivision = consumidoresIds.reduce(
+      (suma: number, contactoId: string) =>
+        suma + (Number(montosExactos[contactoId]) || 0),
+      0,
+    );
+
+    let distribuido = 0;
+    let detalleDivision = "";
+
+    if (consumidoresIds.length === 0) {
+      detalleDivision = "Selecciona al menos un consumidor.";
+    } else if (tipoDivision === "equitativo") {
+      distribuido = montoTotalActual;
+      detalleDivision = `${consumidoresIds.length} consumidores seleccionados.`;
+    } else if (tipoDivision === "montos_exactos") {
+      distribuido = totalValoresDivision;
+      detalleDivision = `Asignado manualmente: ${formatearMontoResumen(distribuido)}.`;
+    } else if (tipoDivision === "porcentual") {
+      distribuido = (montoTotalActual * totalValoresDivision) / 100;
+      detalleDivision = `Porcentaje asignado: ${totalValoresDivision}%.`;
+    } else {
+      distribuido = totalValoresDivision > 0 ? montoTotalActual : 0;
+      detalleDivision = `Partes asignadas: ${totalValoresDivision}.`;
+    }
+
+    return {
+      consumidores: consumidoresIds.length,
+      detalleDivision,
+      diferenciaAportes,
+      diferenciaDivision: montoTotalActual - distribuido,
+      distribuido,
+      montoTotal: montoTotalActual,
+      totalAportes,
+      totalValoresDivision,
+    };
+  }, [
+    montoTotalActual,
+    montosExactos,
+    montosPagadores,
+    participantes,
+    selectedConsumers,
+    tipoDivision,
+  ]);
+
+  const aportesCompletos =
+    resumenGasto.montoTotal > 0 &&
+    Math.abs(resumenGasto.diferenciaAportes) <= 1;
+  const divisionCompleta =
+    resumenGasto.montoTotal > 0 &&
+    resumenGasto.consumidores > 0 &&
+    (tipoDivision === "por_cuotas"
+      ? resumenGasto.totalValoresDivision > 0
+      : Math.abs(resumenGasto.diferenciaDivision) <= 1);
+
+  const resumenCompleto = aportesCompletos && divisionCompleta;
+  const textoEstadoAportes =
+    resumenGasto.montoTotal <= 0
+      ? "Ingresa el monto total para comparar aportes"
+      : aportesCompletos
+        ? "Aportes completos"
+        : resumenGasto.diferenciaAportes > 0
+          ? `Faltan ${formatearMontoResumen(resumenGasto.diferenciaAportes)} en aportes`
+          : `Sobran ${formatearMontoResumen(Math.abs(resumenGasto.diferenciaAportes))} en aportes`;
+
+  const textoEstadoDivision =
+    resumenGasto.montoTotal <= 0
+      ? "Ingresa el monto total para ver la distribucion"
+      : tipoDivision === "por_cuotas"
+        ? divisionCompleta
+          ? "Partes listas para distribuir el total"
+          : "Asigna al menos una parte"
+        : divisionCompleta
+          ? "Distribucion completa"
+          : resumenGasto.diferenciaDivision > 0
+            ? `Faltan ${formatearMontoResumen(resumenGasto.diferenciaDivision)} por distribuir`
+            : `Sobran ${formatearMontoResumen(Math.abs(resumenGasto.diferenciaDivision))} en la distribucion`;
+
   const limpiarFormulario = () => {
     const nuevaFecha = new Date();
 
@@ -116,7 +207,6 @@ export default function GastoNuevoScreen() {
       tipo_division: "equitativo",
     });
     setTipoDivision("equitativo");
-    setPagadorId("");
     setMontosPagadores({});
     setSelectedConsumers({});
     setMontosExactos({});
@@ -407,7 +497,7 @@ export default function GastoNuevoScreen() {
         <Text
           style={{ color: "rgba(255,255,255,0.5)", fontSize: 12, marginTop: 8 }}
         >
-          Si no seleccionas ninguno se usarán todos los participantes
+          Selecciona al menos un consumidor para dividir el gasto.
         </Text>
 
         {/* TIPO DE DIVISIÓN */}
@@ -606,6 +696,65 @@ export default function GastoNuevoScreen() {
         )}
 
         {/* BOTÓN SUBMIT */}
+        <GlassCard
+          style={[
+            styles.resumenCard,
+            resumenCompleto ? styles.resumenCardOk : styles.resumenCardPendiente,
+          ]}
+        >
+          <View style={styles.resumenHeader}>
+            <View style={styles.resumenIcono}>
+              <Feather
+                name={resumenCompleto ? "check-circle" : "alert-circle"}
+                size={18}
+                color={resumenCompleto ? "#4CAF50" : "#F59E0B"}
+              />
+            </View>
+            <Text style={styles.resumenTitulo}>Resumen del gasto</Text>
+          </View>
+
+          <View style={styles.resumenFila}>
+            <Text style={styles.resumenLabel}>Monto total</Text>
+            <Text style={styles.resumenValor}>
+              {formatearMontoResumen(resumenGasto.montoTotal)}
+            </Text>
+          </View>
+          <View style={styles.resumenFila}>
+            <Text style={styles.resumenLabel}>Aportes</Text>
+            <Text style={styles.resumenValor}>
+              {formatearMontoResumen(resumenGasto.totalAportes)}
+            </Text>
+          </View>
+          <Text
+            style={[
+              styles.resumenEstado,
+              aportesCompletos ? styles.resumenOk : styles.resumenPendiente,
+            ]}
+          >
+            {textoEstadoAportes}
+          </Text>
+
+          <View style={styles.resumenSeparador} />
+
+          <View style={styles.resumenFila}>
+            <Text style={styles.resumenLabel}>Distribuido</Text>
+            <Text style={styles.resumenValor}>
+              {formatearMontoResumen(resumenGasto.distribuido)}
+            </Text>
+          </View>
+          <Text style={styles.resumenDetalle}>
+            {resumenGasto.detalleDivision}
+          </Text>
+          <Text
+            style={[
+              styles.resumenEstado,
+              divisionCompleta ? styles.resumenOk : styles.resumenPendiente,
+            ]}
+          >
+            {textoEstadoDivision}
+          </Text>
+        </GlassCard>
+
         <TouchableOpacity
           style={[styles.boton, guardando && styles.botonDisabled]}
           onPress={handleSubmit(onSubmit, onInvalid)}
@@ -814,6 +963,76 @@ const styles = StyleSheet.create({
   },
 
   // --- BOTÓN ---
+  resumenCard: {
+    marginTop: 22,
+    padding: 16,
+    borderRadius: 16,
+    borderWidth: 1,
+  },
+  resumenCardOk: {
+    borderColor: "rgba(76,175,80,0.45)",
+    backgroundColor: "rgba(76,175,80,0.08)",
+  },
+  resumenCardPendiente: {
+    borderColor: "rgba(245,158,11,0.45)",
+    backgroundColor: "rgba(245,158,11,0.08)",
+  },
+  resumenHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 10,
+    marginBottom: 14,
+  },
+  resumenIcono: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: "rgba(255,255,255,0.1)",
+  },
+  resumenTitulo: {
+    color: "#FFFFFF",
+    fontSize: 16,
+    fontWeight: "bold",
+  },
+  resumenFila: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    marginTop: 6,
+  },
+  resumenLabel: {
+    color: "rgba(255,255,255,0.55)",
+    fontSize: 13,
+  },
+  resumenValor: {
+    color: "#FFFFFF",
+    fontSize: 15,
+    fontWeight: "bold",
+  },
+  resumenEstado: {
+    fontSize: 13,
+    fontWeight: "700",
+    marginTop: 8,
+  },
+  resumenOk: {
+    color: "#4CAF50",
+  },
+  resumenPendiente: {
+    color: "#F59E0B",
+  },
+  resumenSeparador: {
+    height: 1,
+    marginVertical: 12,
+    backgroundColor: "rgba(255,255,255,0.1)",
+  },
+  resumenDetalle: {
+    color: "rgba(255,255,255,0.5)",
+    fontSize: 12,
+    marginTop: 6,
+  },
+
   boton: {
     flexDirection: "row",
     alignItems: "center",
