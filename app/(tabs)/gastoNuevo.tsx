@@ -196,6 +196,51 @@ export default function GastoNuevoScreen() {
             ? `Faltan ${formatearMontoResumen(resumenGasto.diferenciaDivision)} por distribuir`
             : `Sobran ${formatearMontoResumen(Math.abs(resumenGasto.diferenciaDivision))} en la distribucion`;
 
+  const previewParticipantes = useMemo(() => {
+    const consumidoresIds = participantes
+      .filter((p: any) => selectedConsumers[p.contacto_id] ?? true)
+      .map((p: any) => p.contacto_id);
+
+    let consumos: { contacto_id: string; parte: number }[] = [];
+
+    try {
+      if (montoTotalActual > 0 && consumidoresIds.length > 0) {
+        consumos = CalculoDivision({
+          monto_total: montoTotalActual,
+          consumidoresID: consumidoresIds,
+          tipo_division: tipoDivision,
+          montosExactos,
+        });
+      }
+    } catch {
+      consumos = [];
+    }
+
+    const consumosPorContacto = new Map(
+      consumos.map((consumo) => [consumo.contacto_id, Number(consumo.parte)]),
+    );
+
+    return participantes.map((p: any) => {
+      const aporte = Number(montosPagadores[p.contacto_id] || 0);
+      const consumo = consumosPorContacto.get(p.contacto_id) ?? 0;
+      const saldo = aporte - consumo;
+
+      return {
+        aporte,
+        consumo,
+        nombre: p.nombre,
+        saldo,
+      };
+    });
+  }, [
+    montoTotalActual,
+    montosExactos,
+    montosPagadores,
+    participantes,
+    selectedConsumers,
+    tipoDivision,
+  ]);
+
   const limpiarFormulario = () => {
     const nuevaFecha = new Date();
 
@@ -601,7 +646,7 @@ export default function GastoNuevoScreen() {
             }}
           >
             <Feather
-              name="slash"
+              name="pie-chart"
               size={14}
               color={
                 tipoDivision === "por_cuotas"
@@ -615,7 +660,7 @@ export default function GastoNuevoScreen() {
                 tipoDivision === "por_cuotas" && styles.toggleTextActivo,
               ]}
             >
-              Por cuotas
+              Por partes
             </Text>
           </TouchableOpacity>
         </View>
@@ -753,6 +798,45 @@ export default function GastoNuevoScreen() {
           >
             {textoEstadoDivision}
           </Text>
+
+          {previewParticipantes.length > 0 ? (
+            <>
+              <View style={styles.resumenSeparador} />
+              <Text style={styles.previewTitulo}>Vista previa por persona</Text>
+              {previewParticipantes.map((persona) => {
+                const saldoTexto =
+                  persona.saldo > 0
+                    ? `Le deben ${formatearMontoResumen(persona.saldo)}`
+                    : persona.saldo < 0
+                      ? `Debe ${formatearMontoResumen(Math.abs(persona.saldo))}`
+                      : "Queda al dia";
+
+                return (
+                  <View key={persona.nombre} style={styles.previewPersonaRow}>
+                    <View style={styles.previewPersonaInfo}>
+                      <Text style={styles.previewNombre}>{persona.nombre}</Text>
+                      <Text style={styles.previewDetalle}>
+                        Aporta {formatearMontoResumen(persona.aporte)} · Consume{" "}
+                        {formatearMontoResumen(persona.consumo)}
+                      </Text>
+                    </View>
+                    <Text
+                      style={[
+                        styles.previewSaldo,
+                        persona.saldo > 0
+                          ? styles.resumenOk
+                          : persona.saldo < 0
+                            ? styles.previewDebe
+                            : styles.resumenLabel,
+                      ]}
+                    >
+                      {saldoTexto}
+                    </Text>
+                  </View>
+                );
+              })}
+            </>
+          ) : null}
         </GlassCard>
 
         <TouchableOpacity
@@ -1031,6 +1115,44 @@ const styles = StyleSheet.create({
     color: "rgba(255,255,255,0.5)",
     fontSize: 12,
     marginTop: 6,
+  },
+  previewTitulo: {
+    color: "#FFFFFF",
+    fontSize: 14,
+    fontWeight: "bold",
+    marginBottom: 4,
+  },
+  previewPersonaRow: {
+    flexDirection: "row",
+    alignItems: "flex-start",
+    justifyContent: "space-between",
+    gap: 12,
+    paddingVertical: 10,
+    borderBottomWidth: 1,
+    borderBottomColor: "rgba(255,255,255,0.08)",
+  },
+  previewPersonaInfo: {
+    flex: 1,
+    minWidth: 0,
+  },
+  previewNombre: {
+    color: "#FFFFFF",
+    fontSize: 14,
+    fontWeight: "700",
+  },
+  previewDetalle: {
+    color: "rgba(255,255,255,0.52)",
+    fontSize: 12,
+    marginTop: 3,
+  },
+  previewSaldo: {
+    maxWidth: 120,
+    textAlign: "right",
+    fontSize: 12,
+    fontWeight: "800",
+  },
+  previewDebe: {
+    color: "#FF6B6B",
   },
 
   boton: {
