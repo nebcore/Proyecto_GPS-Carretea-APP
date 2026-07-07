@@ -6,6 +6,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useRouter } from "expo-router";
 import React, { useState } from "react";
 import {
+  Image,
   KeyboardAvoidingView,
   Modal,
   Platform,
@@ -196,6 +197,11 @@ export default function NuevoEventoScreen() {
         { ...item, seleccionado: true },
       ]);
     }
+  };
+
+  const inicialParticipante = (nombre: string) => {
+    const inicial = nombre.trim().charAt(0).toUpperCase();
+    return inicial || "?";
   };
 
   const abrirModalNuevoParticipante = () => {
@@ -416,6 +422,17 @@ export default function NuevoEventoScreen() {
                               styles.circuloTemporal,
                           ]}
                         >
+                          {item.foto_url ? (
+                            <Image
+                              source={{ uri: item.foto_url }}
+                              style={styles.avatarImagen}
+                              resizeMode="cover"
+                            />
+                          ) : (
+                            <Text style={styles.avatarInicial}>
+                              {inicialParticipante(item.nombre)}
+                            </Text>
+                          )}
                           {item.seleccionado && (
                             <View style={styles.checkBadge}>
                               <Feather name="check" size={10} color="#000000" />
@@ -448,7 +465,19 @@ export default function NuevoEventoScreen() {
                                 borderColor: "#4CAF50",
                               },
                             ]}
-                          />
+                          >
+                            {item.foto_url ? (
+                              <Image
+                                source={{ uri: item.foto_url }}
+                                style={styles.avatarImagen}
+                                resizeMode="cover"
+                              />
+                            ) : (
+                              <Text style={styles.avatarInicialPequena}>
+                                {inicialParticipante(item.nombre)}
+                              </Text>
+                            )}
+                          </View>
                           <Text style={styles.nombreLista} numberOfLines={1}>
                             {item.nombre}
                           </Text>
@@ -873,9 +902,15 @@ const styles = StyleSheet.create({
     borderColor: "#AAAAAA",
     backgroundColor: "transparent",
     marginBottom: 6,
+    alignItems: "center",
+    justifyContent: "center",
+    overflow: "hidden",
   },
   circuloSeleccionado: { borderColor: "#FFFFFF", borderWidth: 2 },
   circuloTemporal: { borderColor: "#4CAF50" },
+  avatarImagen: { width: "100%", height: "100%" },
+  avatarInicial: { color: "#FFFFFF", fontSize: 16, fontWeight: "700" },
+  avatarInicialPequena: { color: "#FFFFFF", fontSize: 11, fontWeight: "700" },
   checkBadge: {
     position: "absolute",
     top: -2,
@@ -912,6 +947,9 @@ const styles = StyleSheet.create({
     borderColor: "#AAAAAA",
     marginRight: 10,
     flexShrink: 0,
+    alignItems: "center",
+    justifyContent: "center",
+    overflow: "hidden",
   },
   nombreLista: { color: "#FFFFFF", fontSize: 13, flex: 1 },
   actionButtonsContainer: { flexDirection: "row", marginTop: 10, gap: 12 },

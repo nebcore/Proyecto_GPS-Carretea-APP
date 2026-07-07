@@ -6,6 +6,7 @@ import { useFocusEffect } from "expo-router";
 import React, { useCallback, useRef, useState } from "react";
 import {
   ActivityIndicator,
+  Image,
   KeyboardAvoidingView,
   Modal,
   Platform,
@@ -436,6 +437,11 @@ export default function AgendaScreen() {
     return ALFABETO.includes(letra) ? letra : "#";
   };
 
+  const inicialContacto = (nombre: string) => {
+    const inicial = nombre.trim().charAt(0).toUpperCase();
+    return inicial || "?";
+  };
+
   const letrasConContactos = new Set(
     contactosFiltrados.map((c: any) => primeraLetraDe(c.nombre)),
   );
@@ -643,7 +649,19 @@ export default function AgendaScreen() {
                               contacto.referencia_usuario_id &&
                                 styles.contactAvatarVinculado,
                             ]}
-                          />
+                          >
+                            {contacto.foto_url ? (
+                              <Image
+                                source={{ uri: contacto.foto_url }}
+                                style={styles.contactAvatarImage}
+                                resizeMode="cover"
+                              />
+                            ) : (
+                              <Text style={styles.contactAvatarText}>
+                                {inicialContacto(contacto.nombre)}
+                              </Text>
+                            )}
+                          </View>
                           <View style={styles.contactTextContainer}>
                             <View style={styles.contactNameRow}>
                               <Text style={styles.contactName}>
@@ -1224,11 +1242,16 @@ const styles = StyleSheet.create({
     borderRadius: 18,
     backgroundColor: "rgba(255, 255, 255, 0.2)",
     marginRight: 12,
+    alignItems: "center",
+    justifyContent: "center",
+    overflow: "hidden",
   },
   contactAvatarVinculado: {
     borderWidth: 2,
     borderColor: "#4CAF50",
   },
+  contactAvatarImage: { width: "100%", height: "100%" },
+  contactAvatarText: { color: "#FFFFFF", fontSize: 14, fontWeight: "700" },
   contactName: { color: "#FFFFFF", fontSize: 14, fontWeight: "600" },
   contactPhone: { color: "#AAAAAA", fontSize: 11, marginTop: 2 },
   contactPhoneEmpty: {

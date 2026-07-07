@@ -297,17 +297,33 @@ export async function obtenerParticipantesEvento(eventoId: string) {
     ),
   );
 
-  if (usuarioIds.length === 0) return participantes;
+  if (usuarioIds.length === 0) {
+    return participantes.map((participante: any) => ({
+      ...participante,
+      foto_url: null,
+      datos_bancarios: null,
+    }));
+  }
 
-  const { data: datosBancarios, error: errorDatosBancarios } = await supabase
-    .from("datos_bancarios")
-    .select("id, usuario_id, banco, tipo_cuenta, numero_cuenta, rut")
-    .in("usuario_id", usuarioIds);
+  const [
+    { data: datosBancarios, error: errorDatosBancarios },
+    { data: usuarios, error: errorUsuarios },
+  ] = await Promise.all([
+    supabase
+      .from("datos_bancarios")
+      .select("id, usuario_id, banco, tipo_cuenta, numero_cuenta, rut")
+      .in("usuario_id", usuarioIds),
+    supabase.from("usuarios").select("id, foto_url").in("id", usuarioIds),
+  ]);
 
   if (errorDatosBancarios) throw errorDatosBancarios;
+  if (errorUsuarios) throw errorUsuarios;
 
   const datosPorUsuarioId = new Map(
     (datosBancarios ?? []).map((datos: any) => [datos.usuario_id, datos]),
+  );
+  const fotosPorUsuarioId = new Map(
+    (usuarios ?? []).map((usuario: any) => [usuario.id, usuario.foto_url]),
   );
 
   return participantes.map((participante: any) => {
@@ -317,6 +333,7 @@ export async function obtenerParticipantesEvento(eventoId: string) {
 
     return {
       ...participante,
+      foto_url: fotosPorUsuarioId.get(contacto?.referencia_usuario_id) ?? null,
       datos_bancarios:
         datosPorUsuarioId.get(contacto?.referencia_usuario_id) ?? null,
     };

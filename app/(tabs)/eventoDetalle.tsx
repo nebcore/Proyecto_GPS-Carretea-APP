@@ -1732,9 +1732,17 @@ export default function EventoDetalleScreen() {
                         activeOpacity={0.78}
                       >
                         <View style={styles.avatar}>
-                          <Text style={styles.avatarText}>
-                            {nombre.substring(0, 1).toUpperCase()}
-                          </Text>
+                          {p.foto_url ? (
+                            <Image
+                              source={{ uri: p.foto_url }}
+                              style={styles.avatarImage}
+                              resizeMode="cover"
+                            />
+                          ) : (
+                            <Text style={styles.avatarText}>
+                              {nombre.substring(0, 1).toUpperCase()}
+                            </Text>
+                          )}
                         </View>
                         <View style={styles.cardInfo}>
                           <Text style={styles.cardTitulo}>{nombre}</Text>
@@ -3006,7 +3014,9 @@ const styles = StyleSheet.create({
     justifyContent: "center",
     alignItems: "center",
     marginRight: 14,
+    overflow: "hidden",
   },
+  avatarImage: { width: "100%", height: "100%" },
   avatarText: { color: "#FFFFFF", fontSize: 16, fontWeight: "bold" },
   cardInfo: { flex: 1 },
   cardTitulo: { color: "#FFFFFF", fontSize: 15, fontWeight: "500" },

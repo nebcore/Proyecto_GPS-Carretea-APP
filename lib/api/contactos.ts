@@ -39,8 +39,34 @@ export const getContactos = async () => {
     .order("nombre", { ascending: true });
   if (error) throw error;
 
+  const usuariosIds = Array.from(
+    new Set(
+      (data ?? [])
+        .map((c) => c.referencia_usuario_id)
+        .filter(Boolean) as string[],
+    ),
+  );
+
+  let fotosPorUsuarioId: Record<string, string | null> = {};
+
+  if (usuariosIds.length > 0) {
+    const { data: usuarios, error: usuariosError } = await supabase
+      .from("usuarios")
+      .select("id, foto_url")
+      .in("id", usuariosIds);
+
+    if (usuariosError) throw usuariosError;
+
+    fotosPorUsuarioId = Object.fromEntries(
+      (usuarios ?? []).map((usuario) => [usuario.id, usuario.foto_url]),
+    );
+  }
+
   return data.map((c) => ({
     ...c,
+    foto_url: c.referencia_usuario_id
+      ? fotosPorUsuarioId[c.referencia_usuario_id] ?? null
+      : null,
     gruposAsignados: (c.contactos_grupos ?? [])
       .map((cg: any) => cg.grupos_contacto)
       .filter(Boolean),
