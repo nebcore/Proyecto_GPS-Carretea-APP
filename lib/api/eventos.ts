@@ -53,6 +53,19 @@ const obtenerParticipantesConContacto = async (eventoId: string) => {
   return data ?? [];
 };
 
+const asegurarEventoAbierto = async (eventoId: string) => {
+  const { data, error } = await supabase
+    .from("eventos")
+    .select("estado")
+    .eq("id", eventoId)
+    .single();
+
+  if (error) throw error;
+  if (data.estado === "finalizado") {
+    throw new Error("El evento esta finalizado. Reabrelo para hacer cambios.");
+  }
+};
+
 // OBTENER EVENTOS DEL USUARIO (como creador o participante)
 export const getEventos = async () => {
   const { data: eventos, error: errorEventos } = await supabase
@@ -180,6 +193,8 @@ export const invitarContactoAlEvento = async (
   contactoId: string,
 ) => {
   // Verificar que no esté ya invitado
+  await asegurarEventoAbierto(eventoId);
+
   const { data: contactoNuevo, error: errorContactoNuevo } = await supabase
     .from("contactos")
     .select("id, nombre, telefono, referencia_usuario_id")
@@ -264,6 +279,8 @@ export const eliminarParticipanteDelEvento = async (
   eventoId: string,
   contactoId: string,
 ) => {
+  await asegurarEventoAbierto(eventoId);
+
   const { data: contacto } = await supabase
     .from("contactos")
     .select("nombre")
@@ -410,6 +427,8 @@ export const obtenerAttendeesParaCalendar = async (
 };
 
 export const salirDeEvento = async (eventoId: string, contactoId: string) => {
+  await asegurarEventoAbierto(eventoId);
+
   const { data: contacto } = await supabase
     .from("contactos")
     .select("nombre")
@@ -444,6 +463,8 @@ export const actualizarRolParticipante = async (
   contactoId: string,
   rol: "invitado" | "administrador",
 ) => {
+  await asegurarEventoAbierto(eventoId);
+
   const { error } = await supabase
     .from("participantes_evento")
     .update({ rol })
