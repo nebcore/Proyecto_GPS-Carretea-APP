@@ -65,7 +65,7 @@ export const getContactos = async () => {
   return data.map((c) => ({
     ...c,
     foto_url: c.referencia_usuario_id
-      ? fotosPorUsuarioId[c.referencia_usuario_id] ?? null
+      ? (fotosPorUsuarioId[c.referencia_usuario_id] ?? null)
       : null,
     gruposAsignados: (c.contactos_grupos ?? [])
       .map((cg: any) => cg.grupos_contacto)
@@ -293,7 +293,7 @@ export const getContactosParaInvitar = async () => {
 
   if (error) throw error;
 
-  return (data || []).map((c) => ({
+  return (data ?? []).map((c) => ({
     ...c,
     gruposAsignados: (c.contactos_grupos ?? [])
       .map((cg: any) => cg.grupos_contacto)

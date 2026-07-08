@@ -249,8 +249,22 @@ export default function EventosScreen() {
                   <View style={styles.eventoCardBody}>
                     <View style={styles.eventoCardTop}>
                       <Text style={styles.eventoTitulo}>{evento.titulo}</Text>
-                      <View style={styles.estadoBadge}>
-                        <Text style={styles.estadoText}>{evento.estado}</Text>
+                      <View
+                        style={[
+                          styles.estadoBadge,
+                          evento.estado === "finalizado" &&
+                            styles.estadoBadgeFinalizado,
+                        ]}
+                      >
+                        <Text
+                          style={[
+                            styles.estadoText,
+                            evento.estado === "finalizado" &&
+                              styles.estadoTextFinalizado,
+                          ]}
+                        >
+                          {evento.estado}
+                        </Text>
                       </View>
                     </View>
                     <Text style={styles.eventoInfo}>
@@ -508,13 +522,24 @@ const styles = StyleSheet.create({
   },
   eventoTitulo: { color: "#FFFFFF", fontSize: 17, fontWeight: "bold", flex: 1 },
   estadoBadge: {
-    backgroundColor: "rgba(255,255,255,0.1)",
+    backgroundColor: "rgba(80,200,120,0.15)",
     borderRadius: 8,
     paddingHorizontal: 8,
     paddingVertical: 2,
     marginLeft: 8,
   },
-  estadoText: { color: "#AAAAAA", fontSize: 11 },
+  estadoBadgeFinalizado: {
+    backgroundColor: "rgba(255,82,82,0.15)",
+  },
+  estadoText: {
+    color: "#50C878",
+    fontSize: 11,
+    fontWeight: "600",
+    textTransform: "capitalize",
+  },
+  estadoTextFinalizado: {
+    color: "#FF5252",
+  },
   eventoInfo: { color: "#AAAAAA", fontSize: 13, marginTop: 3 },
   eventoParticipantes: { color: "#AAAAAA", fontSize: 12, marginTop: 6 },
   modalOverlay: {

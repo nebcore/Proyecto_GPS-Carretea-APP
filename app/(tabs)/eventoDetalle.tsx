@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useMemo, useRef, useState } from "react";
 import {
   ActivityIndicator,
   Image,
@@ -136,6 +136,16 @@ export default function EventoDetalleScreen() {
   const [showEditDatePicker, setShowEditDatePicker] = useState(false);
   const [editModoFecha, setEditModoFecha] = useState<"date" | "time">("date");
   const queryClient = useQueryClient();
+  const botonGrupoEditarRef = useRef<any>(null);
+  const botonGrupoInvitarRef = useRef<any>(null);
+  const [posDropdownEditar, setPosDropdownEditar] = useState<{
+    top: number;
+    left: number;
+  } | null>(null);
+  const [posDropdownInvitar, setPosDropdownInvitar] = useState<{
+    top: number;
+    left: number;
+  } | null>(null);
 
   const { data: evento, isLoading: loadingEvento } = useQuery({
     queryKey: ["evento", eventoId],
@@ -921,6 +931,24 @@ export default function EventoDetalleScreen() {
       Alert.alert("No se pudo borrar", error?.message ?? "Intenta nuevamente.");
     },
   });
+
+  const abrirDropdownGruposEditar = () => {
+    botonGrupoEditarRef.current?.measureInWindow(
+      (x: number, y: number, width: number, height: number) => {
+        setPosDropdownEditar({ top: y + height + 6, left: x });
+        setModalGruposEditarVisible(true);
+      },
+    );
+  };
+
+  const abrirDropdownGruposInvitar = () => {
+    botonGrupoInvitarRef.current?.measureInWindow(
+      (x: number, y: number, width: number, height: number) => {
+        setPosDropdownInvitar({ top: y + height + 6, left: x });
+        setModalGruposInvitarVisible(true);
+      },
+    );
+  };
 
   const invitarMutation = useMutation({
     mutationFn: (contactoId: string) =>
@@ -2179,14 +2207,15 @@ export default function EventoDetalleScreen() {
       </Modal>
 
       {/* MODAL INVITAR PARTICIPANTE */}
-      <Modal visible={modalInvitarVisible} transparent animationType="slide">
-        <View style={styles.modalOverlay}>
-          <View style={styles.modalCard}>
+      <Modal visible={modalInvitarVisible} transparent animationType="fade">
+        <View style={styles.modalOverlayCentrado}>
+          <GlassCard style={styles.invitarPopupCard}>
             <View style={styles.agregarPartHeader}>
               <Text style={styles.modalTitle}>Invitar participante</Text>
               <TouchableOpacity
+                ref={botonGrupoInvitarRef}
                 style={styles.dropdownGrupo}
-                onPress={() => setModalGruposInvitarVisible(true)}
+                onPress={abrirDropdownGruposInvitar}
               >
                 <Text style={styles.dropdownText} numberOfLines={1}>
                   {grupoSeleccionadoInvitar.nombre}
@@ -2202,9 +2231,13 @@ export default function EventoDetalleScreen() {
                 No tienes contactos disponibles en este grupo.
               </Text>
             ) : (
-              <ScrollView>
+              <ScrollView style={{ maxHeight: 320 }}>
                 {contactosParaInvitarFiltrados.map((c: any) => {
                   const invitado = yaEstaInvitado(c.id);
+                  const invitandoEste =
+                    invitarMutation.isPending &&
+                    invitarMutation.variables === c.id;
+
                   return (
                     <TouchableOpacity
                       key={c.id}
@@ -2225,7 +2258,7 @@ export default function EventoDetalleScreen() {
                       </Text>
                       {invitado ? (
                         <Text style={styles.yaInvitadoText}>Ya invitado</Text>
-                      ) : invitarMutation.isPending ? (
+                      ) : invitandoEste ? (
                         <ActivityIndicator size="small" color="#FFFFFF" />
                       ) : (
                         <Feather name="plus" size={18} color="#FFFFFF" />
@@ -2242,13 +2275,12 @@ export default function EventoDetalleScreen() {
             >
               <Text style={styles.cancelBtnText}>Cerrar</Text>
             </TouchableOpacity>
-          </View>
+          </GlassCard>
         </View>
       </Modal>
-
-      <Modal visible={modalEliminarVisible} transparent animationType="slide">
-        <View style={styles.modalOverlay}>
-          <View style={styles.modalCard}>
+      <Modal visible={modalEliminarVisible} transparent animationType="fade">
+        <View style={styles.modalOverlayCentrado}>
+          <GlassCard style={styles.invitarPopupCard}>
             <Text style={styles.modalTitle}>Eliminar participante</Text>
 
             {loadingParticipantes ? (
@@ -2256,7 +2288,7 @@ export default function EventoDetalleScreen() {
             ) : participantes.length === 0 ? (
               <Text style={styles.emptyText}>No hay participantes.</Text>
             ) : (
-              <ScrollView>
+              <ScrollView style={{ maxHeight: 320 }}>
                 {participantes.map((p: any) => {
                   const nombre = obtenerNombreContacto(p.contactos);
                   const esCreadorFila = p.rol === "creador";
@@ -2295,7 +2327,7 @@ export default function EventoDetalleScreen() {
             >
               <Text style={styles.cancelBtnText}>Cerrar</Text>
             </TouchableOpacity>
-          </View>
+          </GlassCard>
         </View>
       </Modal>
 
@@ -2359,7 +2391,9 @@ export default function EventoDetalleScreen() {
                         {pago.comprobanteUrl ? (
                           <TouchableOpacity
                             style={styles.imagenTocable}
-                            onPress={() => setImagenAmpliada(pago.comprobanteUrl)}
+                            onPress={() =>
+                              setImagenAmpliada(pago.comprobanteUrl)
+                            }
                             activeOpacity={0.88}
                           >
                             <Image
@@ -2368,7 +2402,11 @@ export default function EventoDetalleScreen() {
                               resizeMode="contain"
                             />
                             <View style={styles.verImagenBadge}>
-                              <Feather name="maximize-2" size={14} color="#FFFFFF" />
+                              <Feather
+                                name="maximize-2"
+                                size={14}
+                                color="#FFFFFF"
+                              />
                               <Text style={styles.verImagenText}>Ampliar</Text>
                             </View>
                           </TouchableOpacity>
@@ -2773,8 +2811,9 @@ export default function EventoDetalleScreen() {
                 <View style={styles.agregarPartHeader}>
                   <Text style={styles.modalLabel}>Agregar participante</Text>
                   <TouchableOpacity
+                    ref={botonGrupoEditarRef}
                     style={styles.dropdownGrupo}
-                    onPress={() => setModalGruposEditarVisible(true)}
+                    onPress={abrirDropdownGruposEditar}
                   >
                     <Text style={styles.dropdownText} numberOfLines={1}>
                       {grupoSeleccionadoEditar.nombre}
@@ -2793,17 +2832,29 @@ export default function EventoDetalleScreen() {
                     No hay contactos disponibles en este grupo.
                   </Text>
                 ) : (
-                  contactosParaAgregar.map((c: any) => (
-                    <TouchableOpacity
-                      key={c.id}
-                      style={styles.editarAgregarRow}
-                      onPress={() => invitarParticipanteMutation.mutate(c.id)}
-                      disabled={invitarParticipanteMutation.isPending}
-                    >
-                      <Text style={styles.editarAgregarNombre}>{c.nombre}</Text>
-                      <Feather name="plus" size={18} color="#FFFFFF" />
-                    </TouchableOpacity>
-                  ))
+                  contactosParaAgregar.map((c: any) => {
+                    const invitandoEste =
+                      invitarParticipanteMutation.isPending &&
+                      invitarParticipanteMutation.variables === c.id;
+
+                    return (
+                      <TouchableOpacity
+                        key={c.id}
+                        style={styles.editarAgregarRow}
+                        onPress={() => invitarParticipanteMutation.mutate(c.id)}
+                        disabled={invitarParticipanteMutation.isPending}
+                      >
+                        <Text style={styles.editarAgregarNombre}>
+                          {c.nombre}
+                        </Text>
+                        {invitandoEste ? (
+                          <ActivityIndicator size="small" color="#FFFFFF" />
+                        ) : (
+                          <Feather name="plus" size={18} color="#FFFFFF" />
+                        )}
+                      </TouchableOpacity>
+                    );
+                  })
                 )}
               </View>
 
@@ -2841,7 +2892,16 @@ export default function EventoDetalleScreen() {
           activeOpacity={1}
           onPress={() => setModalGruposEditarVisible(false)}
         >
-          <View style={styles.dropdownModalContainer}>
+          <View
+            style={[
+              styles.dropdownModalContainer,
+              posDropdownEditar && {
+                position: "absolute",
+                top: posDropdownEditar.top,
+                left: posDropdownEditar.left,
+              },
+            ]}
+          >
             <TouchableOpacity
               style={styles.dropdownItem}
               onPress={() => {
@@ -2900,52 +2960,63 @@ export default function EventoDetalleScreen() {
           activeOpacity={1}
           onPress={() => setModalGruposInvitarVisible(false)}
         >
-          <View style={styles.dropdownModalContainer}>
-            <TouchableOpacity
-              style={styles.dropdownItem}
-              onPress={() => {
-                setGrupoSeleccionadoInvitar({ id: "todos", nombre: "Todos" });
-                setModalGruposInvitarVisible(false);
-              }}
-            >
-              <Text
-                style={[
-                  styles.dropdownItemText,
-                  grupoSeleccionadoInvitar.id === "todos" && {
-                    color: "#FFFFFF",
-                    fontWeight: "bold",
-                  },
-                ]}
-              >
-                Todos
-              </Text>
-            </TouchableOpacity>
-            <View style={styles.divisorDropdown} />
-            {grupos.map((grupo: any) => (
+          <View
+            style={[
+              styles.dropdownModalContainer,
+              posDropdownInvitar && {
+                position: "absolute",
+                top: posDropdownInvitar.top,
+                left: posDropdownInvitar.left,
+              },
+            ]}
+          >
+            <ScrollView style={{ maxHeight: 300 }}>
               <TouchableOpacity
-                key={grupo.id}
                 style={styles.dropdownItem}
                 onPress={() => {
-                  setGrupoSeleccionadoInvitar({
-                    id: grupo.id,
-                    nombre: grupo.nombre,
-                  });
+                  setGrupoSeleccionadoInvitar({ id: "todos", nombre: "Todos" });
                   setModalGruposInvitarVisible(false);
                 }}
               >
                 <Text
                   style={[
                     styles.dropdownItemText,
-                    grupoSeleccionadoInvitar.id === grupo.id && {
+                    grupoSeleccionadoInvitar.id === "todos" && {
                       color: "#FFFFFF",
                       fontWeight: "bold",
                     },
                   ]}
                 >
-                  {grupo.nombre}
+                  Todos
                 </Text>
               </TouchableOpacity>
-            ))}
+              <View style={styles.divisorDropdown} />
+              {grupos.map((grupo: any) => (
+                <TouchableOpacity
+                  key={grupo.id}
+                  style={styles.dropdownItem}
+                  onPress={() => {
+                    setGrupoSeleccionadoInvitar({
+                      id: grupo.id,
+                      nombre: grupo.nombre,
+                    });
+                    setModalGruposInvitarVisible(false);
+                  }}
+                >
+                  <Text
+                    style={[
+                      styles.dropdownItemText,
+                      grupoSeleccionadoInvitar.id === grupo.id && {
+                        color: "#FFFFFF",
+                        fontWeight: "bold",
+                      },
+                    ]}
+                  >
+                    {grupo.nombre}
+                  </Text>
+                </TouchableOpacity>
+              ))}
+            </ScrollView>
           </View>
         </TouchableOpacity>
       </Modal>
@@ -2996,7 +3067,7 @@ const styles = StyleSheet.create({
     paddingVertical: 3,
   },
   estadoBadgeCerrado: {
-    backgroundColor: "rgba(255,255,255,0.1)",
+    backgroundColor: "rgba(255,82,82,0.15)",
   },
   estadoBadgeText: {
     color: "#50C878",
@@ -3005,7 +3076,7 @@ const styles = StyleSheet.create({
     textTransform: "capitalize",
   },
   estadoBadgeTextCerrado: {
-    color: "rgba(255,255,255,0.6)",
+    color: "#FF6B6B",
   },
   infoPillsWrap: {
     gap: 8,
@@ -3821,8 +3892,6 @@ const styles = StyleSheet.create({
   dropdownOverlay: {
     flex: 1,
     backgroundColor: "transparent",
-    justifyContent: "center",
-    alignItems: "center",
   },
   dropdownModalContainer: {
     width: 200,
@@ -3884,5 +3953,25 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
     gap: 6,
+  },
+  dropdownOverlayCentrado: {
+    flex: 1,
+    backgroundColor: "rgba(0,0,0,0.4)",
+    justifyContent: "center",
+    alignItems: "center",
+  },
+  modalOverlayCentrado: {
+    flex: 1,
+    backgroundColor: "rgba(0,0,0,0.65)",
+    justifyContent: "center",
+    alignItems: "center",
+    padding: 20,
+  },
+  invitarPopupCard: {
+    width: "100%",
+    maxWidth: 420,
+    maxHeight: "80%",
+    borderRadius: 24,
+    padding: 20,
   },
 });
