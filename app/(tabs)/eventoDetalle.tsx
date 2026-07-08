@@ -1,4 +1,4 @@
-import { useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
   ActivityIndicator,
   Image,
@@ -29,6 +29,7 @@ import GlassCard from "@/components/ui/GlassCard";
 import type { Deuda } from "@/lib/balances";
 import { useBalancesEvento } from "@/lib/realtime/useBalancesEvento";
 import { supabase } from "@/lib/supabase";
+import { normalizarTelefono } from "@/lib/utils/telefono";
 
 import { getContactosParaInvitar } from "@/lib/api/contactos";
 import {
@@ -189,8 +190,20 @@ export default function EventoDetalleScreen() {
     enabled: Boolean(eventoId),
   });
   const abrirModalInvitar = () => {
+    if (!puedeGestionarParticipantes) {
+      return;
+    }
+
     setGrupoSeleccionadoInvitar({ id: "todos", nombre: "Todos" });
     setModalInvitarVisible(true);
+  };
+
+  const abrirModalEliminarParticipante = () => {
+    if (!puedeGestionarParticipantes) {
+      return;
+    }
+
+    setModalEliminarVisible(true);
   };
   const { data: feedEvento = [], isLoading: loadingFeedEvento } = useQuery({
     queryKey: ["notificaciones-evento", eventoId],
@@ -243,12 +256,40 @@ export default function EventoDetalleScreen() {
     return contacto.nombre ?? fallback;
   };
 
-  const yaEstaInvitado = (contactoId: string) =>
-    evento?.participantes_evento?.some(
-      (p: any) => p.contacto_id === contactoId,
-    );
-  const yaEsParticipante = (contactoId: string) =>
-    participantes.some((p: any) => p.contacto_id === contactoId);
+  const obtenerContactoParticipante = (participante: any) =>
+    Array.isArray(participante?.contactos)
+      ? participante.contactos[0]
+      : participante?.contactos;
+
+  const obtenerClavePersona = (contacto: any, fallbackId?: string) => {
+    if (!contacto && fallbackId) return `contacto:${fallbackId}`;
+    if (!contacto) return null;
+    if (contacto.referencia_usuario_id) {
+      return `usuario:${contacto.referencia_usuario_id}`;
+    }
+
+    const telefonoNormalizado = contacto.telefono
+      ? normalizarTelefono(contacto.telefono)
+      : "";
+    if (telefonoNormalizado) return `telefono:${telefonoNormalizado}`;
+
+    return `contacto:${contacto.id ?? fallbackId}`;
+  };
+
+  const clavesParticipantes = useMemo(() => {
+    const claves = new Set<string>();
+    for (const participante of participantes as any[]) {
+      const contacto = obtenerContactoParticipante(participante);
+      const clave = obtenerClavePersona(contacto, participante.contacto_id);
+      if (clave) claves.add(clave);
+    }
+    return claves;
+  }, [participantes]);
+
+  const yaEstaInvitado = (contacto: any) => {
+    const clave = obtenerClavePersona(contacto, contacto?.id);
+    return Boolean(clave && clavesParticipantes.has(clave));
+  };
 
   const contactosParaInvitarFiltrados = contactosInvitar.filter((c: any) => {
     if (grupoSeleccionadoInvitar.id === "todos") return true;
@@ -350,6 +391,18 @@ export default function EventoDetalleScreen() {
     (p: any) => p.contacto_id === miContactoId && p.rol === "administrador",
   );
   const puedeGestionar = esCreador || esAdministrador;
+  const eventoCerrado = evento?.estado === "finalizado";
+  const puedeModificarEvento = !eventoCerrado;
+  const puedeGestionarParticipantes = puedeGestionar && puedeModificarEvento;
+
+  useEffect(() => {
+    if (puedeGestionarParticipantes) return;
+
+    setModalInvitarVisible(false);
+    setModalEliminarVisible(false);
+    setModalEditarEventoVisible(false);
+    setModalGruposInvitarVisible(false);
+  }, [puedeGestionarParticipantes]);
 
   const actualizarEstadoMutation = useMutation({
     mutationFn: (estado: "abierto" | "finalizado") =>
@@ -408,6 +461,14 @@ export default function EventoDetalleScreen() {
   const tieneSaldoPendiente = miResumen.debe > 0 || miResumen.leDeben > 0;
 
   const confirmarSalirEvento = () => {
+    if (eventoCerrado) {
+      Alert.alert(
+        "Evento finalizado",
+        "No puedes salir de un evento finalizado.",
+      );
+      return;
+    }
+
     if (tieneSaldoPendiente) {
       Alert.alert(
         "No puedes salir todavía",
@@ -591,6 +652,14 @@ export default function EventoDetalleScreen() {
   };
 
   const confirmarQuitarParticipante = (contactoId: string, nombre: string) => {
+    if (eventoCerrado) {
+      Alert.alert(
+        "Evento finalizado",
+        "Reabre el evento para quitar participantes.",
+      );
+      return;
+    }
+
     Alert.alert("Quitar participante", `¿Quitar a ${nombre} del evento?`, [
       { text: "Cancelar", style: "cancel" },
       {
@@ -1266,6 +1335,11 @@ export default function EventoDetalleScreen() {
   });
 
   const confirmarBorradoGasto = (gastoId: string, descripcion: string) => {
+    if (eventoCerrado) {
+      Alert.alert("Evento finalizado", "Reabre el evento para borrar gastos.");
+      return;
+    }
+
     Alert.alert("Borrar gasto", `¿Quieres borrar "${descripcion}"?`, [
       { text: "Cancelar", style: "cancel" },
       {
@@ -1413,19 +1487,21 @@ export default function EventoDetalleScreen() {
                   </Text>
                 </View>
               </View>
-              {puedeGestionar ? (
+              {puedeGestionarParticipantes || esCreador ? (
                 <View style={styles.infoPills}>
-                  <TouchableOpacity
-                    style={[styles.pill, styles.pillBoton]}
-                    onPress={abrirModalEditarEvento}
-                  >
-                    <Feather
-                      name="edit-3"
-                      size={11}
-                      color="rgba(255,255,255,0.5)"
-                    />
-                    <Text style={styles.pillText}>Editar</Text>
-                  </TouchableOpacity>
+                  {puedeGestionarParticipantes ? (
+                    <TouchableOpacity
+                      style={[styles.pill, styles.pillBoton]}
+                      onPress={abrirModalEditarEvento}
+                    >
+                      <Feather
+                        name="edit-3"
+                        size={11}
+                        color="rgba(255,255,255,0.5)"
+                      />
+                      <Text style={styles.pillText}>Editar</Text>
+                    </TouchableOpacity>
+                  ) : null}
                   {esCreador ? (
                     <TouchableOpacity
                       style={[styles.pill, styles.pillBoton]}
@@ -1486,7 +1562,7 @@ export default function EventoDetalleScreen() {
                     color="rgba(255,82,82,0.7)"
                   />
                 </TouchableOpacity>
-              ) : (
+              ) : eventoCerrado ? null : (
                 <TouchableOpacity
                   onPress={confirmarSalirEvento}
                   disabled={salirEventoMutation.isPending}
@@ -1594,15 +1670,21 @@ export default function EventoDetalleScreen() {
                         <Text style={styles.gastoMonto}>
                           {formatearMonto(g.monto_total)}
                         </Text>
-                        <TouchableOpacity
-                          style={styles.deleteButton}
-                          onPress={() =>
-                            confirmarBorradoGasto(g.id, g.descripcion)
-                          }
-                          disabled={borrarGastoMutation.isPending}
-                        >
-                          <Feather name="trash-2" size={17} color="#FF6B6B" />
-                        </TouchableOpacity>
+                        {puedeModificarEvento ? (
+                          <TouchableOpacity
+                            style={styles.deleteButton}
+                            onPress={() =>
+                              confirmarBorradoGasto(g.id, g.descripcion)
+                            }
+                            disabled={borrarGastoMutation.isPending}
+                          >
+                            <Feather
+                              name="trash-2"
+                              size={17}
+                              color="#FF6B6B"
+                            />
+                          </TouchableOpacity>
+                        ) : null}
                       </TouchableOpacity>
                     );
                   })}
@@ -1770,7 +1852,7 @@ export default function EventoDetalleScreen() {
           {/* TAB PARTICIPANTES */}
           {tabActivo === "participantes" && (
             <>
-              {puedeGestionar ? (
+              {puedeGestionarParticipantes ? (
                 <View style={styles.participantesBotonesRow}>
                   <TouchableOpacity
                     style={[styles.botonMitad, styles.botonVerde]}
@@ -1784,7 +1866,7 @@ export default function EventoDetalleScreen() {
 
                   <TouchableOpacity
                     style={[styles.botonMitad, styles.botonRojo]}
-                    onPress={() => setModalEliminarVisible(true)}
+                    onPress={abrirModalEliminarParticipante}
                   >
                     <View style={styles.invitarBtnContent}>
                       <Feather name="user-minus" size={16} color="#FFFFFF" />
@@ -1850,7 +1932,7 @@ export default function EventoDetalleScreen() {
                           </Text>
                         </View>
 
-                        {esCreador && !esCreadorFila ? (
+                        {esCreador && !esCreadorFila && puedeModificarEvento ? (
                           <TouchableOpacity
                             style={styles.adminToggleBtn}
                             onPress={() =>
@@ -1936,7 +2018,7 @@ export default function EventoDetalleScreen() {
       </View>
 
       {/* FAB — solo visible en tab Gastos */}
-      {tabActivo === "gastos" && (
+      {tabActivo === "gastos" && puedeModificarEvento && (
         <View style={styles.fabWrapper}>
           <TouchableOpacity
             style={styles.mainFab}
@@ -2203,7 +2285,11 @@ export default function EventoDetalleScreen() {
       </Modal>
 
       {/* MODAL INVITAR PARTICIPANTE */}
-      <Modal visible={modalInvitarVisible} transparent animationType="fade">
+      <Modal
+        visible={modalInvitarVisible && puedeGestionarParticipantes}
+        transparent
+        animationType="fade"
+      >
         <View style={styles.modalOverlayCentrado}>
           <GlassCard style={styles.invitarPopupCard}>
             <View style={styles.agregarPartHeader}>
@@ -2229,7 +2315,7 @@ export default function EventoDetalleScreen() {
             ) : (
               <ScrollView style={{ maxHeight: 320 }}>
                 {contactosParaInvitarFiltrados.map((c: any) => {
-                  const invitado = yaEstaInvitado(c.id);
+                  const invitado = yaEstaInvitado(c);
                   const invitandoEste =
                     invitarMutation.isPending &&
                     invitarMutation.variables === c.id;
@@ -2274,7 +2360,11 @@ export default function EventoDetalleScreen() {
           </GlassCard>
         </View>
       </Modal>
-      <Modal visible={modalEliminarVisible} transparent animationType="fade">
+      <Modal
+        visible={modalEliminarVisible && puedeGestionarParticipantes}
+        transparent
+        animationType="fade"
+      >
         <View style={styles.modalOverlayCentrado}>
           <GlassCard style={styles.invitarPopupCard}>
             <Text style={styles.modalTitle}>Eliminar participante</Text>

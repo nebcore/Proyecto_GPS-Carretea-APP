@@ -155,11 +155,25 @@ async function asegurarParticipacionDelCreador(eventoId: string) {
   if (errorInsertarParticipante) throw errorInsertarParticipante;
 }
 
+async function asegurarEventoAbierto(eventoId: string) {
+  const { data, error } = await supabase
+    .from("eventos")
+    .select("estado")
+    .eq("id", eventoId)
+    .single();
+
+  if (error) throw error;
+  if (data.estado === "finalizado") {
+    throw new Error("El evento esta finalizado. Reabrelo para hacer cambios.");
+  }
+}
+
 export async function crearGasto(data: GastoFormData) {
   const validado = gastoSchema.parse(data);
 
   const { gastos_pagadores, gastos_consumidores, ...gasto } = validado;
 
+  await asegurarEventoAbierto(gasto.evento_id);
   await asegurarParticipacionDelCreador(gasto.evento_id);
 
   // Validaciones servidor adicionales
@@ -374,6 +388,16 @@ export const getGastosByEvento = async (eventoId: string) => {
 
 export const borrarGasto = async (gastoId: string) => {
   const gastoIdValido = z.string().uuid().parse(gastoId);
+
+  const { data: gasto, error: errorGasto } = await supabase
+    .from("gastos")
+    .select("evento_id")
+    .eq("id", gastoIdValido)
+    .single();
+
+  if (errorGasto) throw errorGasto;
+  await asegurarEventoAbierto(gasto.evento_id);
+
   const { data, error } = await supabase
     .from("gastos")
     .delete()

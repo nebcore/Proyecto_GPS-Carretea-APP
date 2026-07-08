@@ -1,6 +1,70 @@
 import { supabase } from "@/lib/supabase";
+import { normalizarTelefono } from "@/lib/utils/telefono";
 import { getOrCreateContactoPropio } from "./contactos";
 import { crearNotificacionEvento } from "./notificaciones";
+
+type ContactoIdentidad = {
+  id: string;
+  nombre?: string | null;
+  telefono?: string | null;
+  referencia_usuario_id?: string | null;
+};
+
+const obtenerClaveContacto = (contacto?: ContactoIdentidad | null) => {
+  if (!contacto) return null;
+  if (contacto.referencia_usuario_id) {
+    return `usuario:${contacto.referencia_usuario_id}`;
+  }
+
+  const telefonoNormalizado = contacto.telefono
+    ? normalizarTelefono(contacto.telefono)
+    : "";
+  if (telefonoNormalizado) {
+    return `telefono:${telefonoNormalizado}`;
+  }
+
+  return `contacto:${contacto.id}`;
+};
+
+const obtenerContactosPorIds = async (contactosIds: string[]) => {
+  if (contactosIds.length === 0) return [];
+
+  const { data, error } = await supabase
+    .from("contactos")
+    .select("id, nombre, telefono, referencia_usuario_id")
+    .in("id", contactosIds);
+
+  if (error) throw error;
+  return (data ?? []) as ContactoIdentidad[];
+};
+
+const obtenerParticipantesConContacto = async (eventoId: string) => {
+  const { data, error } = await supabase
+    .from("participantes_evento")
+    .select(
+      `
+      contacto_id,
+      contactos(id, nombre, telefono, referencia_usuario_id)
+    `,
+    )
+    .eq("evento_id", eventoId);
+
+  if (error) throw error;
+  return data ?? [];
+};
+
+const asegurarEventoAbierto = async (eventoId: string) => {
+  const { data, error } = await supabase
+    .from("eventos")
+    .select("estado")
+    .eq("id", eventoId)
+    .single();
+
+  if (error) throw error;
+  if (data.estado === "finalizado") {
+    throw new Error("El evento esta finalizado. Reabrelo para hacer cambios.");
+  }
+};
 
 // OBTENER EVENTOS DEL USUARIO (como creador o participante)
 export const getEventos = async () => {
@@ -61,8 +125,23 @@ export const createEventoConParticipantes = async (
   // Obtener o crear el auto-contacto del creador
   const contactoPropio = await getOrCreateContactoPropio();
 
-  // Armar lista de participantes: creador + invitados (sin duplicados)
-  const idsUnicos = [...new Set([contactoPropio.id, ...contactosIds])];
+  // Armar lista de participantes evitando duplicados por persona.
+  const contactosInvitados = await obtenerContactosPorIds(contactosIds);
+  const contactosPorId = new Map(
+    [contactoPropio, ...contactosInvitados].map((contacto) => [
+      contacto.id,
+      contacto,
+    ]),
+  );
+  const clavesAgregadas = new Set<string>();
+  const idsUnicos = [contactoPropio.id, ...contactosIds].filter(
+    (contactoId) => {
+      const clave = obtenerClaveContacto(contactosPorId.get(contactoId));
+      if (!clave || clavesAgregadas.has(clave)) return false;
+      clavesAgregadas.add(clave);
+      return true;
+    },
+  );
   const participantesData = idsUnicos.map((contactoId) => ({
     evento_id: nuevoEvento.id,
     contacto_id: contactoId,
@@ -75,13 +154,17 @@ export const createEventoConParticipantes = async (
 
   if (errorParticipantes) throw errorParticipantes;
 
-  if (contactosIds.length > 0) {
+  const invitadosInsertadosIds = idsUnicos.filter(
+    (contactoId) => contactoId !== contactoPropio.id,
+  );
+
+  if (invitadosInsertadosIds.length > 0) {
     // Solo si hay contactos invitados, enviamos notificaciones
     // Buscamos cuáles de esos contactos corresponden a usuarios reales (tienen referencia_usuario_id)
     const { data: contactosUsuarios } = await supabase
       .from("contactos")
       .select("referencia_usuario_id")
-      .in("id", contactosIds)
+      .in("id", invitadosInsertadosIds)
       .not("referencia_usuario_id", "is", null);
 
     // Extraemos los IDs asegurándonos de no auto-notificarnos
@@ -110,6 +193,18 @@ export const invitarContactoAlEvento = async (
   contactoId: string,
 ) => {
   // Verificar que no esté ya invitado
+  await asegurarEventoAbierto(eventoId);
+
+  const { data: contactoNuevo, error: errorContactoNuevo } = await supabase
+    .from("contactos")
+    .select("id, nombre, telefono, referencia_usuario_id")
+    .eq("id", contactoId)
+    .single();
+
+  if (errorContactoNuevo) throw errorContactoNuevo;
+
+  const claveContactoNuevo = obtenerClaveContacto(contactoNuevo);
+
   const { data: existente } = await supabase
     .from("participantes_evento")
     .select("contacto_id")
@@ -118,6 +213,24 @@ export const invitarContactoAlEvento = async (
     .maybeSingle();
 
   if (existente) throw new Error("Este contacto ya fue invitado al evento.");
+
+  const participantesActuales = await obtenerParticipantesConContacto(eventoId);
+  const participanteDuplicado = participantesActuales.find(
+    (participante: any) => {
+      const contacto = Array.isArray(participante.contactos)
+        ? participante.contactos[0]
+        : participante.contactos;
+
+      return (
+        claveContactoNuevo &&
+        obtenerClaveContacto(contacto) === claveContactoNuevo
+      );
+    },
+  );
+
+  if (participanteDuplicado) {
+    throw new Error("Esta persona ya participa en el evento.");
+  }
 
   const { error } = await supabase
     .from("participantes_evento")
@@ -166,6 +279,8 @@ export const eliminarParticipanteDelEvento = async (
   eventoId: string,
   contactoId: string,
 ) => {
+  await asegurarEventoAbierto(eventoId);
+
   const { data: contacto } = await supabase
     .from("contactos")
     .select("nombre")
@@ -312,6 +427,8 @@ export const obtenerAttendeesParaCalendar = async (
 };
 
 export const salirDeEvento = async (eventoId: string, contactoId: string) => {
+  await asegurarEventoAbierto(eventoId);
+
   const { data: contacto } = await supabase
     .from("contactos")
     .select("nombre")
@@ -346,6 +463,8 @@ export const actualizarRolParticipante = async (
   contactoId: string,
   rol: "invitado" | "administrador",
 ) => {
+  await asegurarEventoAbierto(eventoId);
+
   const { error } = await supabase
     .from("participantes_evento")
     .update({ rol })

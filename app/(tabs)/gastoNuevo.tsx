@@ -20,6 +20,7 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { PantallaConTeclado } from "@/components/ui/PantallaConTeclado";
 
 import GlassCard from "@/components/ui/GlassCard";
+import { getEvento } from "@/lib/api/eventos";
 import {
   crearGasto,
   GastoFormData,
@@ -55,6 +56,12 @@ export default function GastoNuevoScreen() {
   const [mostrarFecha, setMostrarFecha] = useState(false);
   const [fechaSeleccionada, setFechaSeleccionada] = useState(new Date());
   const [guardando, setGuardando] = useState(false);
+
+  const { data: evento, isLoading: loadingEvento } = useQuery({
+    queryKey: ["evento", eventoIdString],
+    queryFn: () => getEvento(eventoIdString),
+    enabled: Boolean(eventoIdString),
+  });
 
   const { data: participantes = [], isLoading } = useQuery({
     queryKey: ["participantes", eventoIdString],
@@ -265,6 +272,14 @@ export default function GastoNuevoScreen() {
   };
 
   async function onSubmit(data: GastoFormValues) {
+    if (evento?.estado === "finalizado") {
+      Alert.alert(
+        "Evento finalizado",
+        "Reabre el evento para registrar gastos.",
+      );
+      return;
+    }
+
     // Validar que haya al menos un pagador con aporte
     const aportes = Object.values(montosPagadores).map((v) => Number(v) || 0);
     const sumaAportes = aportes.reduce((s, v) => s + v, 0);
@@ -380,11 +395,31 @@ export default function GastoNuevoScreen() {
     Alert.alert("Campos incompletos", "Revisa la descripción y el monto.");
   }
 
-  if (isLoading) {
+  if (isLoading || loadingEvento) {
     return (
       <View style={styles.root}>
         <View style={styles.center}>
           <ActivityIndicator color="#FFFFFF" />
+        </View>
+      </View>
+    );
+  }
+
+  if (evento?.estado === "finalizado") {
+    return (
+      <View style={styles.root}>
+        <View style={styles.center}>
+          <Feather name="lock" size={24} color="#FFFFFF" />
+          <Text style={styles.cerradoTitle}>Evento finalizado</Text>
+          <Text style={styles.cerradoText}>
+            Reabre el evento para registrar nuevos gastos.
+          </Text>
+          <TouchableOpacity
+            style={styles.botonVolver}
+            onPress={() => router.back()}
+          >
+            <Text style={styles.botonVolverText}>Volver</Text>
+          </TouchableOpacity>
         </View>
       </View>
     );
@@ -884,6 +919,31 @@ const styles = StyleSheet.create({
   root: { flex: 1 },
   center: { flex: 1, justifyContent: "center", alignItems: "center" },
   scroll: { paddingHorizontal: 20, paddingTop: 16 },
+  cerradoTitle: {
+    color: "#FFFFFF",
+    fontSize: 20,
+    fontWeight: "bold",
+    marginTop: 14,
+  },
+  cerradoText: {
+    color: "rgba(255,255,255,0.6)",
+    fontSize: 14,
+    marginTop: 8,
+    textAlign: "center",
+    paddingHorizontal: 32,
+  },
+  botonVolver: {
+    marginTop: 18,
+    paddingHorizontal: 22,
+    paddingVertical: 12,
+    borderRadius: 14,
+    backgroundColor: "#FFFFFF",
+  },
+  botonVolverText: {
+    color: "#000000",
+    fontSize: 14,
+    fontWeight: "bold",
+  },
 
   titulo: {
     color: "#FFFFFF",
