@@ -29,6 +29,7 @@ import GlassCard from "@/components/ui/GlassCard";
 import type { Deuda } from "@/lib/balances";
 import { useBalancesEvento } from "@/lib/realtime/useBalancesEvento";
 import { supabase } from "@/lib/supabase";
+import { normalizarTelefono } from "@/lib/utils/telefono";
 
 import { getContactosParaInvitar } from "@/lib/api/contactos";
 import {
@@ -243,12 +244,40 @@ export default function EventoDetalleScreen() {
     return contacto.nombre ?? fallback;
   };
 
-  const yaEstaInvitado = (contactoId: string) =>
-    evento?.participantes_evento?.some(
-      (p: any) => p.contacto_id === contactoId,
-    );
-  const yaEsParticipante = (contactoId: string) =>
-    participantes.some((p: any) => p.contacto_id === contactoId);
+  const obtenerContactoParticipante = (participante: any) =>
+    Array.isArray(participante?.contactos)
+      ? participante.contactos[0]
+      : participante?.contactos;
+
+  const obtenerClavePersona = (contacto: any, fallbackId?: string) => {
+    if (!contacto && fallbackId) return `contacto:${fallbackId}`;
+    if (!contacto) return null;
+    if (contacto.referencia_usuario_id) {
+      return `usuario:${contacto.referencia_usuario_id}`;
+    }
+
+    const telefonoNormalizado = contacto.telefono
+      ? normalizarTelefono(contacto.telefono)
+      : "";
+    if (telefonoNormalizado) return `telefono:${telefonoNormalizado}`;
+
+    return `contacto:${contacto.id ?? fallbackId}`;
+  };
+
+  const clavesParticipantes = useMemo(() => {
+    const claves = new Set<string>();
+    for (const participante of participantes as any[]) {
+      const contacto = obtenerContactoParticipante(participante);
+      const clave = obtenerClavePersona(contacto, participante.contacto_id);
+      if (clave) claves.add(clave);
+    }
+    return claves;
+  }, [participantes]);
+
+  const yaEstaInvitado = (contacto: any) => {
+    const clave = obtenerClavePersona(contacto, contacto?.id);
+    return Boolean(clave && clavesParticipantes.has(clave));
+  };
 
   const contactosParaInvitarFiltrados = contactosInvitar.filter((c: any) => {
     if (grupoSeleccionadoInvitar.id === "todos") return true;
@@ -2229,7 +2258,7 @@ export default function EventoDetalleScreen() {
             ) : (
               <ScrollView style={{ maxHeight: 320 }}>
                 {contactosParaInvitarFiltrados.map((c: any) => {
-                  const invitado = yaEstaInvitado(c.id);
+                  const invitado = yaEstaInvitado(c);
                   const invitandoEste =
                     invitarMutation.isPending &&
                     invitarMutation.variables === c.id;
