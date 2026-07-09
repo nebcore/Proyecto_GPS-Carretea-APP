@@ -1,4 +1,7 @@
+import { Alert } from "@/components/ui/AppAlert";
 import GlassCard from "@/components/ui/GlassCard";
+import { BANCOS_CHILE } from "@/constants/bancosChile";
+import { TIPOS_CUENTA_CHILE } from "@/constants/tiposCuentaChile";
 import {
   enviarCodigoVerificacionEmail,
   getDatosBancarios,
@@ -9,17 +12,27 @@ import {
   upsertDatosBancarios,
   verificarCodigoEmail,
 } from "@/lib/api/auth";
+import {
+  guardarGoogleToken,
+  obtenerGoogleToken,
+  subirFotoPerfil,
+} from "@/lib/api/usuarios";
+import { supabase } from "@/lib/supabase";
+import { formatearRut } from "@/lib/utils/rut";
 import Feather from "@expo/vector-icons/Feather";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import * as ImagePicker from "expo-image-picker";
 import { router } from "expo-router";
+import * as WebBrowser from "expo-web-browser";
 import { useEffect, useRef, useState } from "react";
 import {
   ActivityIndicator,
-  Alert,
   Animated,
+  Image,
   Modal,
   ScrollView,
   StyleSheet,
+  Switch,
   Text,
   TextInput,
   TouchableOpacity,
@@ -41,6 +54,7 @@ const formatearTelefono = (text: string) => {
   return result;
 };
 
+WebBrowser.maybeCompleteAuthSession();
 export default function PerfilScreen() {
   const insets = useSafeAreaInsets();
   const { width } = useWindowDimensions();
@@ -55,8 +69,62 @@ export default function PerfilScreen() {
   const [codigoEmail, setCodigoEmail] = useState("");
   const translateXEmail = useRef(new Animated.Value(width)).current;
 
+  // Estados para el panel de notificaciones
+  const [panelNotifVisible, setPanelNotifVisible] = useState(false);
+  const translateXNotif = useRef(new Animated.Value(width)).current;
+
+  // Preferencias (En un futuro las puedes guardar en Supabase o AsyncStorage)
+  const [prefNotif, setPrefNotif] = useState({
+    nuevosGastos: true,
+    pagosReportados: true,
+    recordatorios: true,
+  });
+
+  // Crear la mutación para guardar silenciosamente en la base de datos
+  const actualizarPreferenciasMutation = useMutation({
+    mutationFn: (nuevasPrefs: any) =>
+      updateUsuarioPerfil({ preferencias_notificaciones: nuevasPrefs }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["perfil"] });
+    },
+    onError: (err) => {
+      Alert.alert(
+        "Error",
+        "No pudimos guardar tus cambios. Revisa tu conexión.",
+      );
+    },
+  });
+
+  // Función auxiliar para manejar el cambio en los switches
+  const togglePreferencia = (llave: keyof typeof prefNotif, valor: boolean) => {
+    const nuevasPrefs = { ...prefNotif, [llave]: valor };
+    setPrefNotif(nuevasPrefs); // Actualiza la UI instantáneamente
+    actualizarPreferenciasMutation.mutate(nuevasPrefs); // Guarda en la nube
+  };
+
+  const abrirPanelNotif = () => {
+    setPanelNotifVisible(true);
+    Animated.timing(translateXNotif, {
+      toValue: 0,
+      duration: 260,
+      useNativeDriver: true,
+    }).start();
+  };
+
+  const cerrarPanelNotif = () => {
+    Animated.timing(translateXNotif, {
+      toValue: width,
+      duration: 220,
+      useNativeDriver: true,
+    }).start(() => setPanelNotifVisible(false));
+  };
+
   const [editandoBanco, setEditandoBanco] = useState(false);
   const [banco, setBanco] = useState("");
+  const [selectorBancoVisible, setSelectorBancoVisible] = useState(false);
+  const [busquedaBanco, setBusquedaBanco] = useState("");
+  const [selectorTipoCuentaVisible, setSelectorTipoCuentaVisible] =
+    useState(false);
   const [tipoCuenta, setTipoCuenta] = useState("");
   const [numeroCuenta, setNumeroCuenta] = useState("");
   const [rut, setRut] = useState("");
@@ -66,6 +134,13 @@ export default function PerfilScreen() {
     queryFn: getUsuarioPerfil,
   });
 
+  // Sincronizar estado local cuando llegan los datos del perfil
+  useEffect(() => {
+    if (perfil?.preferencias_notificaciones) {
+      setPrefNotif(perfil.preferencias_notificaciones);
+    }
+  }, [perfil]);
+
   const { data: datosBancarios } = useQuery({
     queryKey: ["datos-bancarios"],
     queryFn: getDatosBancarios,
@@ -74,6 +149,18 @@ export default function PerfilScreen() {
   const { data: estadoEmail } = useQuery({
     queryKey: ["estado-email"],
     queryFn: getEstadoEmail,
+  });
+
+  const { data: googleCalendarVinculado } = useQuery({
+    queryKey: ["google-calendar-vinculado"],
+    queryFn: async () => {
+      try {
+        const token = await obtenerGoogleToken();
+        return Boolean(token);
+      } catch {
+        return false;
+      }
+    },
   });
 
   useEffect(() => {
@@ -129,36 +216,70 @@ export default function PerfilScreen() {
     onError: () => Alert.alert("Error", "No se pudo actualizar el perfil."),
   });
 
+  const fotoPerfilMutation = useMutation({
+    mutationFn: subirFotoPerfil,
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["perfil"] });
+      Alert.alert("Listo", "Tu foto de perfil fue actualizada.");
+    },
+    onError: (error: any) =>
+      Alert.alert(
+        "Error",
+        error?.message ?? "No se pudo actualizar la foto de perfil.",
+      ),
+  });
+
   const guardarBancoMutation = useMutation({
     mutationFn: () =>
       upsertDatosBancarios({
         banco: banco.trim(),
         tipo_cuenta: tipoCuenta.trim(),
         numero_cuenta: numeroCuenta.trim(),
-        rut: rut.trim(),
+        rut: formatearRut(rut.trim()),
       }),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["datos-bancarios"] });
       setEditandoBanco(false);
       Alert.alert("Guardado", "Datos bancarios actualizados.");
     },
-    onError: () => Alert.alert("Error", "No se pudieron guardar los datos bancarios."),
+    onError: () =>
+      Alert.alert("Error", "No se pudieron guardar los datos bancarios."),
   });
 
   const iniciarEdicionBanco = () => {
     setBanco(datosBancarios?.banco ?? "");
     setTipoCuenta(datosBancarios?.tipo_cuenta ?? "");
     setNumeroCuenta(datosBancarios?.numero_cuenta ?? "");
-    setRut(datosBancarios?.rut ?? "");
+    setRut(formatearRut(datosBancarios?.rut ?? ""));
     setEditandoBanco(true);
   };
 
   const handleGuardarBanco = () => {
-    if (!banco.trim() || !tipoCuenta.trim() || !numeroCuenta.trim() || !rut.trim()) {
+    if (
+      !banco.trim() ||
+      !tipoCuenta.trim() ||
+      !numeroCuenta.trim() ||
+      !rut.trim()
+    ) {
       Alert.alert("Error", "Todos los campos bancarios son obligatorios.");
       return;
     }
     guardarBancoMutation.mutate();
+  };
+
+  const bancosFiltrados = BANCOS_CHILE.filter((nombreBanco) =>
+    nombreBanco.toLowerCase().includes(busquedaBanco.trim().toLowerCase()),
+  );
+
+  const seleccionarBanco = (nombreBanco: string) => {
+    setBanco(nombreBanco);
+    setBusquedaBanco("");
+    setSelectorBancoVisible(false);
+  };
+
+  const seleccionarTipoCuenta = (tipo: string) => {
+    setTipoCuenta(tipo);
+    setSelectorTipoCuentaVisible(false);
   };
 
   const iniciarEdicion = () => {
@@ -175,6 +296,36 @@ export default function PerfilScreen() {
     actualizarMutation.mutate();
   };
 
+  const handleCambiarFoto = async () => {
+    const permiso = await ImagePicker.requestMediaLibraryPermissionsAsync();
+
+    if (!permiso.granted) {
+      Alert.alert(
+        "Permiso necesario",
+        "Necesitamos acceso a tus fotos para cambiar la foto de perfil.",
+      );
+      return;
+    }
+
+    const resultado = await ImagePicker.launchImageLibraryAsync({
+      mediaTypes: ["images"],
+      allowsEditing: true,
+      aspect: [1, 1],
+      legacy: true,
+      presentationStyle: ImagePicker.UIImagePickerPresentationStyle.FULL_SCREEN,
+      quality: 0.85,
+    });
+
+    if (resultado.canceled || !resultado.assets[0]) return;
+
+    const foto = resultado.assets[0];
+    fotoPerfilMutation.mutate({
+      uri: foto.uri,
+      mimeType: foto.mimeType,
+      fileName: foto.fileName,
+    });
+  };
+
   const handleCerrarSesion = () => {
     Alert.alert("Cerrar sesión", "¿Estás seguro?", [
       { text: "Cancelar", style: "cancel" },
@@ -189,6 +340,55 @@ export default function PerfilScreen() {
     ]);
   };
 
+  const handleConectarGoogle = async () => {
+    try {
+      const redirectUrl = "proyectogpscarreteaapp://";
+
+      const { data, error } = await supabase.auth.linkIdentity({
+        provider: "google",
+        options: {
+          scopes: "https://www.googleapis.com/auth/calendar",
+          redirectTo: redirectUrl,
+          skipBrowserRedirect: true,
+          queryParams: {
+            access_type: "offline", // para recibir refresh_token de Google
+            prompt: "consent", // fuerza que Google lo entregue siempre
+          },
+        },
+      });
+
+      if (error) throw error;
+
+      const result = await WebBrowser.openAuthSessionAsync(
+        data.url,
+        redirectUrl,
+      );
+
+      if (result.type === "success" && result.url) {
+        const params = new URLSearchParams(result.url.split("#")[1]);
+        const providerToken = params.get("provider_token");
+        const providerRefreshToken = params.get("provider_refresh_token");
+
+        if (providerToken) {
+          await guardarGoogleToken(providerToken, providerRefreshToken);
+          queryClient.invalidateQueries({
+            queryKey: ["google-calendar-vinculado"],
+          });
+          Alert.alert("¡Listo!", "Google Calendar conectado correctamente.");
+        } else {
+          Alert.alert(
+            "Error",
+            "No se recibió el token de Google. Intenta nuevamente.",
+          );
+        }
+      } else if (result.type === "cancel" || result.type === "dismiss") {
+        // Usuario canceló el flujo, no hacer nada
+      }
+    } catch (error: any) {
+      console.log("Error:", error);
+      Alert.alert("Error", error.message);
+    }
+  };
   return (
     <View style={styles.root}>
       <ScrollView
@@ -204,11 +404,34 @@ export default function PerfilScreen() {
           <>
             {/* AVATAR */}
             <View style={styles.avatarContainer}>
-              <View style={styles.avatar}>
-                <Text style={styles.avatarText}>
-                  {perfil?.nombre?.substring(0, 1).toUpperCase() ?? "?"}
-                </Text>
-              </View>
+              <TouchableOpacity
+                style={styles.avatarButton}
+                onPress={handleCambiarFoto}
+                disabled={fotoPerfilMutation.isPending}
+                activeOpacity={0.85}
+              >
+                <View style={styles.avatar}>
+                  {perfil?.foto_url ? (
+                    <Image
+                      source={{ uri: perfil.foto_url }}
+                      style={styles.avatarImage}
+                      resizeMode="cover"
+                    />
+                  ) : (
+                    <Text style={styles.avatarText}>
+                      {perfil?.nombre?.substring(0, 1).toUpperCase() ?? "?"}
+                    </Text>
+                  )}
+                  {fotoPerfilMutation.isPending && (
+                    <View style={styles.avatarLoading}>
+                      <ActivityIndicator size="small" color="#FFFFFF" />
+                    </View>
+                  )}
+                </View>
+                <View style={styles.avatarEditBadge}>
+                  <Feather name="camera" size={14} color="#000000" />
+                </View>
+              </TouchableOpacity>
               <Text style={styles.nombreDisplay}>{perfil?.nombre}</Text>
               <Text style={styles.emailDisplay}>{perfil?.email}</Text>
             </View>
@@ -336,27 +559,87 @@ export default function PerfilScreen() {
               {editandoBanco ? (
                 <>
                   {[
-                    { label: "Banco", value: banco, setter: setBanco, placeholder: "Ej: Banco Estado", icon: "credit-card" as const },
-                    { label: "Tipo de cuenta", value: tipoCuenta, setter: setTipoCuenta, placeholder: "Ej: Cuenta Vista", icon: "list" as const },
-                    { label: "Número de cuenta", value: numeroCuenta, setter: setNumeroCuenta, placeholder: "Ej: 12345678", icon: "hash" as const, keyboard: "numeric" as const },
-                    { label: "RUT", value: rut, setter: setRut, placeholder: "Ej: 12.345.678-9", icon: "user" as const },
+                    {
+                      label: "Banco",
+                      value: banco,
+                      setter: setBanco,
+                      placeholder: "Selecciona tu banco",
+                      icon: "credit-card" as const,
+                      selector: true,
+                    },
+                    {
+                      label: "Tipo de cuenta",
+                      value: tipoCuenta,
+                      setter: setTipoCuenta,
+                      placeholder: "Selecciona el tipo de cuenta",
+                      icon: "list" as const,
+                      selector: true,
+                      onPress: () => setSelectorTipoCuentaVisible(true),
+                    },
+                    {
+                      label: "Número de cuenta",
+                      value: numeroCuenta,
+                      setter: setNumeroCuenta,
+                      placeholder: "Ej: 12345678",
+                      icon: "hash" as const,
+                      keyboard: "numeric" as const,
+                    },
+                    {
+                      label: "RUT",
+                      value: rut,
+                      setter: (valor: string) => setRut(formatearRut(valor)),
+                      placeholder: "Ej: 12.345.678-9",
+                      icon: "user" as const,
+                      autoCapitalize: "characters" as const,
+                    },
                   ].map((campo, i, arr) => (
                     <View key={campo.label}>
                       <View style={styles.campo}>
                         <View style={styles.campoIcon}>
-                          <Feather name={campo.icon} size={16} color="#AAAAAA" />
+                          <Feather
+                            name={campo.icon}
+                            size={16}
+                            color="#AAAAAA"
+                          />
                         </View>
                         <View style={styles.campoBody}>
                           <Text style={styles.campoLabel}>{campo.label}</Text>
-                          <TextInput
-                            style={styles.campoInput}
-                            value={campo.value}
-                            onChangeText={campo.setter}
-                            placeholder={campo.placeholder}
-                            placeholderTextColor="#555"
-                            keyboardType={campo.keyboard ?? "default"}
-                            autoFocus={i === 0}
-                          />
+                          {campo.selector ? (
+                            <TouchableOpacity
+                              style={styles.campoSelector}
+                              onPress={
+                                campo.onPress ??
+                                (() => setSelectorBancoVisible(true))
+                              }
+                              activeOpacity={0.8}
+                            >
+                              <Text
+                                style={[
+                                  styles.campoSelectorText,
+                                  !campo.value && styles.campoPlaceholder,
+                                ]}
+                                numberOfLines={1}
+                              >
+                                {campo.value || campo.placeholder}
+                              </Text>
+                              <Feather
+                                name="chevron-down"
+                                size={16}
+                                color="#777777"
+                              />
+                            </TouchableOpacity>
+                          ) : (
+                            <TextInput
+                              style={styles.campoInput}
+                              value={campo.value}
+                              onChangeText={campo.setter}
+                              placeholder={campo.placeholder}
+                              placeholderTextColor="#555"
+                              keyboardType={campo.keyboard ?? "default"}
+                              autoCapitalize={campo.autoCapitalize ?? "none"}
+                              autoFocus={i === 0}
+                            />
+                          )}
                         </View>
                       </View>
                       {i < arr.length - 1 && <View style={styles.divisor} />}
@@ -388,15 +671,35 @@ export default function PerfilScreen() {
               ) : datosBancarios ? (
                 <>
                   {[
-                    { label: "Banco", valor: datosBancarios.banco, icon: "credit-card" as const },
-                    { label: "Tipo de cuenta", valor: datosBancarios.tipo_cuenta, icon: "list" as const },
-                    { label: "Número de cuenta", valor: datosBancarios.numero_cuenta, icon: "hash" as const },
-                    { label: "RUT", valor: datosBancarios.rut, icon: "user" as const },
+                    {
+                      label: "Banco",
+                      valor: datosBancarios.banco,
+                      icon: "credit-card" as const,
+                    },
+                    {
+                      label: "Tipo de cuenta",
+                      valor: datosBancarios.tipo_cuenta,
+                      icon: "list" as const,
+                    },
+                    {
+                      label: "Número de cuenta",
+                      valor: datosBancarios.numero_cuenta,
+                      icon: "hash" as const,
+                    },
+                    {
+                      label: "RUT",
+                      valor: datosBancarios.rut,
+                      icon: "user" as const,
+                    },
                   ].map((campo, i, arr) => (
                     <View key={campo.label}>
                       <View style={styles.campo}>
                         <View style={styles.campoIcon}>
-                          <Feather name={campo.icon} size={16} color="#AAAAAA" />
+                          <Feather
+                            name={campo.icon}
+                            size={16}
+                            color="#AAAAAA"
+                          />
                         </View>
                         <View style={styles.campoBody}>
                           <Text style={styles.campoLabel}>{campo.label}</Text>
@@ -437,7 +740,28 @@ export default function PerfilScreen() {
                   )}
                 </TouchableOpacity>
                 <View style={styles.divisor} />
-                <TouchableOpacity style={styles.settingRow}>
+                <TouchableOpacity
+                  style={styles.settingRow}
+                  onPress={handleConectarGoogle}
+                >
+                  <View style={styles.settingLeft}>
+                    <Feather name="calendar" size={18} color="#4285F4" />
+                    <Text style={styles.settingLabel}>Google Calendar</Text>
+                  </View>
+                  {googleCalendarVinculado ? (
+                    <View style={styles.badgeVerificado}>
+                      <Feather name="check" size={12} color="#50C878" />
+                      <Text style={styles.badgeVerificadoText}>Vinculado</Text>
+                    </View>
+                  ) : (
+                    <Text style={styles.settingAction}>Conectar</Text>
+                  )}
+                </TouchableOpacity>
+                <View style={styles.divisor} />
+                <TouchableOpacity
+                  style={styles.settingRow}
+                  onPress={abrirPanelNotif}
+                >
                   <View style={styles.settingLeft}>
                     <Feather name="bell" size={18} color="#AAAAAA" />
                     <Text style={styles.settingLabel}>Notificaciones</Text>
@@ -466,6 +790,105 @@ export default function PerfilScreen() {
           </>
         )}
       </ScrollView>
+
+      <Modal
+        visible={selectorBancoVisible}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setSelectorBancoVisible(false)}
+      >
+        <View style={styles.selectorOverlay}>
+          <TouchableOpacity
+            style={StyleSheet.absoluteFill}
+            activeOpacity={1}
+            onPress={() => setSelectorBancoVisible(false)}
+          />
+          <View style={styles.selectorCard}>
+            <View style={styles.selectorHeader}>
+              <Text style={styles.cardTitle}>Seleccionar banco</Text>
+              <TouchableOpacity onPress={() => setSelectorBancoVisible(false)}>
+                <Feather name="x" size={22} color="#AAAAAA" />
+              </TouchableOpacity>
+            </View>
+            <View style={styles.selectorSearch}>
+              <Feather name="search" size={16} color="#777777" />
+              <TextInput
+                style={styles.selectorSearchInput}
+                value={busquedaBanco}
+                onChangeText={setBusquedaBanco}
+                placeholder="Buscar banco"
+                placeholderTextColor="#666666"
+                autoFocus
+              />
+            </View>
+            <ScrollView
+              style={styles.selectorLista}
+              showsVerticalScrollIndicator={false}
+            >
+              {bancosFiltrados.length === 0 ? (
+                <Text style={styles.selectorVacio}>Sin resultados.</Text>
+              ) : (
+                bancosFiltrados.map((nombreBanco) => (
+                  <TouchableOpacity
+                    key={nombreBanco}
+                    style={styles.selectorOpcion}
+                    onPress={() => seleccionarBanco(nombreBanco)}
+                  >
+                    <Text style={styles.selectorOpcionText}>
+                      {nombreBanco}
+                    </Text>
+                    {banco === nombreBanco && (
+                      <Feather name="check" size={16} color="#50C878" />
+                    )}
+                  </TouchableOpacity>
+                ))
+              )}
+            </ScrollView>
+          </View>
+        </View>
+      </Modal>
+
+      <Modal
+        visible={selectorTipoCuentaVisible}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setSelectorTipoCuentaVisible(false)}
+      >
+        <View style={styles.selectorOverlay}>
+          <TouchableOpacity
+            style={StyleSheet.absoluteFill}
+            activeOpacity={1}
+            onPress={() => setSelectorTipoCuentaVisible(false)}
+          />
+          <View style={styles.selectorCard}>
+            <View style={styles.selectorHeader}>
+              <Text style={styles.cardTitle}>Tipo de cuenta</Text>
+              <TouchableOpacity
+                onPress={() => setSelectorTipoCuentaVisible(false)}
+              >
+                <Feather name="x" size={22} color="#AAAAAA" />
+              </TouchableOpacity>
+            </View>
+            <ScrollView
+              style={styles.selectorLista}
+              showsVerticalScrollIndicator={false}
+            >
+              {TIPOS_CUENTA_CHILE.map((tipo) => (
+                <TouchableOpacity
+                  key={tipo}
+                  style={styles.selectorOpcion}
+                  onPress={() => seleccionarTipoCuenta(tipo)}
+                >
+                  <Text style={styles.selectorOpcionText}>{tipo}</Text>
+                  {tipoCuenta === tipo && (
+                    <Feather name="check" size={16} color="#50C878" />
+                  )}
+                </TouchableOpacity>
+              ))}
+            </ScrollView>
+          </View>
+        </View>
+      </Modal>
 
       <Modal
         visible={panelEmailVisible}
@@ -556,6 +979,88 @@ export default function PerfilScreen() {
           </Animated.View>
         </View>
       </Modal>
+      {/* MODAL PREFERENCIAS DE NOTIFICACIONES */}
+      <Modal
+        visible={panelNotifVisible}
+        transparent
+        animationType="fade"
+        onRequestClose={cerrarPanelNotif}
+      >
+        <View style={styles.overlayEmail}>
+          <TouchableOpacity
+            style={StyleSheet.absoluteFill}
+            activeOpacity={1}
+            onPress={cerrarPanelNotif}
+          />
+          <Animated.View
+            style={[
+              styles.panelEmail,
+              { transform: [{ translateX: translateXNotif }] },
+            ]}
+          >
+            <View style={styles.panelEmailHeader}>
+              <Text style={styles.cardTitle}>Notificaciones</Text>
+              <TouchableOpacity onPress={cerrarPanelNotif}>
+                <Feather name="x" size={22} color="#AAAAAA" />
+              </TouchableOpacity>
+            </View>
+
+            <Text style={styles.panelEmailTexto}>
+              Elige qué alertas quieres recibir en tu teléfono.
+            </Text>
+
+            {/* SWITCH 1 */}
+            <View style={styles.switchRow}>
+              <View style={styles.switchInfo}>
+                <Text style={styles.switchTitle}>Nuevos Gastos</Text>
+                <Text style={styles.switchSub}>
+                  Cuando alguien anota una cuenta nueva.
+                </Text>
+              </View>
+              <Switch
+                value={prefNotif.nuevosGastos}
+                onValueChange={(val) => togglePreferencia("nuevosGastos", val)}
+                trackColor={{ false: "#333", true: "#4CAF50" }}
+                thumbColor={prefNotif.nuevosGastos ? "#fff" : "#888"}
+              />
+            </View>
+
+            {/* SWITCH 2 */}
+            <View style={styles.switchRow}>
+              <View style={styles.switchInfo}>
+                <Text style={styles.switchTitle}>Pagos y Confirmaciones</Text>
+                <Text style={styles.switchSub}>
+                  Cuando te transfieren o confirman un pago.
+                </Text>
+              </View>
+              <Switch
+                value={prefNotif.pagosReportados}
+                onValueChange={(val) =>
+                  togglePreferencia("pagosReportados", val)
+                }
+                trackColor={{ false: "#333", true: "#4CAF50" }}
+                thumbColor={prefNotif.pagosReportados ? "#fff" : "#888"}
+              />
+            </View>
+
+            {/* SWITCH 3 */}
+            <View style={styles.switchRow}>
+              <View style={styles.switchInfo}>
+                <Text style={styles.switchTitle}>Recordatorios de Deuda</Text>
+                <Text style={styles.switchSub}>
+                  Avisos automáticos si te olvidas de pagar.
+                </Text>
+              </View>
+              <Switch
+                value={prefNotif.recordatorios}
+                onValueChange={(val) => togglePreferencia("recordatorios", val)}
+                trackColor={{ false: "#333", true: "#4CAF50" }}
+                thumbColor={prefNotif.recordatorios ? "#fff" : "#888"}
+              />
+            </View>
+          </Animated.View>
+        </View>
+      </Modal>
     </View>
   );
 }
@@ -565,6 +1070,11 @@ const styles = StyleSheet.create({
   container: { paddingHorizontal: 24, paddingTop: 16 },
 
   avatarContainer: { alignItems: "center", marginBottom: 24, marginTop: 8 },
+  avatarButton: {
+    width: 88,
+    height: 88,
+    marginBottom: 12,
+  },
   avatar: {
     width: 80,
     height: 80,
@@ -574,7 +1084,27 @@ const styles = StyleSheet.create({
     borderColor: "rgba(255,255,255,0.15)",
     alignItems: "center",
     justifyContent: "center",
-    marginBottom: 12,
+    overflow: "hidden",
+  },
+  avatarImage: { width: "100%", height: "100%" },
+  avatarLoading: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: "rgba(0,0,0,0.45)",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  avatarEditBadge: {
+    position: "absolute",
+    right: 0,
+    bottom: 4,
+    width: 30,
+    height: 30,
+    borderRadius: 15,
+    backgroundColor: "#FFFFFF",
+    borderWidth: 2,
+    borderColor: "#0A0A0A",
+    alignItems: "center",
+    justifyContent: "center",
   },
   avatarText: { color: "#FFFFFF", fontSize: 32, fontWeight: "bold" },
   nombreDisplay: { color: "#FFFFFF", fontSize: 20, fontWeight: "bold" },
@@ -611,6 +1141,22 @@ const styles = StyleSheet.create({
     borderBottomColor: "rgba(255,255,255,0.2)",
     paddingVertical: 4,
   },
+  campoSelector: {
+    minHeight: 32,
+    borderBottomWidth: 1,
+    borderBottomColor: "rgba(255,255,255,0.2)",
+    paddingVertical: 4,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    gap: 10,
+  },
+  campoSelectorText: {
+    color: "#FFFFFF",
+    fontSize: 15,
+    flex: 1,
+  },
+  campoPlaceholder: { color: "#555555" },
   divisor: {
     height: 1,
     backgroundColor: "rgba(255,255,255,0.06)",
@@ -732,5 +1278,97 @@ const styles = StyleSheet.create({
     textAlign: "center",
     fontSize: 14,
     marginTop: 8,
+  },
+  selectorOverlay: {
+    flex: 1,
+    backgroundColor: "rgba(0,0,0,0.65)",
+    alignItems: "center",
+    justifyContent: "center",
+    padding: 24,
+  },
+  selectorCard: {
+    width: "100%",
+    maxWidth: 360,
+    maxHeight: "75%",
+    backgroundColor: "#0A0A0A",
+    borderRadius: 20,
+    borderWidth: 1,
+    borderColor: "rgba(255,255,255,0.08)",
+    padding: 18,
+  },
+  selectorHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    marginBottom: 16,
+  },
+  selectorSearch: {
+    height: 42,
+    borderRadius: 12,
+    backgroundColor: "rgba(255,255,255,0.06)",
+    borderWidth: 1,
+    borderColor: "rgba(255,255,255,0.08)",
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+    paddingHorizontal: 12,
+    marginBottom: 10,
+  },
+  selectorSearchInput: {
+    flex: 1,
+    color: "#FFFFFF",
+    fontSize: 14,
+    paddingVertical: 8,
+  },
+  selectorLista: { maxHeight: 360 },
+  selectorOpcion: {
+    minHeight: 44,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    borderBottomWidth: 1,
+    borderBottomColor: "rgba(255,255,255,0.06)",
+    paddingVertical: 10,
+  },
+  selectorOpcionText: { color: "#FFFFFF", fontSize: 14, flex: 1 },
+  selectorVacio: {
+    color: "#777777",
+    textAlign: "center",
+    paddingVertical: 20,
+    fontSize: 13,
+  },
+  botonText: { color: "#FF5252", fontWeight: "bold", fontSize: 15 },
+  botonGoogle: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+    backgroundColor: "rgba(66,133,244,0.1)",
+    borderWidth: 1,
+    borderColor: "rgba(66,133,244,0.3)",
+    borderRadius: 14,
+    paddingVertical: 14,
+    paddingHorizontal: 24,
+  },
+  botonGoogleText: { color: "#4285F4", fontWeight: "bold", fontSize: 15 },
+  switchRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    marginBottom: 24,
+  },
+  switchInfo: {
+    flex: 1,
+    paddingRight: 16,
+  },
+  switchTitle: {
+    color: "#FFFFFF",
+    fontSize: 15,
+    fontWeight: "600",
+    marginBottom: 4,
+  },
+  switchSub: {
+    color: "#888888",
+    fontSize: 12,
+    lineHeight: 16,
   },
 });

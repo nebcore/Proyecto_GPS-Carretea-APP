@@ -18,7 +18,7 @@ create table usuarios (
 
 create table datos_bancarios (
     id uuid primary key default gen_random_uuid(),
-    usuario_id uuid not null references usuarios(id) on delete cascade,
+    usuario_id uuid not null unique references usuarios(id) on delete cascade,
     banco text not null,
     tipo_cuenta text not null,
     numero_cuenta text not null,
@@ -127,6 +127,7 @@ create table log_auditoria (
 create table notificaciones (
     id uuid primary key default gen_random_uuid(),
     usuario_id uuid not null references usuarios(id) on delete cascade,
+    evento_id uuid references eventos(id) on delete cascade,
     tipo text not null,
     titulo text not null,
     cuerpo text,
@@ -186,6 +187,20 @@ create policy "usuarios: buscar por telefono" on usuarios for select using (auth
 -- datos_bancarios: solo el dueño edita; acreedores con deuda activa pueden leer
 create policy "datos_bancarios: dueño gestiona" on datos_bancarios
     for all using (auth.uid() = usuario_id);
+
+create policy "datos_bancarios: participantes del evento leen" on datos_bancarios
+    for select using (
+    exists (
+        select 1
+        from participantes_evento pe_objetivo
+        join contactos c_objetivo on c_objetivo.id = pe_objetivo.contacto_id
+        where c_objetivo.referencia_usuario_id = datos_bancarios.usuario_id
+        and (
+            es_participante_evento(pe_objetivo.evento_id)
+            or es_creador_evento(pe_objetivo.evento_id)
+        )
+    )
+    );
 
 create policy "datos_bancarios: acreedor puede leer" on datos_bancarios
     for select using (
@@ -361,6 +376,66 @@ using (
   )
 );
 
+-- storage: bucket publico para fotos de perfil
+insert into storage.buckets (id, name, public)
+values ('avatars', 'avatars', true)
+on conflict (id) do nothing;
+
+update storage.buckets
+set public = true
+where id = 'avatars';
+
+drop policy if exists "avatars storage: usuarios autenticados suben su foto"
+on storage.objects;
+
+drop policy if exists "avatars storage: usuarios leen su carpeta"
+on storage.objects;
+
+drop policy if exists "avatars storage: usuarios actualizan su foto"
+on storage.objects;
+
+drop policy if exists "avatars storage: usuarios borran su foto"
+on storage.objects;
+
+create policy "avatars storage: usuarios autenticados suben su foto"
+on storage.objects
+for insert
+to authenticated
+with check (
+  bucket_id = 'avatars'
+);
+
+create policy "avatars storage: usuarios leen su carpeta"
+on storage.objects
+for select
+to authenticated
+using (
+  bucket_id = 'avatars'
+  and (storage.foldername(name))[1] = auth.uid()::text
+);
+
+create policy "avatars storage: usuarios actualizan su foto"
+on storage.objects
+for update
+to authenticated
+using (
+  bucket_id = 'avatars'
+  and (storage.foldername(name))[1] = auth.uid()::text
+)
+with check (
+  bucket_id = 'avatars'
+  and (storage.foldername(name))[1] = auth.uid()::text
+);
+
+create policy "avatars storage: usuarios borran su foto"
+on storage.objects
+for delete
+to authenticated
+using (
+  bucket_id = 'avatars'
+  and (storage.foldername(name))[1] = auth.uid()::text
+);
+
 create policy "log_auditoria: participantes leen" on log_auditoria
     for select using (
     exists (
@@ -392,3 +467,105 @@ $$ language plpgsql security definer;
 create trigger on_auth_user_created
   after insert on auth.users
   for each row execute function handle_new_user();
+
+-- Crear la función interna que procesa el registro e interactúa con la API de Expo
+CREATE OR REPLACE FUNCTION public.enviar_notificacion_push_expo()
+RETURNS trigger
+LANGUAGE plpgsql
+SECURITY DEFINER
+AS $$
+DECLARE
+    v_push_token text;
+BEGIN
+    -- Buscamos el push_token del usuario al que va dirigida la notificación
+    SELECT push_token INTO v_push_token 
+    FROM public.usuarios 
+    WHERE id = NEW.usuario_id;
+
+    -- Si el usuario tiene un token activo registrado, disparamos el POST síncrono a Expo
+    IF v_push_token IS NOT NULL AND v_push_token LIKE 'ExponentPushToken%' THEN
+        PERFORM net.http_post(
+            url := 'https://exp.host/--/api/v2/push/send',
+            headers := '{"Content-Type": "application/json"}'::jsonb,
+            body := json_build_object(
+                'to', v_push_token,
+                'title', NEW.titulo,
+                'body', COALESCE(NEW.cuerpo, ''),
+                'sound', 'default',
+                'data', json_build_object('eventoId', NEW.evento_id)
+            )::text::bytea
+        );
+    END IF;
+
+    RETURN NEW;
+END;
+$$;
+
+-- Vincular la función mediante un trigger automático posterior a cada inserción
+CREATE OR REPLACE TRIGGER on_notification_created
+AFTER INSERT ON public.notificaciones
+FOR EACH ROW
+EXECUTE FUNCTION public.enviar_notificacion_push_expo();
+
+-- 1. Habilitamos la extensión del reloj interno de Supabase (si no está activa)
+CREATE EXTENSION IF NOT EXISTS pg_cron;
+
+-- 2. Programamos el Cron Job para que corra todos los días a las 12:00 PM ('0 12 * * *')
+SELECT cron.schedule('recordatorio_deudas_3_dias', '0 12 * * *', $$
+    WITH consumos AS (
+        -- Sumamos todo lo que consumió cada contacto por evento y sacamos la fecha del gasto más viejo
+        SELECT g.evento_id, gc.contacto_id, SUM(gc.parte) as total_consumido, MIN(g.fecha) as fecha_gasto_mas_antiguo
+        FROM public.gastos g
+        JOIN public.gastos_consumidores gc ON g.id = gc.gasto_id
+        GROUP BY g.evento_id, gc.contacto_id
+    ),
+    aportes AS (
+        -- Sumamos todo lo que aportó (pagó por el grupo) cada contacto
+        SELECT g.evento_id, gp.contacto_id, SUM(gp.monto_aportado) as total_aportado
+        FROM public.gastos g
+        JOIN public.gastos_pagadores gp ON g.id = gp.gasto_id
+        GROUP BY g.evento_id, gp.contacto_id
+    ),
+    pagos_enviados AS (
+        -- Sumamos lo que el usuario ya devolvió/saldó
+        SELECT evento_id, deudor_id AS contacto_id, SUM(monto) as total_pagado
+        FROM public.pagos
+        WHERE estado IN ('reportado', 'saldado')
+        GROUP BY evento_id, deudor_id
+    ),
+    pagos_recibidos AS (
+        -- Sumamos lo que le han devuelto a él
+        SELECT evento_id, acreedor_id AS contacto_id, SUM(monto) as total_recibido
+        FROM public.pagos
+        WHERE estado IN ('reportado', 'saldado')
+        GROUP BY evento_id, acreedor_id
+    ),
+    balances AS (
+        -- Recreamos la matemática de tu app: (Aportes - Consumos + Pagos Enviados - Pagos Recibidos)
+        SELECT 
+            c.evento_id, 
+            c.contacto_id, 
+            c.fecha_gasto_mas_antiguo,
+            COALESCE(a.total_aportado, 0) - COALESCE(c.total_consumido, 0) + COALESCE(pe.total_pagado, 0) - COALESCE(pr.total_recibido, 0) AS balance_neto
+        FROM consumos c
+        LEFT JOIN aportes a ON c.evento_id = a.evento_id AND c.contacto_id = a.contacto_id
+        LEFT JOIN pagos_enviados pe ON c.evento_id = pe.evento_id AND c.contacto_id = pe.contacto_id
+        LEFT JOIN pagos_recibidos pr ON c.evento_id = pr.evento_id AND c.contacto_id = pr.contacto_id
+    )
+    -- Insertamos la notificación para los que deben dinero
+    INSERT INTO public.notificaciones (usuario_id, evento_id, tipo, titulo, cuerpo)
+    SELECT 
+        cont.referencia_usuario_id,
+        b.evento_id,
+        'recordatorio_automatico',
+        '¡Tienes saldos pendientes!',
+        'Tienes una deuda de $' || ROUND(ABS(b.balance_neto)) || ' originada hace más de 3 días en el evento "' || ev.titulo || '". Por favor, ponte al día.'
+    FROM balances b
+    JOIN public.contactos cont ON b.contacto_id = cont.id
+    JOIN public.eventos ev ON b.evento_id = ev.id
+    -- LAS 4 REGLAS DEL RF_08.1:
+    WHERE b.balance_neto < -1                                   -- 1. Que su balance sea negativo (Debe dinero)
+      AND b.fecha_gasto_mas_antiguo < NOW() - INTERVAL '3 days' -- 2. Que el gasto tenga más de 3 días
+      AND ev.estado = 'abierto'                                 -- 3. Que el evento no esté cerrado
+      AND cont.referencia_usuario_id IS NOT NULL;               -- 4. Que sea un usuario real con la app instalada
+$$);

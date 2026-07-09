@@ -1,6 +1,7 @@
 import { z } from "zod";
 import { supabase } from "../supabase";
 import { getOrCreateContactoPropio } from "./contactos";
+import { crearNotificacionEvento } from "./notificaciones";
 
 export const gastoFormSchema = z.object({
   evento_id: z.string().uuid(),
@@ -154,11 +155,25 @@ async function asegurarParticipacionDelCreador(eventoId: string) {
   if (errorInsertarParticipante) throw errorInsertarParticipante;
 }
 
+async function asegurarEventoAbierto(eventoId: string) {
+  const { data, error } = await supabase
+    .from("eventos")
+    .select("estado")
+    .eq("id", eventoId)
+    .single();
+
+  if (error) throw error;
+  if (data.estado === "finalizado") {
+    throw new Error("El evento esta finalizado. Reabrelo para hacer cambios.");
+  }
+}
+
 export async function crearGasto(data: GastoFormData) {
   const validado = gastoSchema.parse(data);
 
   const { gastos_pagadores, gastos_consumidores, ...gasto } = validado;
 
+  await asegurarEventoAbierto(gasto.evento_id);
   await asegurarParticipacionDelCreador(gasto.evento_id);
 
   // Validaciones servidor adicionales
@@ -177,13 +192,13 @@ export async function crearGasto(data: GastoFormData) {
 
   // Validaciones según tipo_division
   if (gasto.tipo_division === "porcentual") {
-    const sumaPct = (gastos_consumidores || []).reduce(
+    const sumaPartes = (gastos_consumidores || []).reduce(
       (s, c) => s + Number(c.parte || 0),
       0,
     );
-    if (Math.abs(sumaPct - 100) > 0.5) {
+    if (gasto.monto_total && Math.abs(sumaPartes - gasto.monto_total) > 1) {
       throw new Error(
-        `La suma de porcentajes debe ser 100 (actual: ${sumaPct}).`,
+        `La suma de partes calculadas (${sumaPartes}) no coincide con el monto total (${gasto.monto_total}).`,
       );
     }
   }
@@ -193,8 +208,10 @@ export async function crearGasto(data: GastoFormData) {
       (s, c) => s + Number(c.parte || 0),
       0,
     );
-    if (sumaParts <= 0) {
-      throw new Error("La suma de partes debe ser mayor a cero.");
+    if (gasto.monto_total && Math.abs(sumaParts - gasto.monto_total) > 1) {
+      throw new Error(
+        `La suma de partes calculadas (${sumaParts}) no coincide con el monto total (${gasto.monto_total}).`,
+      );
     }
   }
 
@@ -248,6 +265,12 @@ export async function crearGasto(data: GastoFormData) {
       })),
     );
 
+  await crearNotificacionEvento({
+    eventoId: gasto.evento_id,
+    tipo: "gasto_creado",
+    titulo: "Nuevo gasto registrado",
+    cuerpo: `${gasto.descripcion} por $${Number(gasto.monto_total).toLocaleString("es-CL")} fue agregado al evento.`,
+  });
   if (errorConsumidores) throw errorConsumidores;
 
   return nuevoGasto;
@@ -273,7 +296,71 @@ export async function obtenerParticipantesEvento(eventoId: string) {
 
   if (error) throw error;
 
-  return data;
+  const participantes = data ?? [];
+  const usuarioIds = Array.from(
+    new Set(
+      participantes
+        .map((participante: any) => {
+          const contacto = Array.isArray(participante.contactos)
+            ? participante.contactos[0]
+            : participante.contactos;
+
+          return contacto?.referencia_usuario_id;
+        })
+        .filter(Boolean),
+    ),
+  );
+
+  if (usuarioIds.length === 0) {
+    return participantes.map((participante: any) => ({
+      ...participante,
+      foto_url: null,
+      datos_bancarios: null,
+    }));
+  }
+
+  const [
+    { data: datosBancarios, error: errorDatosBancarios },
+    { data: usuarios, error: errorUsuarios },
+  ] = await Promise.all([
+    supabase
+      .from("datos_bancarios")
+      .select("id, usuario_id, banco, tipo_cuenta, numero_cuenta, rut")
+      .in("usuario_id", usuarioIds),
+    supabase
+      .from("usuarios")
+      .select("id, foto_url, nombre")
+      .in("id", usuarioIds),
+  ]);
+
+  if (errorDatosBancarios) throw errorDatosBancarios;
+  if (errorUsuarios) throw errorUsuarios;
+
+  const datosPorUsuarioId = new Map(
+    (datosBancarios ?? []).map((datos: any) => [datos.usuario_id, datos]),
+  );
+  const fotosPorUsuarioId = new Map(
+    (usuarios ?? []).map((usuario: any) => [usuario.id, usuario.foto_url]),
+  );
+
+  const nombresPorUsuarioId = new Map(
+    (usuarios ?? []).map((usuario: any) => [usuario.id, usuario.nombre]),
+  );
+
+  return participantes.map((participante: any) => {
+    const contacto = Array.isArray(participante.contactos)
+      ? participante.contactos[0]
+      : participante.contactos;
+
+    return {
+      ...participante,
+      foto_url: fotosPorUsuarioId.get(contacto?.referencia_usuario_id) ?? null,
+      usuario_nombre_real:
+        nombresPorUsuarioId.get(contacto?.referencia_usuario_id) ?? null,
+      datos_bancarios:
+        datosPorUsuarioId.get(contacto?.referencia_usuario_id) ?? null,
+    };
+  });
 }
 
 export async function obtenerGastosxEvento(eventoId: string) {
@@ -301,6 +388,16 @@ export const getGastosByEvento = async (eventoId: string) => {
 
 export const borrarGasto = async (gastoId: string) => {
   const gastoIdValido = z.string().uuid().parse(gastoId);
+
+  const { data: gasto, error: errorGasto } = await supabase
+    .from("gastos")
+    .select("evento_id")
+    .eq("id", gastoIdValido)
+    .single();
+
+  if (errorGasto) throw errorGasto;
+  await asegurarEventoAbierto(gasto.evento_id);
+
   const { data, error } = await supabase
     .from("gastos")
     .delete()
@@ -416,15 +513,24 @@ export const getActividadReciente = async (limit = 8) => {
       fecha,
       eventos(titulo),
       gastos_pagadores(
+        contacto_id,
         monto_aportado,
-        contactos(nombre)
+        contactos(id, nombre, referencia_usuario_id)
       )
     `,
     )
     .order("fecha", { ascending: false })
     .limit(limit);
   if (error) throw error;
-  return data ?? [];
+  return (data ?? []).map((gasto: any) => {
+    const pagadorData = gasto.gastos_pagadores?.[0];
+    const pagadorContacto = pagadorData?.contactos;
+
+    return {
+      ...gasto,
+      pagador_info: pagadorContacto, // Pasamos toda la info del contacto
+    };
+  });
 };
 
 export const getTotalGastos = async () => {
@@ -443,6 +549,7 @@ export const getGastosConPagador = async (eventoId: string) => {
       `
       *,
       gastos_pagadores(
+        contacto_id,
         monto_aportado,
         contactos(id, nombre)
       )

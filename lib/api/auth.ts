@@ -1,4 +1,5 @@
 import { supabase } from "../supabase";
+import { normalizarTelefono } from "../utils/telefono";
 
 export const signUpWithEmail = async (
   email: string,
@@ -6,11 +7,13 @@ export const signUpWithEmail = async (
   nombre: string,
   telefono: string,
 ) => {
+  const telefonoNormalizado = normalizarTelefono(telefono);
+
   // 1. Crear usuario con email y contraseña
   const { data, error } = await supabase.auth.signUp({
     email,
     password,
-    options: { data: { nombre, telefono } },
+    options: { data: { nombre, telefono: telefonoNormalizado } },
   });
   if (error) throw error;
 
@@ -23,7 +26,7 @@ export const signUpWithEmail = async (
 
   // 3. Enviar OTP al teléfono
   const { error: otpError } = await supabase.auth.updateUser({
-    phone: telefono,
+    phone: telefonoNormalizado,
   });
   if (otpError) throw otpError;
 
@@ -86,7 +89,10 @@ export const verificarCodigoEmail = async (email: string, codigo: string) => {
 };
 
 export const getDatosBancarios = async () => {
-  const { data: { user }, error: authError } = await supabase.auth.getUser();
+  const {
+    data: { user },
+    error: authError,
+  } = await supabase.auth.getUser();
   if (authError || !user) throw new Error("Usuario no autenticado");
 
   const { data, error } = await supabase
@@ -105,7 +111,10 @@ export const upsertDatosBancarios = async (campos: {
   numero_cuenta: string;
   rut: string;
 }) => {
-  const { data: { user }, error: authError } = await supabase.auth.getUser();
+  const {
+    data: { user },
+    error: authError,
+  } = await supabase.auth.getUser();
   if (authError || !user) throw new Error("Usuario no autenticado");
 
   const { data, error } = await supabase
@@ -119,12 +128,17 @@ export const upsertDatosBancarios = async (campos: {
 };
 
 export const getUsuarioPerfil = async () => {
-  const { data: { user }, error: authError } = await supabase.auth.getUser();
+  const {
+    data: { user },
+    error: authError,
+  } = await supabase.auth.getUser();
   if (authError || !user) throw new Error("Usuario no autenticado");
 
   const { data, error } = await supabase
     .from("usuarios")
-    .select("id, nombre, email, telefono, foto_url, creado_en")
+    .select(
+      "id, nombre, email, telefono, foto_url, creado_en, preferencias_notificaciones",
+    )
     .eq("id", user.id)
     .single();
 
@@ -133,7 +147,7 @@ export const getUsuarioPerfil = async () => {
 };
 
 export const verificarDuplicados = async (email: string, telefono: string) => {
-  const { data, error } = await supabase.rpc('verificar_duplicados', {
+  const { data, error } = await supabase.rpc("verificar_duplicados", {
     p_email: email,
     p_telefono: telefono,
   });
@@ -141,13 +155,27 @@ export const verificarDuplicados = async (email: string, telefono: string) => {
   return data;
 };
 
-export const updateUsuarioPerfil = async (campos: { nombre?: string; telefono?: string }) => {
-  const { data: { user }, error: authError } = await supabase.auth.getUser();
+export const updateUsuarioPerfil = async (campos: {
+  nombre?: string;
+  telefono?: string;
+  preferencias_notificaciones?: any;
+}) => {
+  const {
+    data: { user },
+    error: authError,
+  } = await supabase.auth.getUser();
   if (authError || !user) throw new Error("Usuario no autenticado");
+
+  const camposNormalizados = {
+    ...campos,
+    ...(campos.telefono !== undefined
+      ? { telefono: normalizarTelefono(campos.telefono) || null }
+      : {}),
+  };
 
   const { data, error } = await supabase
     .from("usuarios")
-    .update(campos)
+    .update(camposNormalizados)
     .eq("id", user.id)
     .select()
     .single();

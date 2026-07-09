@@ -2,6 +2,7 @@ import { PasoBarra } from "@/components/auth/PasoBarra";
 import { PasoVerificarTelefono } from "@/components/auth/PasoVerificarTelefono";
 import { PantallaConTeclado } from "@/components/ui/PantallaConTeclado";
 import { supabase } from "@/lib/supabase";
+import { normalizarTelefono } from "@/lib/utils/telefono";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { useEffect, useState } from "react";
 import { StyleSheet, View } from "react-native";
@@ -36,7 +37,19 @@ export default function VerificarTelefonoScreen() {
       <View style={styles.content}>
         <PasoVerificarTelefono
           telefono={telefono}
-          onVerificado={() => router.replace("/(tabs)")}
+          onVerificado={async () => {
+            const telefonoNormalizado = normalizarTelefono(telefono);
+            const {
+              data: { user },
+            } = await supabase.auth.getUser();
+            if (user && telefonoNormalizado) {
+              await supabase
+                .from("usuarios")
+                .update({ telefono: telefonoNormalizado })
+                .eq("id", user.id);
+            }
+            router.replace("/(tabs)");
+          }}
         />
       </View>
     </PantallaConTeclado>

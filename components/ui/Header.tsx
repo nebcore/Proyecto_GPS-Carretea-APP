@@ -1,5 +1,7 @@
+import { getUsuarioPerfil } from "@/lib/api/auth";
 import Feather from "@expo/vector-icons/Feather";
-import { StyleSheet, Text, TouchableOpacity, View } from "react-native";
+import { useQuery } from "@tanstack/react-query";
+import { Image, StyleSheet, Text, TouchableOpacity, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 type Props = {
@@ -9,27 +11,38 @@ type Props = {
 
 export default function Header({ mostrarVolver = false, onVolver }: Props) {
   const insets = useSafeAreaInsets();
+  const { data: perfil } = useQuery({
+    queryKey: ["perfil"],
+    queryFn: getUsuarioPerfil,
+    enabled: !mostrarVolver,
+  });
 
   return (
     <View style={[styles.container, { paddingTop: insets.top + 8 }]}>
-      <TouchableOpacity style={styles.iconBtn} onPress={onVolver}>
+      <TouchableOpacity
+        style={styles.iconBtn}
+        onPress={onVolver}
+        hitSlop={16}
+        activeOpacity={0.7}
+      >
         {mostrarVolver ? (
           <Feather name="arrow-left" size={20} color="#FFFFFF" />
+        ) : perfil?.foto_url ? (
+          <Image
+            source={{ uri: perfil.foto_url }}
+            style={styles.avatarImage}
+            resizeMode="cover"
+          />
         ) : (
           <Feather name="user" size={20} color="#FFFFFF" />
         )}
       </TouchableOpacity>
 
-      <Text style={styles.titulo}>CARRETEA</Text>
+      <Text style={styles.titulo} pointerEvents="none">
+        CARRETEA
+      </Text>
 
-      <View style={styles.rightIcons}>
-        <TouchableOpacity style={styles.iconBtn}>
-          <Feather name="search" size={20} color="#FFFFFF" />
-        </TouchableOpacity>
-        <TouchableOpacity style={styles.iconBtn}>
-          <Feather name="menu" size={20} color="#FFFFFF" />
-        </TouchableOpacity>
-      </View>
+      <View style={styles.rightSpacer} />
     </View>
   );
 }
@@ -55,8 +68,9 @@ const styles = StyleSheet.create({
     left: 0,
     right: 0,
     paddingTop: 24,
+    zIndex: 0,
   },
-  rightIcons: { flexDirection: "row", gap: 8 },
+  rightSpacer: { width: 38, height: 38, zIndex: 2 },
   iconBtn: {
     width: 38,
     height: 38,
@@ -64,5 +78,9 @@ const styles = StyleSheet.create({
     backgroundColor: "rgba(255,255,255,0.15)",
     alignItems: "center",
     justifyContent: "center",
+    overflow: "hidden",
+    zIndex: 2,
+    elevation: 2,
   },
+  avatarImage: { width: "100%", height: "100%" },
 });
